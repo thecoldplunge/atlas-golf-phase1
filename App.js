@@ -817,38 +817,96 @@ const CLUBS = [
   { key: 'DR', name: 'Driver', short: 'DR', speed: 1.46, launch: 0.46, roll: 1.16, spin: 0.92, carryYards: 250 }
 ];
 
-const PLAYER_ATTRIBUTES = {
-  // Skill categories (0-100 scale, 50 = amateur, 80 = pro, 100 = perfect)
-  driving: { level: 50, description: 'Driver distance and accuracy off the tee' },
-  fairwayWoods: { level: 50, description: 'Accuracy and distance with 3W, 5W, 7W' },
-  irons: { level: 50, description: 'Iron accuracy and distance control' },
-  wedges: { level: 50, description: 'Short game touch and spin control' },
-  recovery: { level: 50, description: 'Ability from sand, deep rough, plugged lies' },
-  putting: { level: 50, description: 'Putting accuracy and distance control' },
+// ═══════════════ GOLFER PROFILES ═══════════════
+const GOLFERS = [
+  {
+    id: 'mike_g',
+    name: 'Mike G',
+    species: 'Human',
+    origin: 'Earth — Sol System',
+    bio: 'A steady, well-rounded player from Earth\'s qualifying circuit. No standout weakness, no standout strength — just solid golf.',
+    avatar: {
+      skin: '#f0c08c', hat: '#263246', shirt: '#3f76c1', pants: '#2e563c'
+    },
+    stats: {
+      power: 50,
+      accuracy: 50,
+      touch: 50,
+      spinControl: 50,
+      putting: 50,
+      recovery: 50
+    },
+    mental: {
+      focus: 50,
+      composure: 50,
+      courseManagement: 50
+    }
+  }
+];
 
-  // Core attributes
-  power: { level: 50, description: 'Raw swing speed, affects max distance with all clubs' },
-  accuracy: { level: 50, description: 'Consistency of swing path, reduces deviation spread' },
-  touch: { level: 50, description: 'Fine power control, tighter power variance' },
-  spinControl: { level: 50, description: 'Ability to shape shots with draw/fade/backspin' },
-
-  // Mental game
-  focus: { level: 50, description: 'Resistance to pressure, maintains accuracy under stress' },
-  composure: { level: 50, description: 'Recovery from bad shots, prevents tilt' },
-  courseManagement: { level: 50, description: 'Smart club selection and risk assessment' }
+// ═══════════════ EQUIPMENT CATALOG ═══════════════
+// Each club item has stats that modify gameplay. "Generic" brand = starter gear.
+// Categories: drivers, fairwayWoods, hybrids, irons, wedges, putters
+const EQUIPMENT_CATALOG = {
+  drivers: [
+    { id: 'generic_dr', name: 'Generic Driver', brand: 'Generic', clubKey: 'DR',
+      stats: { distance: 50, accuracy: 50, forgiveness: 50, spin: 50 } }
+  ],
+  fairwayWoods: [
+    { id: 'generic_3w', name: 'Generic 3 Wood', brand: 'Generic', clubKey: '3W',
+      stats: { distance: 50, accuracy: 50, forgiveness: 50, spin: 50 } },
+    { id: 'generic_5w', name: 'Generic 5 Wood', brand: 'Generic', clubKey: '5W',
+      stats: { distance: 50, accuracy: 50, forgiveness: 50, spin: 50 } },
+    { id: 'generic_7w', name: 'Generic 7 Wood', brand: 'Generic', clubKey: '7W',
+      stats: { distance: 50, accuracy: 50, forgiveness: 50, spin: 50 } }
+  ],
+  irons: [
+    { id: 'generic_3i', name: 'Generic 3 Iron', brand: 'Generic', clubKey: '3I',
+      stats: { distance: 50, accuracy: 50, forgiveness: 40, spin: 50 } },
+    { id: 'generic_4i', name: 'Generic 4 Iron', brand: 'Generic', clubKey: '4I',
+      stats: { distance: 50, accuracy: 50, forgiveness: 42, spin: 50 } },
+    { id: 'generic_5i', name: 'Generic 5 Iron', brand: 'Generic', clubKey: '5I',
+      stats: { distance: 50, accuracy: 50, forgiveness: 45, spin: 50 } },
+    { id: 'generic_6i', name: 'Generic 6 Iron', brand: 'Generic', clubKey: '6I',
+      stats: { distance: 50, accuracy: 50, forgiveness: 48, spin: 50 } },
+    { id: 'generic_7i', name: 'Generic 7 Iron', brand: 'Generic', clubKey: '7I',
+      stats: { distance: 50, accuracy: 50, forgiveness: 52, spin: 50 } },
+    { id: 'generic_8i', name: 'Generic 8 Iron', brand: 'Generic', clubKey: '8I',
+      stats: { distance: 50, accuracy: 50, forgiveness: 55, spin: 50 } },
+    { id: 'generic_9i', name: 'Generic 9 Iron', brand: 'Generic', clubKey: '9I',
+      stats: { distance: 50, accuracy: 50, forgiveness: 58, spin: 50 } }
+  ],
+  wedges: [
+    { id: 'generic_pw', name: 'Generic Pitching Wedge', brand: 'Generic', clubKey: 'PW',
+      stats: { distance: 50, accuracy: 50, forgiveness: 55, spin: 55 } },
+    { id: 'generic_gw', name: 'Generic Gap Wedge', brand: 'Generic', clubKey: 'GW',
+      stats: { distance: 50, accuracy: 50, forgiveness: 52, spin: 58 } },
+    { id: 'generic_sw', name: 'Generic Sand Wedge', brand: 'Generic', clubKey: 'SW',
+      stats: { distance: 50, accuracy: 50, forgiveness: 50, spin: 62 } },
+    { id: 'generic_lw', name: 'Generic Lob Wedge', brand: 'Generic', clubKey: 'LW',
+      stats: { distance: 50, accuracy: 45, forgiveness: 45, spin: 65 } }
+  ],
+  putters: [
+    { id: 'generic_pt', name: 'Generic Putter', brand: 'Generic', clubKey: 'PT',
+      stats: { distance: 50, accuracy: 50, forgiveness: 50, feel: 50 } }
+  ]
 };
 
-// Equipment modifiers (future: each club can have equipment that modifies attributes)
-const EQUIPMENT_SLOTS = {
-  driver: { name: 'Stock Driver', powerMod: 0, accuracyMod: 0, spinMod: 0 },
-  irons: { name: 'Stock Irons', powerMod: 0, accuracyMod: 0, spinMod: 0 },
-  wedges: { name: 'Stock Wedges', powerMod: 0, accuracyMod: 0, spinMod: 0 },
-  putter: { name: 'Stock Putter', powerMod: 0, accuracyMod: 0, spinMod: 0 },
-  ball: { name: 'Standard Ball', spinMod: 0, distanceMod: 0 }
+// Default bag: 14 clubs (DR, 3W, 5W, 4I-9I, PW, GW, SW, LW, PT)
+const DEFAULT_BAG = [
+  'generic_dr', 'generic_3w', 'generic_5w',
+  'generic_4i', 'generic_5i', 'generic_6i', 'generic_7i', 'generic_8i', 'generic_9i',
+  'generic_pw', 'generic_gw', 'generic_sw', 'generic_lw',
+  'generic_pt'
+];
+
+const getAllEquipment = () => {
+  const all = [];
+  Object.values(EQUIPMENT_CATALOG).forEach(category => category.forEach(item => all.push(item)));
+  return all;
 };
-// TODO: Wire PLAYER_ATTRIBUTES into getLaunchData(), strikeBall(), and swingSensitivity
-// TODO: Wire EQUIPMENT_SLOTS into club stats modification
-// TODO: Add player profile screen to view/upgrade attributes
+
+const getEquipmentById = (id) => getAllEquipment().find(e => e.id === id);
 
 const SURFACE_PHYSICS = {
   // powerPenalty: [min, max] for random range per shot. swingSensitivity: multiplier on swing deviation (1.0 = normal)
@@ -1059,7 +1117,10 @@ export default function App() {
       opacity: 0.3 + Math.random() * 0.5
     }));
   }, [viewWidth, viewHeight]);
-  const [gameScreen, setGameScreen] = useState('menu'); // 'menu' | 'courses' | 'playing'
+  const [gameScreen, setGameScreen] = useState('menu'); // 'menu' | 'golfer-select' | 'club-select' | 'courses' | 'playing'
+  const [selectedGolfer, setSelectedGolfer] = useState(GOLFERS[0]);
+  const [selectedBag, setSelectedBag] = useState([...DEFAULT_BAG]);
+  const [bagPickerCategory, setBagPickerCategory] = useState('drivers');
   const [activeCourseIndex, setActiveCourseIndex] = useState(0);
   const [selectedCourseIndex, setSelectedCourseIndex] = useState(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -2521,7 +2582,7 @@ export default function App() {
 
               <Pressable
                 style={styles.spaceMenuBtnActive}
-                onPress={() => setGameScreen('courses')}
+                onPress={() => setGameScreen('golfer-select')}
               >
                 <Text style={styles.spaceMenuBtnLeft}>EXHIBITION</Text>
                 <Text style={styles.spaceMenuBtnRight}>QUICK 9 &gt;</Text>
@@ -2546,6 +2607,182 @@ export default function App() {
               </Text>
               <Text style={styles.menuBottomRight}>V.2187.4 ■</Text>
             </View>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ═══════════════ GOLFER SELECT SCREEN ═══════════════
+  if (gameScreen === 'golfer-select') {
+    const g = selectedGolfer;
+    const statKeys = ['power', 'accuracy', 'touch', 'spinControl', 'putting', 'recovery'];
+    const statLabels = { power: 'Power', accuracy: 'Accuracy', touch: 'Touch', spinControl: 'Spin Ctrl', putting: 'Putting', recovery: 'Recovery' };
+    const mentalKeys = ['focus', 'composure', 'courseManagement'];
+    const mentalLabels = { focus: 'Focus', composure: 'Composure', courseManagement: 'Course IQ' };
+    return (
+      <SafeAreaView style={styles.root}>
+        <StatusBar style="light" />
+        <View style={styles.spaceMenuScreen}>
+          <View style={styles.menuStarsLayer} pointerEvents="none">
+            {starField.map((star) => <View key={star.key} style={[styles.menuStar, { left: `${star.x}%`, top: `${star.y}%`, width: star.size, height: star.size, opacity: star.opacity }]} />)}
+          </View>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+          <Text style={styles.spaceMenuSubtitle}>SELECT GOLFER</Text>
+
+          <View style={styles.golferCard}>
+            {/* Avatar */}
+            <View style={styles.golferAvatarWrap}>
+              <View style={[styles.golferAvatarBlock, { backgroundColor: g.avatar.hat }]} />
+              <View style={[styles.golferAvatarBlock, { backgroundColor: g.avatar.skin }]} />
+              <View style={[styles.golferAvatarBlock, { backgroundColor: g.avatar.shirt }]} />
+              <View style={[styles.golferAvatarBlock, { backgroundColor: g.avatar.pants }]} />
+            </View>
+            <View style={styles.golferInfo}>
+              <Text style={styles.golferName}>{g.name}</Text>
+              <Text style={styles.golferSpecies}>{g.species} • {g.origin}</Text>
+              <Text style={styles.golferBio}>{g.bio}</Text>
+            </View>
+          </View>
+
+          {/* Stats bars */}
+          <View style={styles.golferStatsSection}>
+            <Text style={styles.golferStatsSectionTitle}>SKILLS</Text>
+            {statKeys.map(key => (
+              <View key={key} style={styles.golferStatRow}>
+                <Text style={styles.golferStatName}>{statLabels[key]}</Text>
+                <View style={styles.golferStatBarBg}>
+                  <View style={[styles.golferStatBarFill, { width: `${g.stats[key]}%`, backgroundColor: g.stats[key] >= 70 ? '#4ade80' : g.stats[key] >= 40 ? '#fbbf24' : '#ef4444' }]} />
+                </View>
+                <Text style={styles.golferStatValue}>{g.stats[key]}</Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.golferStatsSection}>
+            <Text style={styles.golferStatsSectionTitle}>MENTAL</Text>
+            {mentalKeys.map(key => (
+              <View key={key} style={styles.golferStatRow}>
+                <Text style={styles.golferStatName}>{mentalLabels[key]}</Text>
+                <View style={styles.golferStatBarBg}>
+                  <View style={[styles.golferStatBarFill, { width: `${g.mental[key]}%`, backgroundColor: g.mental[key] >= 70 ? '#4ade80' : g.mental[key] >= 40 ? '#fbbf24' : '#ef4444' }]} />
+                </View>
+                <Text style={styles.golferStatValue}>{g.mental[key]}</Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.golferNavRow}>
+            <Pressable style={styles.golferBackBtn} onPress={() => setGameScreen('menu')}>
+              <Text style={styles.golferBackBtnText}>← BACK</Text>
+            </Pressable>
+            <Pressable style={styles.golferSelectBtn} onPress={() => setGameScreen('club-select')}>
+              <Text style={styles.golferSelectBtnText}>SELECT →</Text>
+            </Pressable>
+          </View>
+          </ScrollView>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ═══════════════ CLUB SELECT SCREEN ═══════════════
+  if (gameScreen === 'club-select') {
+    const categories = [
+      { key: 'drivers', label: 'Drivers' },
+      { key: 'fairwayWoods', label: 'Woods' },
+      { key: 'irons', label: 'Irons' },
+      { key: 'wedges', label: 'Wedges' },
+      { key: 'putters', label: 'Putters' }
+    ];
+    const categoryItems = EQUIPMENT_CATALOG[bagPickerCategory] || [];
+    const bagCount = selectedBag.length;
+    const hasPutter = selectedBag.some(id => {
+      const eq = getEquipmentById(id);
+      return eq && eq.clubKey === 'PT';
+    });
+    const canProceed = bagCount === 14 && hasPutter;
+
+    const toggleClub = (itemId) => {
+      setSelectedBag(prev => {
+        if (prev.includes(itemId)) {
+          return prev.filter(id => id !== itemId);
+        }
+        if (prev.length >= 14) return prev; // can't add more
+        return [...prev, itemId];
+      });
+    };
+
+    const statLabels = { distance: 'Dist', accuracy: 'Acc', forgiveness: 'Frgv', spin: 'Spin', feel: 'Feel' };
+
+    return (
+      <SafeAreaView style={styles.root}>
+        <StatusBar style="light" />
+        <View style={styles.spaceMenuScreen}>
+          <View style={styles.menuStarsLayer} pointerEvents="none">
+            {starField.map((star) => <View key={star.key} style={[styles.menuStar, { left: `${star.x}%`, top: `${star.y}%`, width: star.size, height: star.size, opacity: star.opacity }]} />)}
+          </View>
+          <View style={{ flex: 1, padding: 16 }}>
+          <Text style={styles.golferStatsSectionTitle}>BUILD YOUR BAG</Text>
+          <Text style={styles.clubSelectCount}>{bagCount}/14 clubs {hasPutter ? '✅' : '⚠️ Need putter'}</Text>
+
+          {/* Category tabs */}
+          <View style={styles.clubCategoryTabs}>
+            {categories.map(cat => (
+              <Pressable
+                key={cat.key}
+                style={[styles.clubCategoryTab, bagPickerCategory === cat.key && styles.clubCategoryTabActive]}
+                onPress={() => setBagPickerCategory(cat.key)}
+              >
+                <Text style={[styles.clubCategoryTabText, bagPickerCategory === cat.key && styles.clubCategoryTabTextActive]}>{cat.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {/* Club list */}
+          <ScrollView style={styles.clubListScroll} showsVerticalScrollIndicator={false}>
+            {categoryItems.map(item => {
+              const inBag = selectedBag.includes(item.id);
+              const clubData = CLUBS.find(c => c.key === item.clubKey);
+              return (
+                <Pressable
+                  key={item.id}
+                  style={[styles.clubItemCard, inBag && styles.clubItemCardSelected]}
+                  onPress={() => toggleClub(item.id)}
+                >
+                  <View style={styles.clubItemHeader}>
+                    <Text style={styles.clubItemName}>{item.name}</Text>
+                    <Text style={styles.clubItemBrand}>{item.brand}</Text>
+                    {clubData ? <Text style={styles.clubItemCarry}>{clubData.carryYards}yd</Text> : null}
+                  </View>
+                  <View style={styles.clubItemStats}>
+                    {Object.entries(item.stats).map(([key, val]) => (
+                      <View key={key} style={styles.clubItemStatCol}>
+                        <View style={styles.clubItemStatBarBg}>
+                          <View style={[styles.clubItemStatBarFill, { height: `${val}%` }]} />
+                        </View>
+                        <Text style={styles.clubItemStatLabel}>{statLabels[key] || key}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  {inBag ? <Text style={styles.clubItemCheck}>✅</Text> : <Text style={styles.clubItemAdd}>+</Text>}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          <View style={styles.golferNavRow}>
+            <Pressable style={styles.golferBackBtn} onPress={() => setGameScreen('golfer-select')}>
+              <Text style={styles.golferBackBtnText}>← GOLFER</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.golferSelectBtn, !canProceed && styles.disabled]}
+              disabled={!canProceed}
+              onPress={() => setGameScreen('courses')}
+            >
+              <Text style={styles.golferSelectBtnText}>PLAY →</Text>
+            </Pressable>
+          </View>
           </View>
         </View>
       </SafeAreaView>
@@ -4046,6 +4283,230 @@ const styles = StyleSheet.create({
     color: '#88F8BB',
     fontSize: 13,
     fontWeight: '800'
+  },
+  // Golfer select styles
+  golferCard: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16
+  },
+  golferAvatarWrap: {
+    width: 48,
+    height: 64,
+    marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 2
+  },
+  golferAvatarBlock: {
+    width: 24,
+    height: 14,
+    borderRadius: 3
+  },
+  golferInfo: {
+    flex: 1
+  },
+  golferName: {
+    color: '#f5fbef',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 1
+  },
+  golferSpecies: {
+    color: '#88F8BB',
+    fontSize: 11,
+    marginBottom: 4
+  },
+  golferBio: {
+    color: 'rgba(245,251,239,0.6)',
+    fontSize: 12,
+    lineHeight: 16
+  },
+  golferStatsSection: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12
+  },
+  golferStatsSectionTitle: {
+    color: '#88F8BB',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 2,
+    marginBottom: 8,
+    textAlign: 'center'
+  },
+  golferStatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6
+  },
+  golferStatName: {
+    color: 'rgba(245,251,239,0.7)',
+    fontSize: 11,
+    width: 65
+  },
+  golferStatBarBg: {
+    flex: 1,
+    height: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 4,
+    marginHorizontal: 6,
+    overflow: 'hidden'
+  },
+  golferStatBarFill: {
+    height: '100%',
+    borderRadius: 4
+  },
+  golferStatValue: {
+    color: '#f5fbef',
+    fontSize: 11,
+    fontWeight: '700',
+    width: 24,
+    textAlign: 'right'
+  },
+  golferNavRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12
+  },
+  golferBackBtn: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20
+  },
+  golferBackBtnText: {
+    color: 'rgba(245,251,239,0.6)',
+    fontSize: 14,
+    fontWeight: '700'
+  },
+  golferSelectBtn: {
+    backgroundColor: '#4a9e3f',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24
+  },
+  golferSelectBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '900'
+  },
+  // Club select styles
+  clubSelectCount: {
+    color: '#f5fbef',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 10
+  },
+  clubCategoryTabs: {
+    flexDirection: 'row',
+    marginBottom: 10,
+    gap: 4
+  },
+  clubCategoryTab: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center'
+  },
+  clubCategoryTabActive: {
+    backgroundColor: 'rgba(74,158,63,0.3)',
+    borderWidth: 1,
+    borderColor: '#4a9e3f'
+  },
+  clubCategoryTabText: {
+    color: 'rgba(245,251,239,0.5)',
+    fontSize: 11,
+    fontWeight: '700'
+  },
+  clubCategoryTabTextActive: {
+    color: '#88F8BB'
+  },
+  clubListScroll: {
+    flex: 1,
+    marginBottom: 8
+  },
+  clubItemCard: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 6,
+    position: 'relative'
+  },
+  clubItemCardSelected: {
+    borderColor: '#4a9e3f',
+    backgroundColor: 'rgba(74,158,63,0.1)'
+  },
+  clubItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6
+  },
+  clubItemName: {
+    color: '#f5fbef',
+    fontSize: 13,
+    fontWeight: '800',
+    flex: 1
+  },
+  clubItemBrand: {
+    color: 'rgba(245,251,239,0.4)',
+    fontSize: 10,
+    marginRight: 8
+  },
+  clubItemCarry: {
+    color: '#88F8BB',
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  clubItemStats: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'flex-end'
+  },
+  clubItemStatCol: {
+    alignItems: 'center',
+    flex: 1
+  },
+  clubItemStatBarBg: {
+    width: '100%',
+    height: 32,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 3,
+    overflow: 'hidden',
+    justifyContent: 'flex-end'
+  },
+  clubItemStatBarFill: {
+    width: '100%',
+    backgroundColor: '#4a9e3f',
+    borderRadius: 3
+  },
+  clubItemStatLabel: {
+    color: 'rgba(245,251,239,0.4)',
+    fontSize: 9,
+    marginTop: 2
+  },
+  clubItemCheck: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    fontSize: 14
+  },
+  clubItemAdd: {
+    position: 'absolute',
+    right: 10,
+    top: 6,
+    color: 'rgba(245,251,239,0.3)',
+    fontSize: 18,
+    fontWeight: '700'
   },
   puttCompactBar: {
     flexDirection: 'row',
