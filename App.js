@@ -236,7 +236,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v0.4.2';
+const BUILD_VERSION = 'web v0.4.3';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -710,7 +710,7 @@ export default function App() {
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => {
-          if (sunk || swingActive || ballMoving) {
+          if (sunk || ballMoving) {
             return false;
           }
           return true;
@@ -797,7 +797,7 @@ export default function App() {
           webPanStartCameraRef.current = null;
         }
       }),
-    [ballMoving, pixelsPerWorld, sunk, swingActive]
+    [ballMoving, pixelsPerWorld, sunk]
   );
 
   const getShotControlMetrics = (offset = spinOffset) => {
