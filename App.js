@@ -44,6 +44,14 @@ const HOLES = [
     par: 3,
     ballStart: { x: 50, y: 150 },
     cup: { x: 82, y: 18 },
+    terrain: {
+      tee: { x: 44, y: 146, w: 12, h: 8, r: 3 },
+      fairway: [
+        { x: 42, y: 104, w: 18, h: 50, r: 10 },
+        { x: 60, y: 30, w: 26, h: 80, r: 14 }
+      ],
+      green: { x: 70, y: 6, w: 26, h: 26, r: 13 }
+    },
     obstacles: [
       { type: 'rect', x: 20, y: 92, w: 60, h: 8 },
       { type: 'rect', x: 0, y: 56, w: 58, h: 8 }
@@ -56,6 +64,15 @@ const HOLES = [
     par: 4,
     ballStart: { x: 16, y: 148 },
     cup: { x: 84, y: 22 },
+    terrain: {
+      tee: { x: 10, y: 144, w: 12, h: 8, r: 3 },
+      fairway: [
+        { x: 8, y: 110, w: 20, h: 44, r: 10 },
+        { x: 14, y: 68, w: 42, h: 50, r: 14 },
+        { x: 56, y: 30, w: 30, h: 48, r: 12 }
+      ],
+      green: { x: 72, y: 10, w: 26, h: 26, r: 13 }
+    },
     obstacles: [
       { type: 'rect', x: 24, y: 110, w: 60, h: 8 },
       { type: 'rect', x: 16, y: 64, w: 58, h: 8 },
@@ -72,6 +89,15 @@ const HOLES = [
     par: 4,
     ballStart: { x: 12, y: 150 },
     cup: { x: 88, y: 14 },
+    terrain: {
+      tee: { x: 6, y: 146, w: 12, h: 8, r: 3 },
+      fairway: [
+        { x: 4, y: 114, w: 20, h: 40, r: 10 },
+        { x: 20, y: 78, w: 36, h: 44, r: 14 },
+        { x: 60, y: 22, w: 30, h: 56, r: 12 }
+      ],
+      green: { x: 76, y: 2, w: 24, h: 24, r: 12 }
+    },
     obstacles: [
       { type: 'rect', x: 0, y: 106, w: 72, h: 8 },
       { type: 'rect', x: 28, y: 70, w: 72, h: 8 },
@@ -89,6 +115,17 @@ const HOLES = [
     par: 5,
     ballStart: { x: 8, y: 148 },
     cup: { x: 92, y: 10 },
+    terrain: {
+      tee: { x: 2, y: 144, w: 12, h: 8, r: 3 },
+      fairway: [
+        { x: 4, y: 130, w: 16, h: 22, r: 8 },
+        { x: 0, y: 96, w: 18, h: 40, r: 10 },
+        { x: 14, y: 66, w: 28, h: 36, r: 12 },
+        { x: 40, y: 36, w: 30, h: 38, r: 12 },
+        { x: 66, y: 14, w: 28, h: 32, r: 12 }
+      ],
+      green: { x: 80, y: 0, w: 24, h: 24, r: 12 }
+    },
     obstacles: [
       { type: 'rect', x: 16, y: 126, w: 64, h: 8 },
       { type: 'rect', x: 0, y: 96, w: 60, h: 8 },
@@ -224,7 +261,7 @@ const pointInCircle = (p, c) => {
 const getAimAngleToCup = (ballPos, cup) => Math.atan2(cup.y - ballPos.y, cup.x - ballPos.x);
 const speedFromPower = (powerPct, club = CLUBS[0], tempo = { speed: 1, launch: 1, accuracy: 1, note: 'Smooth tempo.' }) => {
   const normalized = clamp(powerPct / 100, 0, 1.12);
-  const base = 42 + normalized * 122;
+  const base = 28 + normalized * 78;
   return base * club.speed * tempo.speed;
 };
 const getTempoFeedback = (track, sampleTs = Date.now()) => {
@@ -1457,7 +1494,16 @@ export default function App() {
           <Text style={styles.lastShotText}>{lastShotNote}</Text>
 
           {waterNotice && !sunk ? <Text style={styles.warning}>Water hazard: +1 stroke, ball reset.</Text> : null}
-          {sunk ? <Text style={styles.success}>Hole complete in {strokesCurrent} strokes.</Text> : null}
+          {sunk ? (
+            <View style={styles.sunkRow}>
+              <Text style={styles.success}>Hole complete in {strokesCurrent} strokes.</Text>
+              {!isLastHole ? (
+                <Pressable style={styles.nextHoleBtn} onPress={() => setHoleIndex((h) => h + 1)}>
+                  <Text style={styles.nextHoleBtnText}>Next Hole →</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
 
           {finishedAll ? (
             <View style={styles.summary}>
@@ -1912,6 +1958,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#9ed98f',
     textAlign: 'center',
+    fontWeight: '700'
+  },
+  sunkRow: {
+    alignItems: 'center',
+    gap: 6
+  },
+  nextHoleBtn: {
+    backgroundColor: '#4a9e3f',
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 8
+  },
+  nextHoleBtnText: {
+    color: '#fff',
+    fontSize: 14,
     fontWeight: '700'
   },
   overSwingText: {
