@@ -319,6 +319,7 @@ export default function App() {
   const [powerPct, setPowerPct] = useState(0);
   const [selectedClubIndex, setSelectedClubIndex] = useState(15);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [clubPickerOpen, setClubPickerOpen] = useState(false);
   const [lastShotNote, setLastShotNote] = useState('Pull down with tempo, then flick up through center.');
   const [tempoLabel, setTempoLabel] = useState('Tempo idle');
   const [golferBallAnchor, setGolferBallAnchor] = useState(HOLES[0].ballStart);
@@ -1417,19 +1418,30 @@ export default function App() {
           </View>
 
           <View style={styles.clubSelectorWrap}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clubScrollContent}>
-              {CLUBS.map((club, index) => (
-                <Pressable
-                  key={club.key}
-                  style={[styles.clubChip, index === selectedClubIndex && styles.clubChipActive]}
-                  onPress={() => setSelectedClubIndex(index)}
-                >
-                  <Text style={[styles.clubChipText, index === selectedClubIndex && styles.clubChipTextActive]}>
-                    {club.short}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
+            <Pressable style={styles.clubPickerTrigger} onPress={() => setClubPickerOpen((v) => !v)}>
+              <Text style={styles.clubPickerTriggerLabel}>Club</Text>
+              <Text style={styles.clubPickerTriggerValue}>{selectedClub.short} • {selectedClub.name}</Text>
+              <Text style={styles.clubPickerTriggerChevron}>{clubPickerOpen ? '▲' : '▼'}</Text>
+            </Pressable>
+
+            {clubPickerOpen ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clubScrollContent}>
+                {CLUBS.map((club, index) => (
+                  <Pressable
+                    key={club.key}
+                    style={[styles.clubChip, index === selectedClubIndex && styles.clubChipActive]}
+                    onPress={() => {
+                      setSelectedClubIndex(index);
+                      setClubPickerOpen(false);
+                    }}
+                  >
+                    <Text style={[styles.clubChipText, index === selectedClubIndex && styles.clubChipTextActive]}>
+                      {club.short}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            ) : null}
           </View>
 
           <Text style={styles.helperText}>
@@ -1837,7 +1849,30 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(7, 11, 9, 0.65)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
-    paddingVertical: 8
+    paddingVertical: 8,
+    gap: 8
+  },
+  clubPickerTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    gap: 8
+  },
+  clubPickerTriggerLabel: {
+    color: '#9fb59f',
+    fontSize: 11,
+    fontWeight: '700'
+  },
+  clubPickerTriggerValue: {
+    flex: 1,
+    color: '#f5fbef',
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  clubPickerTriggerChevron: {
+    color: '#d6e7d0',
+    fontSize: 11,
+    fontWeight: '700'
   },
   clubScrollContent: {
     paddingHorizontal: 8,
