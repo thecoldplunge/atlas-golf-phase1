@@ -7,7 +7,8 @@ import {
   StyleSheet,
   Text,
   View,
-  ScrollView
+  ScrollView,
+  Platform
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
@@ -330,6 +331,7 @@ export default function App() {
   const manualPanUntilRef = useRef(0);
   const panCentroidRef = useRef(null);
   const isTwoFingerPanningRef = useRef(false);
+  const webPanStartCameraRef = useRef(null);
 
   const ballRef = useRef(ball);
   const velocityRef = useRef({ x: 0, y: 0 });
@@ -715,6 +717,7 @@ export default function App() {
           if (!isTouchInsideCourse(evt)) {
             return;
           }
+          webPanStartCameraRef.current = cameraRef.current;
           const centroid = getTouchesCentroid(evt.nativeEvent);
           if (centroid) {
             isTwoFingerPanningRef.current = true;
@@ -723,11 +726,15 @@ export default function App() {
             return;
           }
           isTwoFingerPanningRef.current = false;
+          if (Platform.OS === 'web') {
+            setIsAiming(false);
+            return;
+          }
           setIsAiming(true);
           setAimFromTouch(evt.nativeEvent.pageX, evt.nativeEvent.pageY);
         },
         onMoveShouldSetPanResponder: () => false,
-        onPanResponderMove: (evt) => {
+        onPanResponderMove: (evt, gestureState) => {
           const centroid = getTouchesCentroid(evt.nativeEvent);
           if (centroid) {
             isTwoFingerPanningRef.current = true;
@@ -745,6 +752,16 @@ export default function App() {
             return;
           }
           panCentroidRef.current = null;
+          if (Platform.OS === 'web') {
+            manualPanUntilRef.current = Date.now() + MANUAL_PAN_GRACE_MS;
+            const startCamera = webPanStartCameraRef.current || cameraRef.current;
+            setCamera(clampCamera({
+              x: startCamera.x - gestureState.dx / pixelsPerWorld,
+              y: startCamera.y - gestureState.dy / pixelsPerWorld
+            }));
+            setIsAiming(false);
+            return;
+          }
           if (isTwoFingerPanningRef.current) {
             setIsAiming(false);
             return;
@@ -754,21 +771,26 @@ export default function App() {
           }
           setAimFromTouch(evt.nativeEvent.pageX, evt.nativeEvent.pageY);
         },
-        onPanResponderRelease: () => {
+        onPanResponderRelease: (evt, gestureState) => {
+          if (Platform.OS === 'web' && isTouchInsideCourse(evt) && Math.abs(gestureState.dx) < 8 && Math.abs(gestureState.dy) < 8) {
+            setAimFromTouch(evt.nativeEvent.pageX, evt.nativeEvent.pageY);
+          }
           setIsAiming(false);
-          if (isTwoFingerPanningRef.current) {
+          if (isTwoFingerPanningRef.current || Platform.OS === 'web') {
             manualPanUntilRef.current = Date.now() + MANUAL_PAN_GRACE_MS;
           }
           isTwoFingerPanningRef.current = false;
           panCentroidRef.current = null;
+          webPanStartCameraRef.current = null;
         },
         onPanResponderTerminate: () => {
           setIsAiming(false);
-          if (isTwoFingerPanningRef.current) {
+          if (isTwoFingerPanningRef.current || Platform.OS === 'web') {
             manualPanUntilRef.current = Date.now() + MANUAL_PAN_GRACE_MS;
           }
           isTwoFingerPanningRef.current = false;
           panCentroidRef.current = null;
+          webPanStartCameraRef.current = null;
         }
       }),
     [ballMoving, pixelsPerWorld, sunk, swingActive]
@@ -1429,7 +1451,9 @@ export default function App() {
           <Text style={styles.helperText}>
             {isAiming
               ? 'Adjusting aim...'
-              : 'Pull down then swipe up through center to swing. Use two fingers on course to pan camera.'}
+              : Platform.OS === 'web'
+                ? 'Pull down then swipe up through center to swing. Drag on the course to pan, tap to aim.'
+                : 'Pull down then swipe up through center to swing. Use two fingers on course to pan camera.'}
           </Text>
           <Text style={styles.lastShotText}>{lastShotNote}</Text>
 
