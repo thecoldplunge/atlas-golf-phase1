@@ -281,6 +281,7 @@ export default function App() {
   const [pullDistance, setPullDistance] = useState(0);
   const [powerPct, setPowerPct] = useState(0);
   const [selectedClubIndex, setSelectedClubIndex] = useState(15);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [lastShotNote, setLastShotNote] = useState('Pull down with tempo, then flick up through center.');
   const [tempoLabel, setTempoLabel] = useState('Tempo idle');
   const [golferBallAnchor, setGolferBallAnchor] = useState(HOLES[0].ballStart);
@@ -864,11 +865,53 @@ export default function App() {
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar style="dark" />
-      <View style={styles.header}>
-        <Text style={styles.meta}>
-          Hole {holeIndex + 1}/{HOLES.length} • {currentHole.name} • Par {currentHole.par}
-        </Text>
-        <Text style={styles.meta}>Strokes: {strokesCurrent} • Total: {totalScore}</Text>
+      <View style={styles.topOverlay}>
+        <View style={styles.topBar}>
+          <View style={styles.menuWrap}>
+            <Pressable style={styles.menuButton} onPress={() => setMenuOpen((v) => !v)}>
+              <Text style={styles.menuIcon}>☰</Text>
+            </Pressable>
+            {menuOpen ? (
+              <View style={styles.menuPanel}>
+                <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); retryHole(); }}>
+                  <Text style={styles.menuItemText}>Retry Hole</Text>
+                </Pressable>
+                <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); resetBall({ penaltyStroke: true }); }}>
+                  <Text style={styles.menuItemText}>Quick Reset</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.menuItem, holeIndex === 0 && styles.disabled]}
+                  disabled={holeIndex === 0}
+                  onPress={() => {
+                    setMenuOpen(false);
+                    setHoleIndex((h) => Math.max(0, h - 1));
+                  }}
+                >
+                  <Text style={styles.menuItemText}>Prev Hole</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.menuItem, !sunk && styles.disabled]}
+                  disabled={!sunk}
+                  onPress={() => {
+                    setMenuOpen(false);
+                    if (!isLastHole) {
+                      setHoleIndex((h) => h + 1);
+                    }
+                  }}
+                >
+                  <Text style={styles.menuItemText}>{isLastHole ? 'Round Done' : 'Next Hole'}</Text>
+                </Pressable>
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.headerPill}>
+            <Text style={styles.meta}>
+              Hole {holeIndex + 1}/{HOLES.length} • {currentHole.name} • Par {currentHole.par}
+            </Text>
+            <Text style={styles.meta}>Strokes: {strokesCurrent} • Total: {totalScore}</Text>
+          </View>
+        </View>
       </View>
 
       <View
@@ -1175,40 +1218,6 @@ export default function App() {
 
         {sunk ? <Text style={styles.success}>Hole complete in {strokesCurrent} strokes.</Text> : null}
 
-        <View style={styles.row}>
-          <Pressable style={styles.button} onPress={retryHole}>
-            <Text style={styles.buttonText}>Retry Hole</Text>
-          </Pressable>
-
-          <Pressable
-            style={[styles.button, styles.ghost]}
-            onPress={() => resetBall({ penaltyStroke: true })}
-          >
-            <Text style={styles.buttonText}>Quick Reset</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.row}>
-          <Pressable
-            style={[styles.button, holeIndex === 0 && styles.disabled]}
-            disabled={holeIndex === 0}
-            onPress={() => setHoleIndex((h) => Math.max(0, h - 1))}
-          >
-            <Text style={styles.buttonText}>Prev Hole</Text>
-          </Pressable>
-
-          <Pressable
-            style={[styles.button, !sunk && styles.disabled]}
-            disabled={!sunk}
-            onPress={() => {
-              if (!isLastHole) {
-                setHoleIndex((h) => h + 1);
-              }
-            }}
-          >
-            <Text style={styles.buttonText}>{isLastHole ? 'Round Done' : 'Next Hole'}</Text>
-          </Pressable>
-        </View>
 
         {finishedAll ? (
           <View style={styles.summary}>
@@ -1228,15 +1237,67 @@ const styles = StyleSheet.create({
     backgroundColor: '#eaf0e1',
     alignItems: 'center'
   },
-  header: {
-    width: '100%',
-    paddingHorizontal: 14,
-    paddingTop: 4,
-    paddingBottom: 6
+  topOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    paddingTop: 12,
+    paddingHorizontal: 12
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10
+  },
+  menuWrap: {
+    position: 'relative'
+  },
+  menuButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: 'rgba(21, 31, 24, 0.82)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  menuIcon: {
+    color: '#f7fbf4',
+    fontSize: 21,
+    fontWeight: '700'
+  },
+  menuPanel: {
+    position: 'absolute',
+    top: 48,
+    left: 0,
+    width: 150,
+    borderRadius: 14,
+    backgroundColor: 'rgba(21, 31, 24, 0.92)',
+    padding: 6,
+    gap: 4
+  },
+  menuItem: {
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.06)'
+  },
+  menuItemText: {
+    color: '#f7fbf4',
+    fontWeight: '700',
+    fontSize: 13
+  },
+  headerPill: {
+    flex: 1,
+    borderRadius: 14,
+    backgroundColor: 'rgba(21, 31, 24, 0.68)',
+    paddingHorizontal: 12,
+    paddingVertical: 8
   },
   meta: {
-    fontSize: 14,
-    color: '#324438',
+    fontSize: 13,
+    color: '#f2f7ee',
     marginTop: 2
   },
   course: {
