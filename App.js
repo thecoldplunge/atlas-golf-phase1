@@ -32,6 +32,10 @@ const HOLES = [
       ],
       green: { x: H_OFF_X + 134, y: H_OFF_Y + 14, w: 48, h: 52, r: 26 }
     },
+    slopes: [
+      { cx: 0.34, cy: 0.32, strength: 0.54, dir: 'SE' },
+      { cx: 0.64, cy: 0.7, strength: 0.42, dir: 'E' }
+    ],
     obstacles: [
       { type: 'circle', x: H_OFF_X + 54, y: H_OFF_Y + 216, r: 10, look: 'tree' },
       { type: 'circle', x: H_OFF_X + 144, y: H_OFF_Y + 190, r: 10, look: 'tree' },
@@ -56,6 +60,10 @@ const HOLES = [
       ],
       green: { x: H_OFF_X + 140, y: H_OFF_Y + 12, w: 52, h: 52, r: 26 }
     },
+    slopes: [
+      { cx: 0.24, cy: 0.5, strength: 0.6, dir: 'E' },
+      { cx: 0.7, cy: 0.34, strength: 0.36, dir: 'S' }
+    ],
     obstacles: [
       { type: 'rect', x: H_OFF_X + 40, y: H_OFF_Y + 184, w: 120, h: 16 },
       { type: 'rect', x: H_OFF_X + 0, y: H_OFF_Y + 112, w: 116, h: 16 }
@@ -77,6 +85,10 @@ const HOLES = [
       ],
       green: { x: H_OFF_X + 144, y: H_OFF_Y + 20, w: 52, h: 52, r: 26 }
     },
+    slopes: [
+      { cx: 0.46, cy: 0.25, strength: 0.52, dir: 'SW' },
+      { cx: 0.7, cy: 0.72, strength: 0.38, dir: 'W' }
+    ],
     obstacles: [
       { type: 'rect', x: H_OFF_X + 48, y: H_OFF_Y + 220, w: 120, h: 16 },
       { type: 'rect', x: H_OFF_X + 32, y: H_OFF_Y + 128, w: 116, h: 16 },
@@ -102,6 +114,10 @@ const HOLES = [
       ],
       green: { x: H_OFF_X + 152, y: H_OFF_Y + 4, w: 48, h: 48, r: 24 }
     },
+    slopes: [
+      { cx: 0.3, cy: 0.28, strength: 0.5, dir: 'SE' },
+      { cx: 0.74, cy: 0.62, strength: 0.44, dir: 'NW' }
+    ],
     obstacles: [
       { type: 'rect', x: H_OFF_X + 0, y: H_OFF_Y + 212, w: 144, h: 16 },
       { type: 'rect', x: H_OFF_X + 56, y: H_OFF_Y + 140, w: 144, h: 16 },
@@ -130,6 +146,10 @@ const HOLES = [
       ],
       green: { x: H_OFF_X + 160, y: H_OFF_Y + 0, w: 48, h: 48, r: 24 }
     },
+    slopes: [
+      { cx: 0.28, cy: 0.36, strength: 0.58, dir: 'S' },
+      { cx: 0.64, cy: 0.64, strength: 0.34, dir: 'NE' }
+    ],
     obstacles: [
       { type: 'rect', x: H_OFF_X + 32, y: H_OFF_Y + 252, w: 128, h: 16 },
       { type: 'rect', x: H_OFF_X + 0, y: H_OFF_Y + 192, w: 120, h: 16 },
@@ -167,6 +187,11 @@ const FRINGE_BUFFER = 8;
 const MIN_BOUNCE_VZ = 3.2;
 const CURVE_FORCE = 1.0;
 const CURVE_LAUNCH_BLEND = 0.3;
+const PUTTING_ZOOM_MULT = 1.8;
+const SLOPE_FORCE = 3.0;
+const PUTT_PREVIEW_DT = 1 / 120;
+const PUTT_PREVIEW_MAX_TICKS = 1400;
+const PUTT_PREVIEW_SAMPLE_TICKS = 8;
 const CLUBS = [
   { key: 'PT', name: 'Putter', short: 'PT', speed: 0.16, launch: 0.03, roll: 0.95, spin: 1.22, carryYards: 40 },
   { key: 'LW', name: 'Lob Wedge', short: 'LW', speed: 0.44, launch: 1.18, roll: 0.52, spin: 0.82, carryYards: 70 },
@@ -262,7 +287,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v1.5.1';
+const BUILD_VERSION = 'web v2.0.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -318,6 +343,36 @@ const estimateStraightDistance = (powerPct, club, strike = { launch: 1, spin: 1 
   const shotRatio = clamp(powerPct / 100, 0, 1.2);
   return (club.carryYards * shotRatio * strike.launch) / YARDS_PER_WORLD;
 };
+const getSlopeDirectionUnit = (dir) => {
+  const parsed = WIND_DIRS[dir] || { x: 0, y: 0 };
+  return normalize(parsed);
+};
+const getGreenSlopeForce = (hole, point, surfaceName) => {
+  if (surfaceName !== 'green') {
+    return { x: 0, y: 0 };
+  }
+  const green = hole.terrain?.green;
+  if (!green || !hole.slopes?.length) {
+    return { x: 0, y: 0 };
+  }
+  let ax = 0;
+  let ay = 0;
+  hole.slopes.forEach((slope) => {
+    const centerX = green.x + green.w * clamp(slope.cx ?? 0.5, 0, 1);
+    const centerY = green.y + green.h * clamp(slope.cy ?? 0.5, 0, 1);
+    const nx = (point.x - centerX) / Math.max(1, green.w * 0.55);
+    const ny = (point.y - centerY) / Math.max(1, green.h * 0.55);
+    const influence = clamp(1 - Math.hypot(nx, ny), 0, 1);
+    if (influence <= 0) {
+      return;
+    }
+    const dir = getSlopeDirectionUnit(slope.dir);
+    const strength = clamp(slope.strength ?? 0, 0, 1);
+    ax += dir.x * strength * influence;
+    ay += dir.y * strength * influence;
+  });
+  return { x: ax * SLOPE_FORCE, y: ay * SLOPE_FORCE };
+};
 
 function useScreenSize() {
   const getSize = () => {
@@ -344,8 +399,11 @@ export default function App() {
   const { width: screenWidth, height: screenHeight } = useScreenSize();
   const viewWidth = Math.max(screenWidth, 320);
   const viewHeight = Math.max(screenHeight, 568);
+  const [puttingMode, setPuttingMode] = useState(false);
+  const [puttPreview, setPuttPreview] = useState(null);
   const basePixelsPerWorld = Math.max(viewWidth / WORLD.w, viewHeight / WORLD.h);
-  const pixelsPerWorld = basePixelsPerWorld * CAMERA_ZOOM;
+  const cameraZoom = CAMERA_ZOOM * (puttingMode ? PUTTING_ZOOM_MULT : 1);
+  const pixelsPerWorld = basePixelsPerWorld * cameraZoom;
   const halfVpW = (viewWidth / 2) / pixelsPerWorld;
   const halfVpH = (viewHeight / 2) / pixelsPerWorld;
 
@@ -389,6 +447,7 @@ export default function App() {
   const [ballHeight, setBallHeight] = useState(0);
   const [camera, setCamera] = useState({ x: HOLES[0].ballStart.x, y: HOLES[0].ballStart.y });
   const cameraRef = useRef({ x: HOLES[0].ballStart.x, y: HOLES[0].ballStart.y });
+  const clampCameraRef = useRef((c) => c);
   const manualPanUntilRef = useRef(0);
   const panCentroidRef = useRef(null);
   const isTwoFingerPanningRef = useRef(false);
@@ -416,6 +475,7 @@ export default function App() {
     x: clamp(c.x, halfVpW, WORLD.w - halfVpW),
     y: clamp(c.y, halfVpH, WORLD.h - halfVpH)
   });
+  clampCameraRef.current = clampCamera;
   const ballMoving =
     magnitude(velocityRef.current) > 0.3 ||
     flightRef.current.z > 0.04 ||
@@ -448,6 +508,8 @@ export default function App() {
     setIsAiming(false);
     setShotControlOpen(false);
     setSpinOffset({ x: 0, y: 0 });
+    setPuttingMode(false);
+    setPuttPreview(null);
     powerRef.current = 0; setPowerPct(0);
     shotCurveDegRef.current = 0;
     shotAimAngleRef.current = getAimAngleToCup(currentHole.ballStart, currentHole.cup);
@@ -479,6 +541,8 @@ export default function App() {
     setIsAiming(false);
     setShotControlOpen(false);
     setSpinOffset({ x: 0, y: 0 });
+    setPuttingMode(false);
+    setPuttPreview(null);
     powerRef.current = 0; setPowerPct(0);
     shotCurveDegRef.current = 0;
     shotAimAngleRef.current = getAimAngleToCup(currentHole.ballStart, currentHole.cup);
@@ -522,6 +586,8 @@ export default function App() {
     setIsAiming(false);
     setShotControlOpen(false);
     setSpinOffset({ x: 0, y: 0 });
+    setPuttingMode(false);
+    setPuttPreview(null);
     powerRef.current = 0; setPowerPct(0);
     shotCurveDegRef.current = 0;
     shotAimAngleRef.current = getAimAngleToCup(currentHole.ballStart, currentHole.cup);
@@ -556,6 +622,9 @@ export default function App() {
             const dragFactor = Math.max(0, 1 - surfacePhysics.rollFriction * dt);
             vel.x *= dragFactor;
             vel.y *= dragFactor;
+            const slopeAccel = getGreenSlopeForce(tickHole, ballRef.current, surfaceNamePre);
+            vel.x += slopeAccel.x * dt;
+            vel.y += slopeAccel.y * dt;
           } else {
             const airDrag = Math.max(0, 1 - 0.14 * dt);
             vel.x *= airDrag;
@@ -598,61 +667,13 @@ export default function App() {
             y: ballRef.current.y + vel.y * dt
           };
 
-          const radiusWorld = BALL_RADIUS_WORLD;
           const restitution = surfacePhysics.wallRestitution;
-
-          // No outer arena walls. Let the larger course feel open.
-          next.x = clamp(next.x, radiusWorld, WORLD.w - radiusWorld);
-          next.y = clamp(next.y, radiusWorld, WORLD.h - radiusWorld);
-
           if (flight.z <= 1.15) {
-            tickHole.obstacles.forEach((o) => {
-              if (o.type === 'rect') {
-                const nearestX = clamp(next.x, o.x, o.x + o.w);
-                const nearestY = clamp(next.y, o.y, o.y + o.h);
-                const dx = next.x - nearestX;
-                const dy = next.y - nearestY;
-                const overlap = radiusWorld * radiusWorld - (dx * dx + dy * dy);
-                if (overlap > 0) {
-                  let normal = normalize({ x: dx, y: dy });
-                  if (Math.abs(normal.x) < 0.01 && Math.abs(normal.y) < 0.01) {
-                    const center = { x: o.x + o.w / 2, y: o.y + o.h / 2 };
-                    normal = normalize({ x: next.x - center.x, y: next.y - center.y });
-                    if (Math.abs(normal.x) < 0.01 && Math.abs(normal.y) < 0.01) {
-                      normal = { x: 0, y: -1 };
-                    }
-                  }
-                  next = {
-                    x: nearestX + normal.x * (radiusWorld + 0.1),
-                    y: nearestY + normal.y * (radiusWorld + 0.1)
-                  };
-                  const vn = vel.x * normal.x + vel.y * normal.y;
-                  if (vn < 0) {
-                    vel.x -= (1 + restitution) * vn * normal.x;
-                    vel.y -= (1 + restitution) * vn * normal.y;
-                  }
-                }
-              }
-
-              if (o.type === 'circle') {
-                const dx = next.x - o.x;
-                const dy = next.y - o.y;
-                const dist = Math.hypot(dx, dy);
-                const minDist = o.r + radiusWorld;
-                if (dist < minDist) {
-                  const normal = dist < 0.001 ? { x: 1, y: 0 } : { x: dx / dist, y: dy / dist };
-                  next = {
-                    x: o.x + normal.x * (minDist + 0.1),
-                    y: o.y + normal.y * (minDist + 0.1)
-                  };
-                  const vn = vel.x * normal.x + vel.y * normal.y;
-                  if (vn < 0) {
-                    vel.x -= (1 + restitution) * vn * normal.x;
-                    vel.y -= (1 + restitution) * vn * normal.y;
-                  }
-                }
-              }
-            });
+            next = resolveGroundCollisions(tickHole, next, vel, restitution);
+          } else {
+            const radiusWorld = BALL_RADIUS_WORLD;
+            next.x = clamp(next.x, radiusWorld, WORLD.w - radiusWorld);
+            next.y = clamp(next.y, radiusWorld, WORLD.h - radiusWorld);
           }
 
           // Track peak height
@@ -709,12 +730,12 @@ export default function App() {
         const vel = velocityRef.current;
         const ballPos = ballRef.current;
         setCamera((prev) => {
-          const target = clampCamera({
+          const target = clampCameraRef.current({
             x: ballPos.x + clamp(vel.x * 0.025, -5, 5),
             y: ballPos.y + clamp(vel.y * 0.025, -7, 7)
           });
           const ease = magnitude(vel) > 1 ? 0.14 : 0.08;
-          const next = clampCamera({
+          const next = clampCameraRef.current({
             x: prev.x + (target.x - prev.x) * ease,
             y: prev.y + (target.y - prev.y) * ease
           });
@@ -762,6 +783,55 @@ export default function App() {
       });
     }
   }, [ball, ballHeight, currentHole.cup.x, currentHole.cup.y, holeIndex, strokesCurrent, sunk]);
+
+  useEffect(() => {
+    setCamera((prev) => clampCamera(prev));
+  }, [halfVpH, halfVpW]);
+
+  useEffect(() => {
+    if (sunk) {
+      setPuttingMode(false);
+      setPuttPreview(null);
+      return;
+    }
+    const lie = getSurfaceAtPoint(currentHole, ball);
+    if (lie !== currentLie) {
+      setCurrentLie(lie);
+    }
+    const onPuttingSurface = lie === 'green' || lie === 'fringe';
+
+    if (puttingMode && !onPuttingSurface) {
+      setPuttingMode(false);
+      setPuttPreview(null);
+      return;
+    }
+
+    if (!ballMoving && onPuttingSurface && !puttingMode) {
+      setPuttingMode(true);
+      setSelectedClubIndex(0);
+      setShotControlOpen(false);
+      setSpinOffset({ x: 0, y: 0 });
+      setPuttPreview(null);
+      setTempoLabel('Putt read ready');
+      setLastShotNote('Putting mode: set power with your swing, preview the break, then hit putt.');
+      setCamera((prev) => clampCamera({ x: ball.x, y: ball.y }));
+    }
+  }, [ball, ballMoving, currentHole, currentLie, puttingMode, sunk]);
+
+  useEffect(() => {
+    if (puttingMode && selectedClubIndex !== 0) {
+      setSelectedClubIndex(0);
+    }
+  }, [puttingMode, selectedClubIndex]);
+
+  useEffect(() => {
+    if (!puttingMode) {
+      return;
+    }
+    if (shotControlOpen) {
+      setShotControlOpen(false);
+    }
+  }, [puttingMode, shotControlOpen]);
 
   const totalScore = scores.reduce((sum, s) => (typeof s === 'number' ? sum + s : sum), 0);
   const completed = scores.filter((s) => s != null).length;
@@ -919,40 +989,162 @@ export default function App() {
     return { xNorm, yNorm, launchAdjust, spinAdjust, curveDeg, shapeLabel, flightLabel };
   };
 
-  const strikeBall = (deviation = 0) => {
-    if (sunk || ballMoving) return;
+  const resolveGroundCollisions = (hole, next, vel, restitution) => {
+    const radiusWorld = BALL_RADIUS_WORLD;
+    let adjusted = {
+      x: clamp(next.x, radiusWorld, WORLD.w - radiusWorld),
+      y: clamp(next.y, radiusWorld, WORLD.h - radiusWorld)
+    };
 
+    hole.obstacles.forEach((o) => {
+      if (o.type === 'rect') {
+        const nearestX = clamp(adjusted.x, o.x, o.x + o.w);
+        const nearestY = clamp(adjusted.y, o.y, o.y + o.h);
+        const dx = adjusted.x - nearestX;
+        const dy = adjusted.y - nearestY;
+        const overlap = radiusWorld * radiusWorld - (dx * dx + dy * dy);
+        if (overlap > 0) {
+          let normal = normalize({ x: dx, y: dy });
+          if (Math.abs(normal.x) < 0.01 && Math.abs(normal.y) < 0.01) {
+            const center = { x: o.x + o.w / 2, y: o.y + o.h / 2 };
+            normal = normalize({ x: adjusted.x - center.x, y: adjusted.y - center.y });
+            if (Math.abs(normal.x) < 0.01 && Math.abs(normal.y) < 0.01) {
+              normal = { x: 0, y: -1 };
+            }
+          }
+          adjusted = {
+            x: nearestX + normal.x * (radiusWorld + 0.1),
+            y: nearestY + normal.y * (radiusWorld + 0.1)
+          };
+          const vn = vel.x * normal.x + vel.y * normal.y;
+          if (vn < 0) {
+            vel.x -= (1 + restitution) * vn * normal.x;
+            vel.y -= (1 + restitution) * vn * normal.y;
+          }
+        }
+      }
+
+      if (o.type === 'circle') {
+        const dx = adjusted.x - o.x;
+        const dy = adjusted.y - o.y;
+        const dist = Math.hypot(dx, dy);
+        const minDist = o.r + radiusWorld;
+        if (dist < minDist) {
+          const normal = dist < 0.001 ? { x: 1, y: 0 } : { x: dx / dist, y: dy / dist };
+          adjusted = {
+            x: o.x + normal.x * (minDist + 0.1),
+            y: o.y + normal.y * (minDist + 0.1)
+          };
+          const vn = vel.x * normal.x + vel.y * normal.y;
+          if (vn < 0) {
+            vel.x -= (1 + restitution) * vn * normal.x;
+            vel.y -= (1 + restitution) * vn * normal.y;
+          }
+        }
+      }
+    });
+
+    return adjusted;
+  };
+
+  const getLaunchData = (deviation = 0) => {
     const shotMetrics = getShotControlMetrics();
-    // deviation: -1 (hard left) to +1 (hard right) from forward swing path
-    const swingCurveDeg = deviation * 25; // up to 25° curve from off-center swipe
+    const swingCurveDeg = deviation * 25;
     const totalCurveDeg = shotMetrics.curveDeg + swingCurveDeg;
     const launchCurveDeg = totalCurveDeg * CURVE_LAUNCH_BLEND;
     const finalAngle = aimAngle + degToRad(launchCurveDeg);
     const direction = { x: Math.cos(finalAngle), y: Math.sin(finalAngle) };
     const effectivePower = powerRef.current;
-    const speed = speedFromPower(effectivePower, selectedClub);
     const launchRatio = clamp(effectivePower / 125, 0, 1);
+    return {
+      shotMetrics,
+      swingCurveDeg,
+      totalCurveDeg,
+      finalAngle,
+      direction,
+      effectivePower,
+      launchRatio
+    };
+  };
+
+  const simulatePuttPreview = (deviation = swingDeviation) => {
+    if (powerRef.current <= 5) {
+      return null;
+    }
+    const launch = getLaunchData(deviation);
+    const puttSpeed = (CLUBS[0].carryYards / YARDS_PER_WORLD) * launch.launchRatio * 2.8;
+    const vel = {
+      x: launch.direction.x * puttSpeed,
+      y: launch.direction.y * puttSpeed
+    };
+    let pos = { ...ballRef.current };
+    const path = [{ x: pos.x, y: pos.y }];
+    let finalPos = { ...pos };
+
+    for (let i = 0; i < PUTT_PREVIEW_MAX_TICKS; i += 1) {
+      const surfaceName = getSurfaceAtPoint(currentHole, pos);
+      const surfacePhysics = SURFACE_PHYSICS[surfaceName] || SURFACE_PHYSICS.rough;
+      const dragFactor = Math.max(0, 1 - surfacePhysics.rollFriction * PUTT_PREVIEW_DT);
+      vel.x *= dragFactor;
+      vel.y *= dragFactor;
+      const slope = getGreenSlopeForce(currentHole, pos, surfaceName);
+      vel.x += slope.x * PUTT_PREVIEW_DT;
+      vel.y += slope.y * PUTT_PREVIEW_DT;
+
+      const restitution = surfacePhysics.wallRestitution;
+      let next = {
+        x: pos.x + vel.x * PUTT_PREVIEW_DT,
+        y: pos.y + vel.y * PUTT_PREVIEW_DT
+      };
+      next = resolveGroundCollisions(currentHole, next, vel, restitution);
+
+      const fellInWater = currentHole.hazards.some((h) => h.type === 'waterRect' && pointInRect(next, h));
+      pos = fellInWater ? currentHole.ballStart : next;
+      finalPos = { ...pos };
+
+      if (i % PUTT_PREVIEW_SAMPLE_TICKS === 0) {
+        path.push({ x: pos.x, y: pos.y });
+      }
+
+      if (magnitude(vel) < 0.3) {
+        break;
+      }
+    }
+
+    const restToCupWorld = Math.hypot(currentHole.cup.x - finalPos.x, currentHole.cup.y - finalPos.y);
+    return {
+      path,
+      finalPos,
+      distanceToCupYards: Math.max(0, Math.round(restToCupWorld * YARDS_PER_WORLD)),
+      endLie: getSurfaceAtPoint(currentHole, finalPos)
+    };
+  };
+
+  const strikeBall = (deviation = 0) => {
+    if (sunk || ballMoving) return;
+
+    const launch = getLaunchData(deviation);
+    const speed = speedFromPower(launch.effectivePower, selectedClub);
     const horizSpeed = speed;
-    const clubLaunchBoost = selectedClub.key === 'PT' ? 1 : 0.92 + selectedClub.launch * 0.42;
 
     velocityRef.current = {
-      x: direction.x * horizSpeed,
-      y: direction.y * horizSpeed
+      x: launch.direction.x * horizSpeed,
+      y: launch.direction.y * horizSpeed
     };
-    shotCurveDegRef.current = totalCurveDeg;
+    shotCurveDegRef.current = launch.totalCurveDeg;
     shotAimAngleRef.current = aimAngle;
     if (selectedClub.key === 'PT') {
       // Putter: pure ground roll, no flight. Speed calibrated so ball rolls the aim distance.
-      const puttSpeed = (selectedClub.carryYards / YARDS_PER_WORLD) * launchRatio * 2.8;
+      const puttSpeed = (selectedClub.carryYards / YARDS_PER_WORLD) * launch.launchRatio * 2.8;
       velocityRef.current = {
-        x: direction.x * puttSpeed,
-        y: direction.y * puttSpeed
+        x: launch.direction.x * puttSpeed,
+        y: launch.direction.y * puttSpeed
       };
       flightRef.current = { z: 0, vz: 0 };
     } else {
       // Real golf: all clubs peak ~90-105ft (Trackman PGA data)
-      const targetHangTime = (3.2 + selectedClub.launch * 0.8) * launchRatio;
-      const launchVz = (GRAVITY * targetHangTime * 0.5) * shotMetrics.launchAdjust;
+      const targetHangTime = (3.2 + selectedClub.launch * 0.8) * launch.launchRatio;
+      const launchVz = (GRAVITY * targetHangTime * 0.5) * launch.shotMetrics.launchAdjust;
       flightRef.current = {
         z: 0.08,
         vz: launchVz
@@ -983,10 +1175,10 @@ export default function App() {
     setLastShotStats({
       club: selectedClub.short,
       clubName: selectedClub.name,
-      power: effectivePower,
+      power: launch.effectivePower,
       contact: contactLabel,
       shape: shotShapeLabel,
-      deviationDeg: Math.round(swingCurveDeg * 10) / 10,
+      deviationDeg: Math.round(launch.swingCurveDeg * 10) / 10,
       carry: 0,
       roll: 0,
       totalDist: 0,
@@ -997,14 +1189,15 @@ export default function App() {
     });
 
     setBallHeight(flightRef.current.z);
-    setTempoLabel(`${shotShapeLabel} • ${effectivePower}%`);
+    setTempoLabel(`${shotShapeLabel} • ${launch.effectivePower}%`);
     setStrokesCurrent((s) => s + 1);
     setShotControlOpen(false);
+    setPuttPreview(null);
     setSwingPhase('idle');
     setPowerPct(0);
     powerRef.current = 0;
     setSwingDeviation(0);
-    setLastShotNote(`${selectedClub.short} — ${contactLabel}, ${shotShapeLabel.toLowerCase()}, ${effectivePower}% power.`);
+    setLastShotNote(`${selectedClub.short} — ${contactLabel}, ${shotShapeLabel.toLowerCase()}, ${launch.effectivePower}% power.`);
   };
 
   const shotControlResponder = useMemo(
@@ -1098,7 +1291,13 @@ export default function App() {
         },
         onPanResponderRelease: () => {
           if (powerRef.current > 5) {
-            strikeBall(swingDeviation);
+            if (puttingMode) {
+              setSwingPhase('idle');
+              setTempoLabel(`Putt staged • ${powerRef.current}%`);
+              setLastShotNote('Putt staged. Tap Preview Putt to read the break, then Hit Putt.');
+            } else {
+              strikeBall(swingDeviation);
+            }
           } else {
             setSwingPhase('idle');
             setPowerPct(0);
@@ -1107,12 +1306,41 @@ export default function App() {
         },
         onPanResponderTerminate: () => {
           setSwingPhase('idle');
-          setPowerPct(0);
-          powerRef.current = 0;
+          if (!puttingMode) {
+            setPowerPct(0);
+            powerRef.current = 0;
+          }
         }
       }),
-    [ballMoving, shotControlOpen, sunk, swingDeviation]
+    [ballMoving, puttingMode, shotControlOpen, sunk, swingDeviation]
   );
+
+  const runPuttPreview = () => {
+    if (!puttingMode) {
+      return;
+    }
+    if (powerRef.current <= 5) {
+      setLastShotNote('Set putting power first (hold and drag down, then release).');
+      return;
+    }
+    const preview = simulatePuttPreview(swingDeviation);
+    if (!preview) {
+      return;
+    }
+    setPuttPreview(preview);
+    setLastShotNote(`Preview ready: ${preview.distanceToCupYards} yd to cup if struck now.`);
+  };
+
+  const hitStagedPutt = () => {
+    if (!puttingMode) {
+      return;
+    }
+    if (powerRef.current <= 5) {
+      setLastShotNote('Set putting power first before hitting the putt.');
+      return;
+    }
+    strikeBall(swingDeviation);
+  };
 
 
   const screenBall = toScreen(ball);
@@ -1145,6 +1373,36 @@ export default function App() {
   const previewYards = Math.round(estimateStraightDistance(previewPower, selectedClub, { launch: shotMetrics.launchAdjust, spin: shotMetrics.spinAdjust }) * YARDS_PER_WORLD);
   const shotShape = `${SHOT_SHAPE_HINTS[selectedClub.key] || 'Neutral'} • ${shotMetrics.shapeLabel}`;
   const shotNumber = sunk ? strokesCurrent : strokesCurrent + 1;
+  const puttPreviewDots = puttPreview?.path?.map((point, i, arr) => ({
+    key: `putt-preview-${i}`,
+    point,
+    size: i === arr.length - 1 ? 8 : 3.4 + (i / Math.max(1, arr.length - 1)) * 2.4,
+    opacity: 0.95 - (i / Math.max(1, arr.length - 1)) * 0.65
+  })) || [];
+  const previewDistanceText = puttPreview ? `${puttPreview.distanceToCupYards} yd to cup` : 'No preview yet';
+  const puttingActionEnabled = puttingMode && !ballMoving && !sunk && powerRef.current > 5;
+
+  const slopeArrows = (currentHole.slopes || []).flatMap((slope, slopeIndex) => {
+    const green = currentHole.terrain?.green;
+    if (!green) {
+      return [];
+    }
+    const dir = getSlopeDirectionUnit(slope.dir);
+    if (Math.abs(dir.x) < 0.001 && Math.abs(dir.y) < 0.001) {
+      return [];
+    }
+    const center = {
+      x: green.x + green.w * clamp(slope.cx ?? 0.5, 0, 1),
+      y: green.y + green.h * clamp(slope.cy ?? 0.5, 0, 1)
+    };
+    const lead = Math.max(2.2, Math.min(green.w, green.h) * 0.11);
+    return [-1, 0, 1].map((step, idx) => ({
+      key: `slope-arrow-${slopeIndex}-${idx}`,
+      x: center.x - dir.x * lead * step,
+      y: center.y - dir.y * lead * step,
+      angle: `${(Math.atan2(dir.y, dir.x) * 180) / Math.PI}deg`
+    }));
+  });
 
   const rayToWorldEdge = (() => {
     const candidates = [];
@@ -1268,6 +1526,20 @@ export default function App() {
                     }
                   ]}
                 />
+                {(puttingMode || puttPreview) ? slopeArrows.map((arrow) => (
+                  <View
+                    key={arrow.key}
+                    pointerEvents="none"
+                    style={[
+                      styles.slopeArrow,
+                      {
+                        left: arrow.x * scaleX - 7,
+                        top: arrow.y * scaleY - 3,
+                        transform: [{ rotate: arrow.angle }]
+                      }
+                    ]}
+                  />
+                )) : null}
               </>
             ) : null}
 
@@ -1346,6 +1618,38 @@ export default function App() {
 
               return null;
             })}
+
+            {puttPreview ? (
+              <>
+                {puttPreviewDots.map((dot) => (
+                  <View
+                    key={dot.key}
+                    pointerEvents="none"
+                    style={[
+                      styles.puttPreviewDot,
+                      {
+                        width: dot.size,
+                        height: dot.size,
+                        borderRadius: dot.size / 2,
+                        left: dot.point.x * scaleX - dot.size / 2,
+                        top: dot.point.y * scaleY - dot.size / 2,
+                        opacity: dot.opacity
+                      }
+                    ]}
+                  />
+                ))}
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.puttPreviewFinal,
+                    {
+                      left: puttPreview.finalPos.x * scaleX - 7,
+                      top: puttPreview.finalPos.y * scaleY - 7
+                    }
+                  ]}
+                />
+              </>
+            ) : null}
           </View>
 
           {!ballMoving && !sunk ? aimLineDots.map((dot) => (
@@ -1502,7 +1806,13 @@ export default function App() {
                 <Text style={styles.hudValue}>{shotNumber}</Text>
               </View>
               <Pressable
-                style={[styles.hudItem, styles.hudItemPressable, shotControlOpen && styles.hudItemActive]}
+                style={[
+                  styles.hudItem,
+                  styles.hudItemPressable,
+                  shotControlOpen && styles.hudItemActive,
+                  puttingMode && styles.disabled
+                ]}
+                disabled={puttingMode}
                 onPress={() => {
                   setShotControlOpen((v) => !v);
                   setLastShotNote('Shot shape opened from yardage. Drag the blue dot, then tap the ball to hit.');
@@ -1511,6 +1821,11 @@ export default function App() {
                 <Text style={styles.hudLabel}>Yards</Text>
                 <Text style={styles.hudValue}>{yardsToCup}</Text>
               </Pressable>
+              {puttingMode ? (
+                <View style={styles.hudItemPutting}>
+                  <Text style={styles.hudPuttingText}>PUTTING</Text>
+                </View>
+              ) : null}
               <View style={styles.hudItem}>
                 <Text style={styles.hudLabel}>Wind</Text>
                 <Text style={styles.hudValue}>{windLabel}</Text>
@@ -1529,6 +1844,9 @@ export default function App() {
             <Pressable
               style={[styles.clubCard, shotControlOpen && styles.clubCardActive]}
               onPress={() => {
+                if (puttingMode) {
+                  return;
+                }
                 setShotControlOpen(true);
                 setLastShotNote('Shot shape opened. Drag the blue dot, then tap the ball to hit.');
               }}
@@ -1537,11 +1855,11 @@ export default function App() {
               <Text style={styles.clubCardSub}>{selectedClub.short} • {shotShape}</Text>
               <Text style={styles.clubCardYards}>{previewYards} yd</Text>
               <Text style={styles.clubCardMeta}>Stock {stockClubYards} • To pin {yardsToCup}</Text>
-              <Text style={styles.clubCardMeta}>{tempoLabel}</Text>
+              <Text style={styles.clubCardMeta}>{puttingMode ? `Putt preview: ${previewDistanceText}` : tempoLabel}</Text>
             </Pressable>
 
             <View style={styles.swingDock}>
-              {shotControlOpen ? (
+              {shotControlOpen && !puttingMode ? (
                 <View style={[styles.swingPad, styles.swingPadActive]}>
                   <View style={styles.shotPadGuideWrap} {...shotControlResponder.panHandlers}>
                     <View style={styles.shotPadCrosshairH} pointerEvents="none" />
@@ -1593,28 +1911,53 @@ export default function App() {
                   {swingPhase !== 'idle' ? (
                     <View style={styles.swingGuideWrap} pointerEvents="none">
                       <Text style={styles.swingGuideText}>
-                        {swingPhase === 'backswing' ? '↓ Pull down for power'
-                          : `Swipe up straight! ${Math.abs(swingDeviation) < 0.1 ? '✓ Straight' : swingDeviation < -0.3 ? '← Pull' : swingDeviation > 0.3 ? '→ Push' : swingDeviation < 0 ? '← Slight' : '→ Slight'}`}
+                        {swingPhase === 'backswing'
+                          ? '↓ Pull down for power'
+                          : puttingMode
+                            ? 'Release to stage putt power'
+                            : `Swipe up straight! ${Math.abs(swingDeviation) < 0.1 ? '✓ Straight' : swingDeviation < -0.3 ? '← Pull' : swingDeviation > 0.3 ? '→ Push' : swingDeviation < 0 ? '← Slight' : '→ Slight'}`}
                       </Text>
                     </View>
                   ) : (
                     <View style={styles.swingGuideWrap} pointerEvents="none">
-                      <Text style={styles.swingGuideText}>Hold & drag down</Text>
+                      <Text style={styles.swingGuideText}>{puttingMode ? 'Hold & drag down to stage putt' : 'Hold & drag down'}</Text>
                     </View>
                   )}
                 </View>
               )}
+              {puttingMode && !shotControlOpen ? (
+                <View style={styles.puttButtonsRow}>
+                  <Pressable
+                    style={[styles.puttButton, !puttingActionEnabled && styles.puttButtonDisabled]}
+                    disabled={!puttingActionEnabled}
+                    onPress={runPuttPreview}
+                  >
+                    <Text style={styles.puttButtonText}>Preview Putt</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.puttButton, styles.puttButtonHit, !puttingActionEnabled && styles.puttButtonDisabled]}
+                    disabled={!puttingActionEnabled}
+                    onPress={hitStagedPutt}
+                  >
+                    <Text style={styles.puttButtonText}>Hit Putt</Text>
+                  </Pressable>
+                </View>
+              ) : null}
             </View>
           </View>
 
           <View style={styles.clubSelectorWrap}>
-            <Pressable style={styles.clubPickerTrigger} onPress={() => setClubPickerOpen((v) => !v)}>
+            <Pressable
+              style={[styles.clubPickerTrigger, puttingMode && styles.disabled]}
+              disabled={puttingMode}
+              onPress={() => setClubPickerOpen((v) => !v)}
+            >
               <Text style={styles.clubPickerTriggerLabel}>Club</Text>
               <Text style={styles.clubPickerTriggerValue}>{selectedClub.short} • {selectedClub.name}</Text>
               <Text style={styles.clubPickerTriggerChevron}>{clubPickerOpen ? '▲' : '▼'}</Text>
             </Pressable>
 
-            {clubPickerOpen ? (
+            {clubPickerOpen && !puttingMode ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clubScrollContent}>
                 {CLUBS.map((club, index) => (
                   <Pressable
@@ -1637,6 +1980,8 @@ export default function App() {
           <Text style={styles.helperText}>
             {isAiming
               ? 'Adjusting aim...'
+              : puttingMode
+                ? 'Putting mode: stage your power, preview the break, then hit your putt.'
               : shotControlOpen
                 ? 'Drag the blue dot, then tap Shoot to hit.'
                 : Platform.OS === 'web'
@@ -1851,6 +2196,30 @@ const styles = StyleSheet.create({
     position: 'absolute',
     backgroundColor: '#7dae62'
   },
+  slopeArrow: {
+    position: 'absolute',
+    width: 14,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(35, 74, 42, 0.38)',
+    borderWidth: 1,
+    borderColor: 'rgba(205, 231, 194, 0.32)'
+  },
+  puttPreviewDot: {
+    position: 'absolute',
+    backgroundColor: '#c7f57a',
+    borderWidth: 1,
+    borderColor: 'rgba(10, 20, 11, 0.42)'
+  },
+  puttPreviewFinal: {
+    position: 'absolute',
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: '#f4ffcc',
+    backgroundColor: 'rgba(137, 225, 92, 0.7)'
+  },
   wall: {
     position: 'absolute',
     backgroundColor: '#5a4732',
@@ -2030,6 +2399,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center'
   },
+  hudItemPutting: {
+    minWidth: 68,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    borderRadius: 10,
+    backgroundColor: 'rgba(114, 186, 84, 0.24)',
+    borderWidth: 1,
+    borderColor: 'rgba(178, 230, 137, 0.62)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  hudPuttingText: {
+    color: '#dfffca',
+    fontSize: 11,
+    fontWeight: '800'
+  },
   windArrow: {
     color: '#78b7ff',
     fontSize: 18,
@@ -2164,7 +2549,8 @@ const styles = StyleSheet.create({
   swingDock: {
     width: SHOT_PAD_SIZE + 8,
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    gap: 8
   },
   swingPad: {
     width: SHOT_PAD_SIZE,
@@ -2272,6 +2658,33 @@ const styles = StyleSheet.create({
     color: '#f6fbef',
     fontSize: 13,
     fontWeight: '700'
+  },
+  puttButtonsRow: {
+    width: SHOT_PAD_SIZE,
+    flexDirection: 'row',
+    gap: 8
+  },
+  puttButton: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(150, 228, 119, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(182, 241, 147, 0.7)'
+  },
+  puttButtonHit: {
+    backgroundColor: 'rgba(78, 161, 230, 0.3)',
+    borderColor: 'rgba(122, 196, 255, 0.72)'
+  },
+  puttButtonDisabled: {
+    opacity: 0.45
+  },
+  puttButtonText: {
+    color: '#eef8e9',
+    fontSize: 12,
+    fontWeight: '800'
   },
   spinDotClosed: {
     position: 'absolute',
