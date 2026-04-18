@@ -694,6 +694,21 @@ const MICHAELS_COURSE_HOLES = [
   }
 ];
 
+const BACKSTORY_PARAGRAPHS = [
+  'In the year 2155, humanity reached the stars — and brought golf with them.',
+  'But Earth is proud, and conflicted, about its Tour players. Funding is limited. Public support is passionate, but fickle. And there\'s an ongoing cultural debate: should humanity\'s best and brightest be chasing a ball across alien worlds... or solving problems at home?',
+  'The last human to reach the final round of The Keldaran Masters — Joaquin Reyes — retired mid-tournament in 2184. Under mysterious circumstances. His Tour file is sealed. His caddie hasn\'t spoken publicly since.',
+  'Tensions are rising across the galaxy. A Paxi player named Thresh has accused the Voss Hegemony of engineering their gravity-adapted clubs to exploit a loophole in equipment regulations. The Tour council is investigating.',
+  'On Nyx-4 — a dead moon in the Keldaran system — there\'s a decommissioned course. It was removed from Tour certification after three players disappeared during a practice round. Locals say the terrain shifts.',
+  'FoldRight, the largest fold-transit corporation, is dangling a record-breaking sponsorship deal. The first human to win a Major this season gets the prize. The catch? Exclusive travel rights. They control where you compete — and when.',
+  'The Rill Consortium has never lost The Rill Invitational on home ice. Nobody beats a Rill in the cold. Seven species have tried. The streak is forty-one years running.',
+  'Meanwhile, somewhere on Aeris Station, a black-market fabricator claims to possess a prototype putter — forged from compressed neutron-star alloy. Almost certainly illegal. And supposedly... the most precise instrument ever built.',
+  'Earth\'s Sol Classic is considered the weakest of the four Majors — at least by alien pundits — who find the single-gravity, oxygen-atmosphere conditions "quaint." Human fans take this personally. The atmosphere at the Sol Classic is the most hostile in professional golf. Not because of the course. Because of the crowd.',
+  'Fold-lag — the neurological side effect of repeated space compression — is an open secret on Tour. Long-haul players develop micro-tremors. Depth perception drift. And what caddies call "the yips between stars." There is no official treatment. The Tour does not acknowledge it exists.',
+  'Every fifty years, the Neutral Compact allows a provisional course from a non-signatory world to host an exhibition major. The next window opens this season. Three uncontacted civilizations have submitted bids. Nobody knows what their courses look like. Nobody knows what they look like.',
+  'Your Tour begins now. Good luck out there, player.'
+];
+
 const COURSES = [
   {
     id: 'pine-valley',
@@ -1003,6 +1018,9 @@ export default function App() {
   const [gameScreen, setGameScreen] = useState('menu'); // 'menu' | 'courses' | 'playing'
   const [activeCourseIndex, setActiveCourseIndex] = useState(0);
   const [selectedCourseIndex, setSelectedCourseIndex] = useState(0);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speechPaused, setSpeechPaused] = useState(false);
+  const [speechParagraph, setSpeechParagraph] = useState(0);
   const ACTIVE_HOLES = COURSES[activeCourseIndex]?.holes || HOLES;
   const [puttingMode, setPuttingMode] = useState(false);
   const [puttPreview, setPuttPreview] = useState(null);
@@ -2413,10 +2431,13 @@ export default function App() {
                 <View style={[styles.lCorner, styles.lCornerBottomRight]} />
               </Pressable>
 
-              <View style={[styles.spaceMenuBtn, styles.spaceMenuBtnDisabled]}>
-                <Text style={styles.spaceMenuBtnLeftMuted}>SETTINGS</Text>
-                <Text style={styles.spaceMenuBtnRightMuted}>&gt;</Text>
-              </View>
+              <Pressable
+                style={styles.spaceMenuBtn}
+                onPress={() => setGameScreen('settings')}
+              >
+                <Text style={styles.spaceMenuBtnLeft}>SETTINGS</Text>
+                <Text style={styles.spaceMenuBtnRight}>&gt;</Text>
+              </Pressable>
             </View>
 
             <View style={styles.menuBottomBar}>
@@ -2489,6 +2510,166 @@ export default function App() {
               <Text style={styles.coursesPlayButtonText}>PLAY</Text>
             </Pressable>
             <Pressable style={styles.coursesBackButton} onPress={() => setGameScreen('menu')}>
+              <Text style={styles.coursesBackButtonText}>BACK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (gameScreen === 'settings') {
+    return (
+      <SafeAreaView style={styles.root}>
+        <StatusBar style="light" />
+        <View style={styles.spaceMenuScreen}>
+          <View style={styles.menuStarsLayer} pointerEvents="none">
+            {starField.map((star) => (
+              <View key={`${star.key}-set`} style={[styles.menuStar, { left: star.left, top: star.top, width: star.size, height: star.size, backgroundColor: star.color, opacity: star.opacity }]} />
+            ))}
+          </View>
+          <View style={styles.menuGreenGlow} pointerEvents="none" />
+          <View style={styles.coursesContentWrap}>
+            <Text style={styles.menuDataBar}>◂ INTERGALACTIC GOLF TOUR ▸</Text>
+            <Text style={styles.coursesTitle}>SETTINGS</Text>
+            <View style={{ gap: 12, marginTop: 20 }}>
+              <Pressable style={styles.spaceMenuBtnActive} onPress={() => setGameScreen('backstory-read')}>
+                <Text style={styles.spaceMenuBtnLeft}>📜 READ BACKSTORY</Text>
+                <Text style={styles.spaceMenuBtnRight}>&gt;</Text>
+                <View style={[styles.lCorner, styles.lCornerTopLeft]} />
+                <View style={[styles.lCorner, styles.lCornerTopRight]} />
+                <View style={[styles.lCorner, styles.lCornerBottomLeft]} />
+                <View style={[styles.lCorner, styles.lCornerBottomRight]} />
+              </Pressable>
+              <Pressable style={styles.spaceMenuBtnActive} onPress={() => setGameScreen('backstory-listen')}>
+                <Text style={styles.spaceMenuBtnLeft}>🎧 LISTEN TO BACKSTORY</Text>
+                <Text style={styles.spaceMenuBtnRight}>&gt;</Text>
+                <View style={[styles.lCorner, styles.lCornerTopLeft]} />
+                <View style={[styles.lCorner, styles.lCornerTopRight]} />
+                <View style={[styles.lCorner, styles.lCornerBottomLeft]} />
+                <View style={[styles.lCorner, styles.lCornerBottomRight]} />
+              </Pressable>
+            </View>
+            <View style={{ flex: 1 }} />
+            <Pressable style={styles.coursesBackButton} onPress={() => setGameScreen('menu')}>
+              <Text style={styles.coursesBackButtonText}>BACK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (gameScreen === 'backstory-read') {
+    return (
+      <SafeAreaView style={styles.root}>
+        <StatusBar style="light" />
+        <View style={styles.spaceMenuScreen}>
+          <View style={styles.menuStarsLayer} pointerEvents="none">
+            {starField.map((star) => (
+              <View key={`${star.key}-br`} style={[styles.menuStar, { left: star.left, top: star.top, width: star.size, height: star.size, backgroundColor: star.color, opacity: star.opacity }]} />
+            ))}
+          </View>
+          <View style={styles.menuGreenGlow} pointerEvents="none" />
+          <View style={styles.coursesContentWrap}>
+            <Text style={styles.menuDataBar}>◂ INTERGALACTIC GOLF TOUR ▸</Text>
+            <Text style={styles.coursesTitle}>THE BACKSTORY</Text>
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+              {BACKSTORY_PARAGRAPHS.map((para, i) => (
+                <Text key={`bp-${i}`} style={{ color: i === 0 ? '#88F8BB' : i === BACKSTORY_PARAGRAPHS.length - 1 ? '#88F8BB' : '#d5e7cd', fontSize: i === 0 || i === BACKSTORY_PARAGRAPHS.length - 1 ? 16 : 14, lineHeight: 22, marginBottom: 16, fontWeight: i === 0 || i === BACKSTORY_PARAGRAPHS.length - 1 ? '700' : '400', fontStyle: i === 0 ? 'italic' : 'normal' }}>{para}</Text>
+              ))}
+            </ScrollView>
+            <Pressable style={styles.coursesBackButton} onPress={() => setGameScreen('settings')}>
+              <Text style={styles.coursesBackButtonText}>BACK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (gameScreen === 'backstory-listen') {
+    const startSpeech = () => {
+      if (typeof window === 'undefined' || !window.speechSynthesis) return;
+      window.speechSynthesis.cancel();
+      const fullText = BACKSTORY_PARAGRAPHS.join('\n\n');
+      const utterance = new SpeechSynthesisUtterance(fullText);
+      utterance.rate = 0.88;
+      utterance.pitch = 0.95;
+      utterance.volume = 1;
+      // Try to find a deep/dramatic voice
+      const voices = window.speechSynthesis.getVoices();
+      const preferred = voices.find(v => v.name.includes('Daniel') || v.name.includes('Google UK English Male') || v.name.includes('Alex'));
+      if (preferred) utterance.voice = preferred;
+      utterance.onend = () => { setIsSpeaking(false); setSpeechPaused(false); };
+      window.speechSynthesis.speak(utterance);
+      setIsSpeaking(true);
+      setSpeechPaused(false);
+    };
+    const pauseSpeech = () => {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.pause();
+        setSpeechPaused(true);
+      }
+    };
+    const resumeSpeech = () => {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.resume();
+        setSpeechPaused(false);
+      }
+    };
+    const stopSpeech = () => {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        setIsSpeaking(false);
+        setSpeechPaused(false);
+      }
+    };
+    return (
+      <SafeAreaView style={styles.root}>
+        <StatusBar style="light" />
+        <View style={styles.spaceMenuScreen}>
+          <View style={styles.menuStarsLayer} pointerEvents="none">
+            {starField.map((star) => (
+              <View key={`${star.key}-bl`} style={[styles.menuStar, { left: star.left, top: star.top, width: star.size, height: star.size, backgroundColor: star.color, opacity: star.opacity }]} />
+            ))}
+          </View>
+          <View style={styles.menuGreenGlow} pointerEvents="none" />
+          <View style={[styles.coursesContentWrap, { alignItems: 'center', justifyContent: 'center' }]}>
+            <Text style={styles.menuDataBar}>◂ INTERGALACTIC GOLF TOUR ▸</Text>
+            <Text style={styles.coursesTitle}>🎧 LISTEN</Text>
+            <View style={{ alignItems: 'center', gap: 20, marginTop: 30 }}>
+              <View style={{ width: 100, height: 100, borderRadius: 50, borderWidth: 2, borderColor: '#88F8BB', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(136,248,187,0.08)' }}>
+                <Text style={{ fontSize: 40 }}>{isSpeaking && !speechPaused ? '🔊' : '🎧'}</Text>
+              </View>
+              <Text style={{ color: '#A0A0A0', fontSize: 13, letterSpacing: 2 }}>
+                {isSpeaking ? (speechPaused ? 'PAUSED' : 'PLAYING...') : 'READY'}
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                {!isSpeaking ? (
+                  <Pressable style={[styles.coursesPlayButton, { width: 140, marginTop: 0 }]} onPress={startSpeech}>
+                    <Text style={styles.coursesPlayButtonText}>▶ PLAY</Text>
+                  </Pressable>
+                ) : (
+                  <>
+                    {speechPaused ? (
+                      <Pressable style={[styles.coursesPlayButton, { width: 110, marginTop: 0 }]} onPress={resumeSpeech}>
+                        <Text style={styles.coursesPlayButtonText}>▶ RESUME</Text>
+                      </Pressable>
+                    ) : (
+                      <Pressable style={[styles.coursesPlayButton, { width: 110, marginTop: 0, backgroundColor: '#f0c040' }]} onPress={pauseSpeech}>
+                        <Text style={[styles.coursesPlayButtonText, { color: '#05070A' }]}>⏸ PAUSE</Text>
+                      </Pressable>
+                    )}
+                    <Pressable style={[styles.coursesBackButton, { width: 110, marginTop: 0, borderColor: '#ef4444' }]} onPress={stopSpeech}>
+                      <Text style={[styles.coursesBackButtonText, { color: '#ef4444' }]}>⏹ STOP</Text>
+                    </Pressable>
+                  </>
+                )}
+              </View>
+            </View>
+            <View style={{ flex: 1 }} />
+            <Pressable style={styles.coursesBackButton} onPress={() => { stopSpeech(); setGameScreen('settings'); }}>
               <Text style={styles.coursesBackButtonText}>BACK</Text>
             </Pressable>
           </View>
