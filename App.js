@@ -17,149 +17,149 @@ const HOLES = [
     id: 1,
     name: 'Pine Meadow',
     par: 4,
-    ballStart: { x: 50, y: 148 },
-    cup: { x: 78, y: 18 },
+    ballStart: { x: 100, y: 296 },
+    cup: { x: 156, y: 36 },
     terrain: {
-      tee: { x: 43, y: 144, w: 14, h: 10, r: 4 },
+      tee: { x: 86, y: 288, w: 28, h: 20, r: 8 },
       fairway: [
-        { x: 39, y: 102, w: 22, h: 50, r: 12 },
-        { x: 43, y: 62, w: 30, h: 52, r: 14 },
-        { x: 58, y: 28, w: 24, h: 42, r: 12 }
+        { x: 78, y: 204, w: 44, h: 100, r: 24 },
+        { x: 86, y: 124, w: 60, h: 104, r: 28 },
+        { x: 116, y: 56, w: 48, h: 84, r: 24 }
       ],
-      green: { x: 67, y: 7, w: 24, h: 26, r: 13 }
+      green: { x: 134, y: 14, w: 48, h: 52, r: 26 }
     },
     obstacles: [
-      { type: 'circle', x: 27, y: 108, r: 5, look: 'tree' },
-      { type: 'circle', x: 72, y: 95, r: 5, look: 'tree' },
-      { type: 'circle', x: 30, y: 65, r: 6, look: 'tree' }
+      { type: 'circle', x: 54, y: 216, r: 10, look: 'tree' },
+      { type: 'circle', x: 144, y: 190, r: 10, look: 'tree' },
+      { type: 'circle', x: 60, y: 130, r: 12, look: 'tree' }
     ],
     hazards: [
-      { type: 'sandRect', x: 61, y: 17, w: 10, h: 8 },
-      { type: 'sandRect', x: 84, y: 20, w: 10, h: 8 }
+      { type: 'sandRect', x: 122, y: 34, w: 20, h: 16 },
+      { type: 'sandRect', x: 168, y: 40, w: 20, h: 16 }
     ]
   },
   {
     id: 2,
     name: 'Split Gate',
     par: 3,
-    ballStart: { x: 50, y: 150 },
-    cup: { x: 82, y: 18 },
+    ballStart: { x: 100, y: 300 },
+    cup: { x: 164, y: 36 },
     terrain: {
-      tee: { x: 44, y: 146, w: 12, h: 8, r: 3 },
+      tee: { x: 88, y: 292, w: 24, h: 16, r: 6 },
       fairway: [
-        { x: 42, y: 104, w: 18, h: 50, r: 10 },
-        { x: 60, y: 30, w: 26, h: 80, r: 14 }
+        { x: 84, y: 208, w: 36, h: 100, r: 20 },
+        { x: 120, y: 60, w: 52, h: 160, r: 28 }
       ],
-      green: { x: 70, y: 6, w: 26, h: 26, r: 13 }
+      green: { x: 140, y: 12, w: 52, h: 52, r: 26 }
     },
     obstacles: [
-      { type: 'rect', x: 20, y: 92, w: 60, h: 8 },
-      { type: 'rect', x: 0, y: 56, w: 58, h: 8 }
+      { type: 'rect', x: 40, y: 184, w: 120, h: 16 },
+      { type: 'rect', x: 0, y: 112, w: 116, h: 16 }
     ],
-    hazards: [{ type: 'sandRect', x: 62, y: 52, w: 30, h: 18 }]
+    hazards: [{ type: 'sandRect', x: 124, y: 104, w: 60, h: 36 }]
   },
   {
     id: 3,
     name: 'Dogleg Drift',
     par: 4,
-    ballStart: { x: 16, y: 148 },
-    cup: { x: 84, y: 22 },
+    ballStart: { x: 32, y: 296 },
+    cup: { x: 168, y: 44 },
     terrain: {
-      tee: { x: 10, y: 144, w: 12, h: 8, r: 3 },
+      tee: { x: 20, y: 288, w: 24, h: 16, r: 6 },
       fairway: [
-        { x: 8, y: 110, w: 20, h: 44, r: 10 },
-        { x: 14, y: 68, w: 42, h: 50, r: 14 },
-        { x: 56, y: 30, w: 30, h: 48, r: 12 }
+        { x: 16, y: 220, w: 40, h: 88, r: 20 },
+        { x: 28, y: 136, w: 84, h: 100, r: 28 },
+        { x: 112, y: 60, w: 60, h: 96, r: 24 }
       ],
-      green: { x: 72, y: 10, w: 26, h: 26, r: 13 }
+      green: { x: 144, y: 20, w: 52, h: 52, r: 26 }
     },
     obstacles: [
-      { type: 'rect', x: 24, y: 110, w: 60, h: 8 },
-      { type: 'rect', x: 16, y: 64, w: 58, h: 8 },
-      { type: 'circle', x: 72, y: 92, r: 8 }
+      { type: 'rect', x: 48, y: 220, w: 120, h: 16 },
+      { type: 'rect', x: 32, y: 128, w: 116, h: 16 },
+      { type: 'circle', x: 144, y: 184, r: 16 }
     ],
     hazards: [
-      { type: 'waterRect', x: 0, y: 86, w: 24, h: 18 },
-      { type: 'sandRect', x: 58, y: 48, w: 34, h: 16 }
+      { type: 'waterRect', x: 0, y: 172, w: 48, h: 36 },
+      { type: 'sandRect', x: 116, y: 96, w: 68, h: 32 }
     ]
   },
   {
     id: 4,
     name: 'Bumper Tunnel',
     par: 4,
-    ballStart: { x: 12, y: 150 },
-    cup: { x: 88, y: 14 },
+    ballStart: { x: 24, y: 300 },
+    cup: { x: 176, y: 28 },
     terrain: {
-      tee: { x: 6, y: 146, w: 12, h: 8, r: 3 },
+      tee: { x: 12, y: 292, w: 24, h: 16, r: 6 },
       fairway: [
-        { x: 4, y: 114, w: 20, h: 40, r: 10 },
-        { x: 20, y: 78, w: 36, h: 44, r: 14 },
-        { x: 60, y: 22, w: 30, h: 56, r: 12 }
+        { x: 8, y: 228, w: 40, h: 80, r: 20 },
+        { x: 40, y: 156, w: 72, h: 88, r: 28 },
+        { x: 120, y: 44, w: 60, h: 112, r: 24 }
       ],
-      green: { x: 76, y: 2, w: 24, h: 24, r: 12 }
+      green: { x: 152, y: 4, w: 48, h: 48, r: 24 }
     },
     obstacles: [
-      { type: 'rect', x: 0, y: 106, w: 72, h: 8 },
-      { type: 'rect', x: 28, y: 70, w: 72, h: 8 },
-      { type: 'circle', x: 38, y: 46, r: 8 },
-      { type: 'circle', x: 60, y: 32, r: 7 }
+      { type: 'rect', x: 0, y: 212, w: 144, h: 16 },
+      { type: 'rect', x: 56, y: 140, w: 144, h: 16 },
+      { type: 'circle', x: 76, y: 92, r: 16 },
+      { type: 'circle', x: 120, y: 64, r: 14 }
     ],
     hazards: [
-      { type: 'sandRect', x: 10, y: 26, w: 24, h: 14 },
-      { type: 'waterRect', x: 72, y: 96, w: 28, h: 20 }
+      { type: 'sandRect', x: 20, y: 52, w: 48, h: 28 },
+      { type: 'waterRect', x: 144, y: 192, w: 56, h: 40 }
     ]
   },
   {
     id: 5,
     name: 'Mini Maze',
     par: 5,
-    ballStart: { x: 8, y: 148 },
-    cup: { x: 92, y: 10 },
+    ballStart: { x: 16, y: 296 },
+    cup: { x: 184, y: 20 },
     terrain: {
-      tee: { x: 2, y: 144, w: 12, h: 8, r: 3 },
+      tee: { x: 4, y: 288, w: 24, h: 16, r: 6 },
       fairway: [
-        { x: 4, y: 130, w: 16, h: 22, r: 8 },
-        { x: 0, y: 96, w: 18, h: 40, r: 10 },
-        { x: 14, y: 66, w: 28, h: 36, r: 12 },
-        { x: 40, y: 36, w: 30, h: 38, r: 12 },
-        { x: 66, y: 14, w: 28, h: 32, r: 12 }
+        { x: 8, y: 260, w: 32, h: 44, r: 16 },
+        { x: 0, y: 192, w: 36, h: 80, r: 20 },
+        { x: 28, y: 132, w: 56, h: 72, r: 24 },
+        { x: 80, y: 72, w: 60, h: 76, r: 24 },
+        { x: 132, y: 28, w: 56, h: 64, r: 24 }
       ],
-      green: { x: 80, y: 0, w: 24, h: 24, r: 12 }
+      green: { x: 160, y: 0, w: 48, h: 48, r: 24 }
     },
     obstacles: [
-      { type: 'rect', x: 16, y: 126, w: 64, h: 8 },
-      { type: 'rect', x: 0, y: 96, w: 60, h: 8 },
-      { type: 'rect', x: 40, y: 66, w: 60, h: 8 },
-      { type: 'rect', x: 0, y: 36, w: 64, h: 8 },
-      { type: 'circle', x: 76, y: 54, r: 7 },
-      { type: 'circle', x: 26, y: 18, r: 7 }
+      { type: 'rect', x: 32, y: 252, w: 128, h: 16 },
+      { type: 'rect', x: 0, y: 192, w: 120, h: 16 },
+      { type: 'rect', x: 80, y: 132, w: 120, h: 16 },
+      { type: 'rect', x: 0, y: 72, w: 128, h: 16 },
+      { type: 'circle', x: 152, y: 108, r: 14 },
+      { type: 'circle', x: 52, y: 36, r: 14 }
     ],
     hazards: [
-      { type: 'waterRect', x: 64, y: 112, w: 36, h: 16 },
-      { type: 'waterRect', x: 0, y: 48, w: 26, h: 14 },
-      { type: 'sandRect', x: 70, y: 22, w: 20, h: 14 }
+      { type: 'waterRect', x: 128, y: 224, w: 72, h: 32 },
+      { type: 'waterRect', x: 0, y: 96, w: 52, h: 28 },
+      { type: 'sandRect', x: 140, y: 44, w: 40, h: 28 }
     ]
   }
 ];
 
-const WORLD = { w: 260, h: 420 };
+const WORLD = { w: 520, h: 840 };
 const CAMERA_ZOOM = 3.2;
 const IS_WEB = Platform.OS === 'web';
 const MANUAL_PAN_GRACE_MS = 2200;
-const BALL_RADIUS_WORLD = 1.2;
-const CUP_RADIUS_WORLD = 2.0;
+const BALL_RADIUS_WORLD = 2.4;
+const CUP_RADIUS_WORLD = 4.0;
 const SHOT_PAD_SIZE = 184;
 const PAD_CENTER = SHOT_PAD_SIZE / 2;
 const SHOT_PAD_RADIUS = 78;
 const SPIN_DOT_RADIUS = 16;
 const MAX_SPIN_OFFSET = SHOT_PAD_RADIUS - SPIN_DOT_RADIUS - 10;
-const YARDS_PER_WORLD = 2.6;
+const YARDS_PER_WORLD = 1.3;
 const AIM_DOT_STEP_WORLD = 3.6;
 const PREVIEW_FRICTION = 2.1;
 const STOP_SPEED = 6;
 const GRAVITY = 30;
 const GROUND_EPSILON = 0.05;
-const FRINGE_BUFFER = 4;
+const FRINGE_BUFFER = 8;
 const MIN_BOUNCE_VZ = 3.2;
 const CLUBS = [
   { key: 'PT', name: 'Putter', short: 'PT', speed: 0.16, launch: 0.03, roll: 0.95, spin: 1.22, carryYards: 20 },
@@ -250,7 +250,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v0.5.1';
+const BUILD_VERSION = 'web v0.5.2';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
