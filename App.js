@@ -868,7 +868,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v3.0.0';
+const BUILD_VERSION = 'IGT v3.1';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -989,8 +989,20 @@ export default function App() {
   const { width: screenWidth, height: screenHeight } = useScreenSize();
   const viewWidth = Math.max(screenWidth, 320);
   const viewHeight = Math.max(screenHeight, 568);
-  const [gameScreen, setGameScreen] = useState('menu'); // 'menu' or 'playing'
+  const starField = useMemo(() => {
+    const colors = ['#FFFFFF', '#A2D2FF', '#FFC0CB'];
+    return Array.from({ length: 72 }, (_, i) => ({
+      key: `star-${i}`,
+      left: Math.random() * viewWidth,
+      top: Math.random() * viewHeight,
+      size: 1 + Math.random() * 2,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      opacity: 0.3 + Math.random() * 0.5
+    }));
+  }, [viewWidth, viewHeight]);
+  const [gameScreen, setGameScreen] = useState('menu'); // 'menu' | 'courses' | 'playing'
   const [activeCourseIndex, setActiveCourseIndex] = useState(0);
+  const [selectedCourseIndex, setSelectedCourseIndex] = useState(0);
   const ACTIVE_HOLES = COURSES[activeCourseIndex]?.holes || HOLES;
   const [puttingMode, setPuttingMode] = useState(false);
   const [puttPreview, setPuttPreview] = useState(null);
@@ -1289,6 +1301,7 @@ export default function App() {
   useEffect(() => { sunkRef.current = sunk; }, [sunk]);
   useEffect(() => { holeIndexRef.current = safeHoleIndex; }, [safeHoleIndex]);
   useEffect(() => { roundWindRef.current = roundWind; }, [roundWind]);
+  useEffect(() => { setSelectedCourseIndex(activeCourseIndex); }, [activeCourseIndex]);
 
   useEffect(() => {
     if (ballMoving) {
@@ -2334,26 +2347,151 @@ export default function App() {
     return (
       <SafeAreaView style={styles.root}>
         <StatusBar style="light" />
-        <View style={styles.courseMenuScreen}>
-          <Text style={styles.courseMenuTitle}>Atlas Golf</Text>
-          <Text style={styles.courseMenuSubtitle}>Select a Course</Text>
-          <ScrollView style={styles.courseMenuList} contentContainerStyle={styles.courseMenuListContent}>
-            {COURSES.map((course, index) => (
-              <View key={course.id} style={styles.courseMenuCard}>
-                <Text style={styles.courseMenuCardTitle}>{course.name}</Text>
-                <Text style={styles.courseMenuDesigner}>Designer: {course.designer}</Text>
-                <Text style={styles.courseMenuDescription}>{course.description}</Text>
-                <View style={styles.courseMenuMetaRow}>
-                  <View style={styles.courseMenuDifficultyBadge}>
-                    <Text style={styles.courseMenuDifficultyText}>{course.difficulty}</Text>
-                  </View>
-                  <Pressable style={styles.courseMenuPlayButton} onPress={() => startCourse(index)}>
-                    <Text style={styles.courseMenuPlayText}>Play</Text>
-                  </Pressable>
-                </View>
-              </View>
+        <View style={styles.spaceMenuScreen}>
+          <View style={styles.menuStarsLayer} pointerEvents="none">
+            {starField.map((star) => (
+              <View
+                key={star.key}
+                style={[
+                  styles.menuStar,
+                  {
+                    left: star.left,
+                    top: star.top,
+                    width: star.size,
+                    height: star.size,
+                    backgroundColor: star.color,
+                    opacity: star.opacity
+                  }
+                ]}
+              />
             ))}
-          </ScrollView>
+          </View>
+          <View style={styles.menuGreenGlow} pointerEvents="none" />
+
+          <View style={styles.menuContentWrap}>
+            <Text style={styles.menuDataBar}>◂ EST. 2155 · 14 SPECIES · 9 STAR SYSTEMS ▸</Text>
+
+            <View style={styles.menuTitleBlock}>
+              <Text style={styles.menuTitleTop}>INTERGALACTIC</Text>
+              <View style={styles.menuTitleBottomRow}>
+                <Text style={styles.menuTitleBottomMain}>G ⛳ LF</Text>
+                <Text style={styles.menuTitleTour}>TOUR</Text>
+              </View>
+            </View>
+
+            <View style={styles.heroWrap}>
+              <View style={styles.heroRing} />
+              <View style={styles.heroBall}>
+                <View style={[styles.heroDimple, { top: 20, left: 18 }]} />
+                <View style={[styles.heroDimple, { top: 26, right: 20 }]} />
+                <View style={[styles.heroDimple, { bottom: 20, left: 26 }]} />
+                <View style={[styles.heroDimple, { bottom: 24, right: 24 }]} />
+                <View style={[styles.heroDimple, { top: 40, left: 36 }]} />
+              </View>
+              <View style={styles.heroFlagPole} />
+              <View style={styles.heroFlag} />
+            </View>
+
+            <View style={styles.menuButtonStack}>
+              <View style={styles.menuButtonWrap}>
+                <View style={[styles.spaceMenuBtn, styles.spaceMenuBtnDisabled]}>
+                  <Text style={styles.spaceMenuBtnLeftMuted}>CAREER</Text>
+                  <Text style={styles.spaceMenuBtnRightMuted}>SEASON 03 &gt;</Text>
+                </View>
+                <Text style={styles.menuSoonBadge}>COMING SOON</Text>
+              </View>
+
+              <Pressable
+                style={styles.spaceMenuBtnActive}
+                onPress={() => setGameScreen('courses')}
+              >
+                <Text style={styles.spaceMenuBtnLeft}>EXHIBITION</Text>
+                <Text style={styles.spaceMenuBtnRight}>QUICK 9 &gt;</Text>
+                <View style={[styles.lCorner, styles.lCornerTopLeft]} />
+                <View style={[styles.lCorner, styles.lCornerTopRight]} />
+                <View style={[styles.lCorner, styles.lCornerBottomLeft]} />
+                <View style={[styles.lCorner, styles.lCornerBottomRight]} />
+              </Pressable>
+
+              <View style={[styles.spaceMenuBtn, styles.spaceMenuBtnDisabled]}>
+                <Text style={styles.spaceMenuBtnLeftMuted}>SETTINGS</Text>
+                <Text style={styles.spaceMenuBtnRightMuted}>&gt;</Text>
+              </View>
+            </View>
+
+            <View style={styles.menuBottomBar}>
+              <Text style={styles.menuBottomLeft}>
+                <Text style={styles.menuBottomDot}>●</Text> FOLD DRIVE · ONLINE
+              </Text>
+              <Text style={styles.menuBottomRight}>V.2187.4 ■</Text>
+            </View>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (gameScreen === 'courses') {
+    return (
+      <SafeAreaView style={styles.root}>
+        <StatusBar style="light" />
+        <View style={styles.spaceMenuScreen}>
+          <View style={styles.menuStarsLayer} pointerEvents="none">
+            {starField.map((star) => (
+              <View
+                key={`${star.key}-courses`}
+                style={[
+                  styles.menuStar,
+                  {
+                    left: star.left,
+                    top: star.top,
+                    width: star.size,
+                    height: star.size,
+                    backgroundColor: star.color,
+                    opacity: star.opacity
+                  }
+                ]}
+              />
+            ))}
+          </View>
+          <View style={styles.menuGreenGlow} pointerEvents="none" />
+
+          <View style={styles.coursesContentWrap}>
+            <Text style={styles.menuDataBar}>◂ EST. 2155 · 14 SPECIES · 9 STAR SYSTEMS ▸</Text>
+            <Text style={styles.coursesTitle}>SELECT COURSE</Text>
+
+            <ScrollView
+              style={styles.courseMenuList}
+              contentContainerStyle={styles.coursesListContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {COURSES.map((course, index) => (
+                <Pressable
+                  key={course.id}
+                  style={({ pressed }) => [
+                    styles.spaceCourseCard,
+                    selectedCourseIndex === index && styles.spaceCourseCardActive,
+                    pressed && styles.spaceCourseCardPressed
+                  ]}
+                  onPress={() => setSelectedCourseIndex(index)}
+                >
+                  <View style={styles.spaceCourseHeader}>
+                    <Text style={styles.spaceCourseTitle}>{course.name}</Text>
+                    <Text style={styles.spaceCourseDifficulty}>{course.difficulty}</Text>
+                  </View>
+                  <Text style={styles.spaceCourseDesigner}>DESIGNER · {course.designer.toUpperCase()}</Text>
+                  <Text style={styles.spaceCourseDescription}>{course.description}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            <Pressable style={styles.coursesPlayButton} onPress={() => startCourse(selectedCourseIndex)}>
+              <Text style={styles.coursesPlayButtonText}>PLAY</Text>
+            </Pressable>
+            <Pressable style={styles.coursesBackButton} onPress={() => setGameScreen('menu')}>
+              <Text style={styles.coursesBackButtonText}>BACK</Text>
+            </Pressable>
+          </View>
         </View>
       </SafeAreaView>
     );
@@ -2959,7 +3097,7 @@ export default function App() {
         {showScorecard ? (
           <View style={styles.scorecardOverlay}>
             <View style={styles.scorecardCard}>
-              <Text style={styles.scorecardTitle}>{isLastHole ? 'Round Complete!' : 'Scorecard'}</Text>
+              <Text style={styles.scorecardTitle}>{isLastHole ? 'Round Complete!' : 'IGT Scorecard'}</Text>
               {/* Horizontal scorecard — holes as columns, rows for labels/par/score */}
               <ScrollView horizontal style={styles.scorecardScrollH} showsHorizontalScrollIndicator={false}>
                 <View style={styles.scorecardTable}>
@@ -3877,86 +4015,348 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700'
   },
-  courseMenuScreen: {
+  spaceMenuScreen: {
     flex: 1,
-    backgroundColor: '#1f3d26',
+    backgroundColor: '#05070A',
+    position: 'relative',
+    overflow: 'hidden'
+  },
+  menuStarsLayer: {
+    ...StyleSheet.absoluteFillObject
+  },
+  menuStar: {
+    position: 'absolute',
+    borderRadius: 999
+  },
+  menuGreenGlow: {
+    position: 'absolute',
+    left: -100,
+    right: -100,
+    bottom: -200,
+    height: 500,
+    borderRadius: 500,
+    backgroundColor: '#13251D',
+    backgroundImage: 'radial-gradient(circle at 50% 100%, #1B3D2F 0%, #13251D 45%, rgba(5,7,10,0) 78%)',
+    opacity: 0.92
+  },
+  menuContentWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 18,
-    paddingTop: 28,
+    paddingTop: 26,
     paddingBottom: 20
   },
-  courseMenuTitle: {
-    color: '#f5fbef',
-    fontSize: 44,
+  menuDataBar: {
+    color: '#A0A0A0',
+    fontSize: 10,
+    letterSpacing: 3,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    fontFamily: Platform.select({ ios: 'Courier', android: 'monospace', default: 'monospace' })
+  },
+  menuTitleBlock: {
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 20
+  },
+  menuTitleTop: {
+    color: '#FFFFFF',
+    fontSize: 22,
     fontWeight: '800',
+    letterSpacing: 12,
+    textTransform: 'uppercase',
     textAlign: 'center'
   },
-  courseMenuSubtitle: {
-    color: '#c9e0bf',
-    fontSize: 18,
+  menuTitleBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 14
+  },
+  menuTitleBottomMain: {
+    color: '#FFFFFF',
+    fontSize: 46,
+    fontWeight: '800',
+    letterSpacing: 6,
+    textTransform: 'uppercase'
+  },
+  menuTitleTour: {
+    color: '#88F8BB',
+    fontSize: 46,
+    fontWeight: '800',
+    letterSpacing: 6,
+    textTransform: 'uppercase'
+  },
+  heroWrap: {
+    width: 150,
+    height: 140,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    marginTop: 10
+  },
+  heroRing: {
+    position: 'absolute',
+    width: 120,
+    height: 40,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(136,248,187,0.5)',
+    backgroundColor: 'rgba(136,248,187,0.08)',
+    transform: [{ rotate: '-12deg' }]
+  },
+  heroBall: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#d8dde5'
+  },
+  heroDimple: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#ced4dc'
+  },
+  heroFlagPole: {
+    position: 'absolute',
+    top: 12,
+    left: 74,
+    width: 2,
+    height: 18,
+    backgroundColor: '#88F8BB'
+  },
+  heroFlag: {
+    position: 'absolute',
+    top: 10,
+    left: 76,
+    width: 0,
+    height: 0,
+    borderTopWidth: 5,
+    borderBottomWidth: 5,
+    borderLeftWidth: 0,
+    borderRightWidth: 10,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderRightColor: '#88F8BB'
+  },
+  menuButtonStack: {
+    width: '100%',
+    alignItems: 'center',
+    gap: 12
+  },
+  menuButtonWrap: {
+    width: '100%',
+    alignItems: 'center'
+  },
+  spaceMenuBtn: {
+    width: '90%',
+    maxWidth: 340,
+    height: 56,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18
+  },
+  spaceMenuBtnDisabled: {
+    opacity: 0.5,
+    borderColor: 'rgba(255,255,255,0.08)'
+  },
+  spaceMenuBtnActive: {
+    width: '90%',
+    maxWidth: 340,
+    height: 56,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    borderWidth: 1,
+    borderColor: '#88F8BB',
+    borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    position: 'relative'
+  },
+  spaceMenuBtnLeft: {
+    color: '#FFFFFF',
+    fontSize: 16,
     fontWeight: '700',
-    textAlign: 'center',
+    letterSpacing: 4
+  },
+  spaceMenuBtnLeftMuted: {
+    color: 'rgba(255,255,255,0.3)',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 4
+  },
+  spaceMenuBtnRight: {
+    color: '#88F8BB',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1
+  },
+  spaceMenuBtnRightMuted: {
+    color: 'rgba(136,248,187,0.3)',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1
+  },
+  lCorner: {
+    position: 'absolute',
+    width: 12,
+    height: 12,
+    borderColor: '#88F8BB'
+  },
+  lCornerTopLeft: {
+    top: -1,
+    left: -1,
+    borderTopWidth: 2,
+    borderLeftWidth: 2
+  },
+  lCornerTopRight: {
+    top: -1,
+    right: -1,
+    borderTopWidth: 2,
+    borderRightWidth: 2
+  },
+  lCornerBottomLeft: {
+    bottom: -1,
+    left: -1,
+    borderBottomWidth: 2,
+    borderLeftWidth: 2
+  },
+  lCornerBottomRight: {
+    bottom: -1,
+    right: -1,
+    borderBottomWidth: 2,
+    borderRightWidth: 2
+  },
+  menuSoonBadge: {
     marginTop: 6,
-    marginBottom: 16
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 9,
+    letterSpacing: 2,
+    textTransform: 'uppercase'
+  },
+  menuBottomBar: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8
+  },
+  menuBottomLeft: {
+    color: '#A0A0A0',
+    fontSize: 10,
+    letterSpacing: 1
+  },
+  menuBottomDot: {
+    color: '#88F8BB'
+  },
+  menuBottomRight: {
+    color: '#A0A0A0',
+    fontSize: 10,
+    letterSpacing: 1
+  },
+  coursesContentWrap: {
+    flex: 1,
+    paddingHorizontal: 18,
+    paddingTop: 26,
+    paddingBottom: 20
+  },
+  coursesTitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: 8,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 14
   },
   courseMenuList: {
     flex: 1
   },
-  courseMenuListContent: {
+  coursesListContent: {
     gap: 12,
     paddingBottom: 16
   },
-  courseMenuCard: {
+  spaceCourseCard: {
     borderRadius: 16,
-    backgroundColor: 'rgba(8, 12, 10, 0.68)',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     borderWidth: 1,
-    borderColor: 'rgba(184, 220, 166, 0.24)',
+    borderColor: 'rgba(255,255,255,0.15)',
     padding: 14,
     gap: 6
   },
-  courseMenuCardTitle: {
-    color: '#f5fbef',
-    fontSize: 24,
-    fontWeight: '800'
+  spaceCourseCardActive: {
+    borderColor: '#88F8BB'
   },
-  courseMenuDesigner: {
-    color: '#b4d1a8',
-    fontSize: 13,
-    fontWeight: '600'
+  spaceCourseCardPressed: {
+    opacity: 0.85
   },
-  courseMenuDescription: {
-    color: '#d5e7cd',
-    fontSize: 14,
-    fontWeight: '600'
-  },
-  courseMenuMetaRow: {
-    marginTop: 6,
+  spaceCourseHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between'
   },
-  courseMenuDifficultyBadge: {
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 10,
-    paddingVertical: 6
+  spaceCourseTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 1
   },
-  courseMenuDifficultyText: {
-    color: '#f5fbef',
-    fontSize: 12,
-    fontWeight: '700'
+  spaceCourseDifficulty: {
+    color: '#88F8BB',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1
   },
-  courseMenuPlayButton: {
-    borderRadius: 10,
-    backgroundColor: '#4a9e3f',
-    paddingHorizontal: 16,
-    paddingVertical: 8
+  spaceCourseDesigner: {
+    color: '#A0A0A0',
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 1
   },
-  courseMenuPlayText: {
-    color: '#fff',
+  spaceCourseDescription: {
+    color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '800'
+    fontWeight: '500'
+  },
+  coursesPlayButton: {
+    marginTop: 12,
+    height: 52,
+    borderRadius: 6,
+    backgroundColor: '#88F8BB',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  coursesPlayButtonText: {
+    color: '#05070A',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 4
+  },
+  coursesBackButton: {
+    marginTop: 10,
+    height: 44,
+    borderRadius: 6,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  coursesBackButtonText: {
+    color: '#A0A0A0',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 3
   },
   scorecardOverlay: {
     position: 'absolute',
