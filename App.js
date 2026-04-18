@@ -258,7 +258,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v1.1.2';
+const BUILD_VERSION = 'web v1.2.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -283,12 +283,12 @@ const pointInCircle = (p, c) => {
 
 const getAimAngleToCup = (ballPos, cup) => Math.atan2(cup.y - ballPos.y, cup.x - ballPos.x);
 const speedFromPower = (powerPct, club = CLUBS[0]) => {
-  // Distance-calibrated: target carry in world units, then scale for drag/hang time
-  const normalized = clamp(powerPct / 100, 0, 1.2);
-  const targetWorldDist = (club.carryYards / YARDS_PER_WORLD) * normalized;
-  // Need to overshoot initial speed to account for air drag reducing distance
-  // At 0.14 drag coeff over ~1.2s, we lose about 8% to drag
-  return targetWorldDist * 0.85;
+  const powerFrac = clamp(powerPct / 100, 0, 1.2);
+  const targetCarryWorld = (club.carryYards / YARDS_PER_WORLD) * powerFrac;
+  // Analytically derive speed so ball carries exactly the target distance under air drag
+  const hangTime = (0.6 + club.launch * 0.9) * powerFrac;
+  const expFactor = 1 - Math.exp(-0.14 * hangTime);
+  return expFactor > 0.001 ? (targetCarryWorld * 0.14 / expFactor) : targetCarryWorld * 2;
 };
 const expandRect = (rect, inset) => ({
   x: rect.x - inset,
@@ -918,8 +918,9 @@ export default function App() {
       };
       flightRef.current = { z: 0, vz: 0 };
     } else {
-      const targetHangTime = 1.0 + selectedClub.launch * 1.0;
-      const launchVz = (GRAVITY * targetHangTime * 0.5) * Math.max(0.3, launchRatio) * shotMetrics.launchAdjust;
+      // Hang time scales with power so distance is proportional
+      const targetHangTime = (0.6 + selectedClub.launch * 0.9) * launchRatio;
+      const launchVz = (GRAVITY * targetHangTime * 0.5) * shotMetrics.launchAdjust;
       flightRef.current = {
         z: 0.08,
         vz: launchVz
