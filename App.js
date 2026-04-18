@@ -2786,11 +2786,12 @@ export default function App() {
                   </View>
                   <View style={styles.clubItemStats}>
                     {Object.entries(item.stats).map(([key, val]) => (
-                      <View key={key} style={styles.clubItemStatCol}>
-                        <View style={styles.clubItemStatBarBg}>
-                          <View style={[styles.clubItemStatBarFill, { height: `${val}%` }]} />
+                      <View key={key} style={styles.clubStatRow}>
+                        <Text style={styles.clubStatName}>{statLabels[key] || key}</Text>
+                        <View style={styles.clubStatBarBg}>
+                          <View style={[styles.clubStatBarFill, { width: `${val}%`, backgroundColor: val >= 70 ? '#4ade80' : val >= 40 ? '#fbbf24' : '#ef4444' }]} />
                         </View>
-                        <Text style={styles.clubItemStatLabel}>{statLabels[key] || key}</Text>
+                        <Text style={styles.clubStatValue}>{val}</Text>
                       </View>
                     ))}
                   </View>
@@ -4520,31 +4521,36 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   clubItemStats: {
+    marginTop: 4
+  },
+  clubStatRow: {
     flexDirection: 'row',
-    gap: 8,
-    alignItems: 'flex-end'
-  },
-  clubItemStatCol: {
     alignItems: 'center',
-    flex: 1
+    marginBottom: 4
   },
-  clubItemStatBarBg: {
-    width: '100%',
-    height: 32,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 3,
-    overflow: 'hidden',
-    justifyContent: 'flex-end'
+  clubStatName: {
+    color: 'rgba(245,251,239,0.6)',
+    fontSize: 11,
+    width: 42
   },
-  clubItemStatBarFill: {
-    width: '100%',
-    backgroundColor: '#4a9e3f',
-    borderRadius: 3
+  clubStatBarBg: {
+    flex: 1,
+    height: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 4,
+    marginHorizontal: 6,
+    overflow: 'hidden'
   },
-  clubItemStatLabel: {
-    color: 'rgba(245,251,239,0.4)',
-    fontSize: 9,
-    marginTop: 2
+  clubStatBarFill: {
+    height: '100%',
+    borderRadius: 4
+  },
+  clubStatValue: {
+    color: '#f5fbef',
+    fontSize: 11,
+    fontWeight: '700',
+    width: 24,
+    textAlign: 'right'
   },
   clubItemCheck: {
     position: 'absolute',
