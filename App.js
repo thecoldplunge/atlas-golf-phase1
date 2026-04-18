@@ -185,11 +185,15 @@ const CLUBS = [
 ];
 
 const SURFACE_PHYSICS = {
-  rough: { rollFriction: 4.2, bounce: 0.18, landingDamping: 0.72, wallRestitution: 0.62 },
-  fairway: { rollFriction: 3.3, bounce: 0.24, landingDamping: 0.8, wallRestitution: 0.66 },
-  fringe: { rollFriction: 3.8, bounce: 0.2, landingDamping: 0.76, wallRestitution: 0.64 },
-  sand: { rollFriction: 6.5, bounce: 0.1, landingDamping: 0.54, wallRestitution: 0.52 },
-  green: { rollFriction: 2.6, bounce: 0.14, landingDamping: 0.82, wallRestitution: 0.68 }
+  rough: { rollFriction: 4.2, bounce: 0.18, landingDamping: 0.72, wallRestitution: 0.62, powerPenalty: 0.85, label: 'Rough', emoji: '🌿', color: '#3a6b2a' },
+  deepRough: { rollFriction: 5.8, bounce: 0.12, landingDamping: 0.6, wallRestitution: 0.55, powerPenalty: 0.65, label: 'Deep Rough', emoji: '🌾', color: '#2d5420' },
+  secondCut: { rollFriction: 3.8, bounce: 0.2, landingDamping: 0.76, wallRestitution: 0.63, powerPenalty: 0.9, label: 'Second Cut', emoji: '🌱', color: '#4a8535' },
+  fairway: { rollFriction: 3.3, bounce: 0.24, landingDamping: 0.8, wallRestitution: 0.66, powerPenalty: 1.0, label: 'Fairway', emoji: '🏌️', color: '#5aad42' },
+  fringe: { rollFriction: 3.8, bounce: 0.2, landingDamping: 0.76, wallRestitution: 0.64, powerPenalty: 0.95, label: 'Fringe', emoji: '🟢', color: '#4d9940' },
+  sand: { rollFriction: 6.5, bounce: 0.1, landingDamping: 0.54, wallRestitution: 0.52, powerPenalty: 0.6, label: 'Bunker', emoji: '⛱️', color: '#d4b96a' },
+  pluggedSand: { rollFriction: 8.0, bounce: 0.05, landingDamping: 0.4, wallRestitution: 0.4, powerPenalty: 0.4, label: 'Plugged Lie', emoji: '🥚', color: '#c9a84e' },
+  green: { rollFriction: 2.6, bounce: 0.14, landingDamping: 0.82, wallRestitution: 0.68, powerPenalty: 1.0, label: 'Green', emoji: '⛳', color: '#3dba4a' },
+  tee: { rollFriction: 3.0, bounce: 0.22, landingDamping: 0.85, wallRestitution: 0.7, powerPenalty: 1.05, label: 'Tee Box', emoji: '🏌️', color: '#5aad42' }
 };
 
 const GOLFER_PIXEL_KEY = {
@@ -254,7 +258,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v0.9.3';
+const BUILD_VERSION = 'web v1.0.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -293,23 +297,15 @@ const expandRect = (rect, inset) => ({
 });
 const getSurfaceAtPoint = (hole, point) => {
   const inSand = hole.hazards?.some((h) => h.type === 'sandRect' && pointInRect(point, h));
-  if (inSand) {
-    return 'sand';
-  }
-
+  if (inSand) return 'sand';
   const terrain = hole.terrain;
-  if (terrain?.green && pointInRect(point, terrain.green)) {
-    return 'green';
-  }
-  if (terrain?.green && pointInRect(point, expandRect(terrain.green, FRINGE_BUFFER))) {
-    return 'fringe';
-  }
-  if (terrain?.fairway?.some((f) => pointInRect(point, f))) {
-    return 'fairway';
-  }
-  if (terrain?.tee && pointInRect(point, terrain.tee)) {
-    return 'fairway';
-  }
+  if (terrain?.tee && pointInRect(point, terrain.tee)) return 'tee';
+  if (terrain?.green && pointInRect(point, terrain.green)) return 'green';
+  if (terrain?.green && pointInRect(point, expandRect(terrain.green, FRINGE_BUFFER))) return 'fringe';
+  if (terrain?.fairway?.some((f) => pointInRect(point, f))) return 'fairway';
+  if (terrain?.fairway?.some((f) => pointInRect(point, expandRect(f, 12)))) return 'secondCut';
+  const nearAnything = terrain?.fairway?.some((f) => pointInRect(point, expandRect(f, 30)));
+  if (!nearAnything) return 'deepRough';
   return 'rough';
 };
 const estimateStraightDistance = (powerPct, club, strike = { launch: 1, spin: 1 }) => {
@@ -364,6 +360,14 @@ export default function App() {
   const swingStartRef = useRef({ x: 0, y: 0 });
   const swingLowestRef = useRef({ x: 0, y: 0 });
   const swingTrailRef = useRef([]); // [{x,y}] trail of forward swing path
+  const [lastShotStats, setLastShotStats] = useState(null);
+  const [showShotStats, setShowShotStats] = useState(false);
+  const shotStartPosRef = useRef(null);
+  const shotLandPosRef = useRef(null);
+  const shotPeakHeightRef = useRef(0);
+  const shotCarryRef = useRef(0);
+  const shotRollRef = useRef(0);
+  const [currentLie, setCurrentLie] = useState('tee');
   const [selectedClubIndex, setSelectedClubIndex] = useState(15);
   const [menuOpen, setMenuOpen] = useState(false);
   const [clubPickerOpen, setClubPickerOpen] = useState(false);
@@ -619,6 +623,15 @@ export default function App() {
             });
           }
 
+          // Track peak height
+          if (flight.z > shotPeakHeightRef.current) shotPeakHeightRef.current = flight.z;
+
+          // Track carry (first landing)
+          if (flight.z <= GROUND_EPSILON && shotLandPosRef.current === null && shotStartPosRef.current) {
+            shotLandPosRef.current = { x: next.x, y: next.y };
+            shotCarryRef.current = Math.hypot(next.x - shotStartPosRef.current.x, next.y - shotStartPosRef.current.y) * YARDS_PER_WORLD;
+          }
+
           const fellInWater = tickHole.hazards.some((h) => h.type === 'waterRect' && pointInRect(next, h));
           if (fellInWater) {
             resetBall({ penaltyStroke: true });
@@ -635,6 +648,25 @@ export default function App() {
           if (flight.z <= GROUND_EPSILON && Math.abs(flight.vz) < 0.35) {
             flight.z = 0;
             flight.vz = 0;
+          }
+
+          // Ball stopped — compute final stats
+          if (magnitude(vel) < 0.3 && flight.z <= GROUND_EPSILON && Math.abs(flight.vz) < 0.15 && shotStartPosRef.current) {
+            const totalDist = Math.round(Math.hypot(next.x - shotStartPosRef.current.x, next.y - shotStartPosRef.current.y) * YARDS_PER_WORLD);
+            const carry = Math.round(shotCarryRef.current);
+            const roll = Math.max(0, totalDist - carry);
+            const endLie = getSurfaceAtPoint(tickHole, next);
+            setCurrentLie(endLie);
+            setLastShotStats(prev => prev ? {
+              ...prev,
+              carry,
+              roll,
+              totalDist,
+              peakHeight: Math.round(shotPeakHeightRef.current * 3),
+              endLie
+            } : null);
+            setShowShotStats(true);
+            shotStartPosRef.current = null;
           }
         }
       }
@@ -883,16 +915,41 @@ export default function App() {
       vz: launchVz
     };
 
+    // Track shot stats
+    shotStartPosRef.current = { ...ballRef.current };
+    shotLandPosRef.current = null;
+    shotPeakHeightRef.current = 0;
+    shotCarryRef.current = 0;
+    shotRollRef.current = 0;
+    setShowShotStats(false);
+
+    const contactLabel = Math.abs(deviation) < 0.08 ? 'Center' : Math.abs(deviation) < 0.25 ? (deviation < 0 ? 'Slight Heel' : 'Slight Toe') : (deviation < 0 ? 'Heel' : 'Toe');
+    const shotShapeLabel = Math.abs(deviation) < 0.1 ? 'Straight' : deviation < -0.3 ? 'Hook' : deviation > 0.3 ? 'Slice' : deviation < 0 ? 'Draw' : 'Fade';
+
+    setLastShotStats({
+      club: selectedClub.short,
+      clubName: selectedClub.name,
+      power: effectivePower,
+      contact: contactLabel,
+      shape: shotShapeLabel,
+      deviationDeg: Math.round(swingCurveDeg * 10) / 10,
+      carry: 0,
+      roll: 0,
+      totalDist: 0,
+      peakHeight: 0,
+      startLie: currentLie,
+      endLie: 'unknown'
+    });
+
     setBallHeight(flightRef.current.z);
-    const deviationLabel = Math.abs(deviation) < 0.1 ? 'Straight' : deviation < -0.3 ? 'Pull' : deviation > 0.3 ? 'Push' : deviation < 0 ? 'Slight pull' : 'Slight push';
-    setTempoLabel(`${deviationLabel} • ${effectivePower}%`);
+    setTempoLabel(`${shotShapeLabel} • ${effectivePower}%`);
     setStrokesCurrent((s) => s + 1);
     setShotControlOpen(false);
     setSwingPhase('idle');
     setPowerPct(0);
     powerRef.current = 0;
     setSwingDeviation(0);
-    setLastShotNote(`${selectedClub.short} — ${deviationLabel.toLowerCase()}, ${effectivePower}% power.`);
+    setLastShotNote(`${selectedClub.short} — ${contactLabel}, ${shotShapeLabel.toLowerCase()}, ${effectivePower}% power.`);
   };
 
   const shotControlResponder = useMemo(
@@ -1539,6 +1596,70 @@ export default function App() {
             </View>
           ) : null}
         </View>
+
+        {/* Ball Lie PiP */}
+        {!sunk && !ballMoving ? (
+          <View style={styles.liePip}>
+            <View style={[styles.lieColorBar, { backgroundColor: (SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).color }]} />
+            <Text style={styles.lieEmoji}>{(SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).emoji}</Text>
+            <Text style={styles.lieLabel}>{(SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).label}</Text>
+            {(SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty < 1 ? (
+              <Text style={styles.liePenalty}>{Math.round((SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty * 100)}% power</Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {/* Shot Stats Card */}
+        {showShotStats && lastShotStats && !ballMoving ? (
+          <Pressable style={styles.shotStatsOverlay} onPress={() => setShowShotStats(false)}>
+            <View style={styles.shotStatsCard}>
+              <Text style={styles.shotStatsTitle}>📊 Shot Stats</Text>
+              <View style={styles.shotStatsGrid}>
+                <View style={styles.shotStatRow}>
+                  <Text style={styles.shotStatLabel}>Club</Text>
+                  <Text style={styles.shotStatValue}>{lastShotStats.clubName}</Text>
+                </View>
+                <View style={styles.shotStatRow}>
+                  <Text style={styles.shotStatLabel}>Power</Text>
+                  <Text style={styles.shotStatValue}>{lastShotStats.power}%</Text>
+                </View>
+                <View style={styles.shotStatRow}>
+                  <Text style={styles.shotStatLabel}>Carry</Text>
+                  <Text style={styles.shotStatValue}>{lastShotStats.carry} yds</Text>
+                </View>
+                <View style={styles.shotStatRow}>
+                  <Text style={styles.shotStatLabel}>Roll</Text>
+                  <Text style={styles.shotStatValue}>{lastShotStats.roll} yds</Text>
+                </View>
+                <View style={styles.shotStatRow}>
+                  <Text style={styles.shotStatLabel}>Total</Text>
+                  <Text style={[styles.shotStatValue, styles.shotStatTotal]}>{lastShotStats.totalDist} yds</Text>
+                </View>
+                <View style={styles.shotStatRow}>
+                  <Text style={styles.shotStatLabel}>Peak Height</Text>
+                  <Text style={styles.shotStatValue}>{lastShotStats.peakHeight} ft</Text>
+                </View>
+                <View style={styles.shotStatRow}>
+                  <Text style={styles.shotStatLabel}>Contact</Text>
+                  <Text style={styles.shotStatValue}>{lastShotStats.contact}</Text>
+                </View>
+                <View style={styles.shotStatRow}>
+                  <Text style={styles.shotStatLabel}>Shape</Text>
+                  <Text style={styles.shotStatValue}>{lastShotStats.shape}</Text>
+                </View>
+                <View style={styles.shotStatRow}>
+                  <Text style={styles.shotStatLabel}>Curve</Text>
+                  <Text style={styles.shotStatValue}>{lastShotStats.deviationDeg}°</Text>
+                </View>
+                <View style={styles.shotStatRow}>
+                  <Text style={styles.shotStatLabel}>Lie</Text>
+                  <Text style={styles.shotStatValue}>{(SURFACE_PHYSICS[lastShotStats.endLie] || SURFACE_PHYSICS.rough).emoji} {(SURFACE_PHYSICS[lastShotStats.endLie] || SURFACE_PHYSICS.rough).label}</Text>
+                </View>
+              </View>
+              <Text style={styles.shotStatsDismiss}>Tap to dismiss</Text>
+            </View>
+          </Pressable>
+        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -2156,5 +2277,94 @@ const styles = StyleSheet.create({
   },
   summaryText: {
     color: '#2f4730'
+  },
+  liePip: {
+    position: 'absolute',
+    top: 70,
+    right: 10,
+    backgroundColor: 'rgba(20, 35, 20, 0.88)',
+    borderRadius: 12,
+    padding: 8,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    zIndex: 100
+  },
+  lieColorBar: {
+    width: 4,
+    height: 28,
+    borderRadius: 2
+  },
+  lieEmoji: {
+    fontSize: 18
+  },
+  lieLabel: {
+    color: '#d4e8ce',
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  liePenalty: {
+    color: '#ff9944',
+    fontSize: 10,
+    fontWeight: '600'
+  },
+  shotStatsOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 200
+  },
+  shotStatsCard: {
+    backgroundColor: 'rgba(20, 38, 22, 0.96)',
+    borderRadius: 16,
+    padding: 20,
+    width: 280,
+    borderWidth: 1,
+    borderColor: 'rgba(100, 180, 100, 0.3)'
+  },
+  shotStatsTitle: {
+    color: '#e8f3e0',
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 12,
+    textAlign: 'center'
+  },
+  shotStatsGrid: {
+    gap: 6
+  },
+  shotStatRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 3,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)'
+  },
+  shotStatLabel: {
+    color: '#8aab82',
+    fontSize: 13,
+    fontWeight: '600'
+  },
+  shotStatValue: {
+    color: '#e0f0d8',
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  shotStatTotal: {
+    color: '#ffdd44',
+    fontWeight: '800'
+  },
+  shotStatsDismiss: {
+    color: 'rgba(200,220,200,0.5)',
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 12
   }
 });
