@@ -307,6 +307,7 @@ export default function App() {
   const cameraRef = useRef({ x: HOLES[0].ballStart.x, y: HOLES[0].ballStart.y });
   const manualPanUntilRef = useRef(0);
   const panCentroidRef = useRef(null);
+  const isTwoFingerPanningRef = useRef(false);
 
   const ballRef = useRef(ball);
   const velocityRef = useRef({ x: 0, y: 0 });
@@ -692,6 +693,14 @@ export default function App() {
           if (!isTouchInsideCourse(evt)) {
             return;
           }
+          const centroid = getTouchesCentroid(evt.nativeEvent);
+          if (centroid) {
+            isTwoFingerPanningRef.current = true;
+            panCentroidRef.current = centroid;
+            setIsAiming(false);
+            return;
+          }
+          isTwoFingerPanningRef.current = false;
           setIsAiming(true);
           setAimFromTouch(evt.nativeEvent.pageX, evt.nativeEvent.pageY);
         },
@@ -699,6 +708,7 @@ export default function App() {
         onPanResponderMove: (evt) => {
           const centroid = getTouchesCentroid(evt.nativeEvent);
           if (centroid) {
+            isTwoFingerPanningRef.current = true;
             const prev = panCentroidRef.current;
             if (prev) {
               const dx = centroid.x - prev.x;
@@ -713,6 +723,10 @@ export default function App() {
             return;
           }
           panCentroidRef.current = null;
+          if (isTwoFingerPanningRef.current) {
+            setIsAiming(false);
+            return;
+          }
           if (!isTouchInsideCourse(evt)) {
             return;
           }
@@ -720,9 +734,19 @@ export default function App() {
         },
         onPanResponderRelease: () => {
           setIsAiming(false);
+          if (isTwoFingerPanningRef.current) {
+            manualPanUntilRef.current = Date.now() + MANUAL_PAN_GRACE_MS;
+          }
+          isTwoFingerPanningRef.current = false;
+          panCentroidRef.current = null;
         },
         onPanResponderTerminate: () => {
           setIsAiming(false);
+          if (isTwoFingerPanningRef.current) {
+            manualPanUntilRef.current = Date.now() + MANUAL_PAN_GRACE_MS;
+          }
+          isTwoFingerPanningRef.current = false;
+          panCentroidRef.current = null;
         }
       }),
     [ballMoving, pixelsPerWorld, sunk, swingActive]
