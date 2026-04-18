@@ -750,7 +750,7 @@ const MIN_BOUNCE_VZ = 3.2;
 const CURVE_FORCE = 1.0;
 const CURVE_LAUNCH_BLEND = 0.3;
 const PUTTING_ZOOM_MULT = 1.8;
-const SLOPE_FORCE = 12.0;
+const SLOPE_FORCE = 5.0;
 const PUTT_PREVIEW_DT = 1 / 120;
 const PUTT_PREVIEW_MAX_TICKS = 1400;
 const PUTT_PREVIEW_SAMPLE_TICKS = 8;
@@ -1404,8 +1404,10 @@ export default function App() {
             vel.x *= dragFactor;
             vel.y *= dragFactor;
             const slopeAccel = getGreenSlopeForce(tickHole, ballRef.current, surfaceNamePre);
-            vel.x += slopeAccel.x * dt;
-            vel.y += slopeAccel.y * dt;
+            // Scale slope effect by ball speed — prevents slope from accelerating a stopped ball forever
+            const slopeSpeedCap = Math.min(1.0, speed / 2.0);
+            vel.x += slopeAccel.x * slopeSpeedCap * dt;
+            vel.y += slopeAccel.y * slopeSpeedCap * dt;
           } else {
             const airDrag = Math.max(0, 1 - 0.14 * dt);
             vel.x *= airDrag;
@@ -1987,8 +1989,10 @@ export default function App() {
       vel.x *= dragFactor;
       vel.y *= dragFactor;
       const slope = getGreenSlopeForce(currentHole, pos, surfaceName);
-      vel.x += slope.x * PUTT_PREVIEW_DT;
-      vel.y += slope.y * PUTT_PREVIEW_DT;
+      const previewSpeed = magnitude(vel);
+      const previewSlopeCap = Math.min(1.0, previewSpeed / 2.0);
+      vel.x += slope.x * previewSlopeCap * PUTT_PREVIEW_DT;
+      vel.y += slope.y * previewSlopeCap * PUTT_PREVIEW_DT;
 
       const restitution = surfacePhysics.wallRestitution;
       let next = {
