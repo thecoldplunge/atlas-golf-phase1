@@ -188,7 +188,7 @@ const MIN_BOUNCE_VZ = 3.2;
 const CURVE_FORCE = 1.0;
 const CURVE_LAUNCH_BLEND = 0.3;
 const PUTTING_ZOOM_MULT = 1.8;
-const SLOPE_FORCE = 1.8;
+const SLOPE_FORCE = 12.0;
 const PUTT_PREVIEW_DT = 1 / 120;
 const PUTT_PREVIEW_MAX_TICKS = 1400;
 const PUTT_PREVIEW_SAMPLE_TICKS = 8;
@@ -321,7 +321,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v2.6.1';
+const BUILD_VERSION = 'web v2.7.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -403,8 +403,8 @@ const getGreenSlopeForce = (hole, point, surfaceName) => {
   hole.slopes.forEach((slope) => {
     const centerX = green.x + green.w * clamp(slope.cx ?? 0.5, 0, 1);
     const centerY = green.y + green.h * clamp(slope.cy ?? 0.5, 0, 1);
-    const nx = (point.x - centerX) / Math.max(1, green.w * 0.55);
-    const ny = (point.y - centerY) / Math.max(1, green.h * 0.55);
+    const nx = (point.x - centerX) / Math.max(1, green.w * 0.8);
+    const ny = (point.y - centerY) / Math.max(1, green.h * 0.8);
     const influence = clamp(1 - Math.hypot(nx, ny), 0, 1);
     if (influence <= 0) {
       return;
@@ -2204,89 +2204,83 @@ export default function App() {
           <View style={styles.scorecardOverlay}>
             <View style={styles.scorecardCard}>
               <Text style={styles.scorecardTitle}>{isLastHole ? 'Round Complete!' : 'Scorecard'}</Text>
-              <View style={styles.scorecardHeaderRow}>
-                <Text style={[styles.scorecardHeaderCell, styles.scorecardColHole]}>Hole</Text>
-                <Text style={[styles.scorecardHeaderCell, styles.scorecardColPar]}>Par</Text>
-                <Text style={[styles.scorecardHeaderCell, styles.scorecardColScore]}>Score</Text>
-                <Text style={[styles.scorecardHeaderCell, styles.scorecardColDiff]}>+/-</Text>
-              </View>
-              <ScrollView style={styles.scorecardRowsWrap} contentContainerStyle={styles.scorecardRowsContent}>
-                {/* Helper to render one row */}
-                {(() => {
-                  const renderRow = (row) => {
-                    const played = row.strokes !== null;
-                    const scoreShape = played ? getScoreShape(row.strokes, row.par) : 'unplayed';
-                    const isCurrentRow = row.hole === holeIndex + 1;
-                    return (
-                      <View key={`score-row-${row.hole}`} style={[styles.scorecardRow, isCurrentRow && styles.scorecardRowCurrent]}>
-                        <View style={[styles.scorecardCell, styles.scorecardColHole]}>
-                          <Text style={styles.scorecardHoleText}>{row.hole}. {row.name}</Text>
-                        </View>
-                        <View style={[styles.scorecardCell, styles.scorecardColPar]}>
-                          <Text style={styles.scorecardCellText}>{row.par}</Text>
-                        </View>
-                        <View style={[styles.scorecardCell, styles.scorecardColScore]}>
-                          {!played ? (
-                            <Text style={styles.scorecardUnplayed}>—</Text>
-                          ) : scoreShape === 'eagle' ? (
-                            <View style={styles.scoreBadgeDoubleOuter}><View style={styles.scoreBadgeDoubleInner}><Text style={styles.scoreBadgeText}>{row.strokes}</Text></View></View>
-                          ) : scoreShape === 'birdie' ? (
-                            <View style={styles.scoreBadgeSingleCircle}><Text style={styles.scoreBadgeText}>{row.strokes}</Text></View>
-                          ) : scoreShape === 'bogey' ? (
-                            <View style={styles.scoreBadgeSingleSquare}><Text style={styles.scoreBadgeText}>{row.strokes}</Text></View>
-                          ) : scoreShape === 'doubleBogey' ? (
-                            <View style={styles.scoreBadgeDoubleSquareOuter}><View style={styles.scoreBadgeDoubleSquareInner}><Text style={styles.scoreBadgeText}>{row.strokes}</Text></View></View>
-                          ) : scoreShape === 'tripleBogey' ? (
-                            <View style={styles.scoreBadgeSolidSquare}><Text style={styles.scoreBadgeSolidText}>{row.strokes}</Text></View>
-                          ) : (
-                            <Text style={styles.scorecardCellText}>{row.strokes}</Text>
-                          )}
-                        </View>
-                        <View style={[styles.scorecardCell, styles.scorecardColDiff]}>
-                          <Text style={[styles.scorecardCellText, played && row.strokes < row.par ? styles.scoreDiffUnder : played && row.strokes > row.par ? styles.scoreDiffOver : null]}>
-                            {played ? getHoleDiffText(row.strokes, row.par) : ''}
-                          </Text>
-                        </View>
+              {/* Horizontal scorecard — holes as columns, rows for labels/par/score */}
+              <ScrollView horizontal style={styles.scorecardScrollH} showsHorizontalScrollIndicator={false}>
+                <View style={styles.scorecardTable}>
+                  {/* Hole numbers row */}
+                  <View style={styles.scorecardTableRow}>
+                    <View style={styles.scorecardLabelCell}><Text style={styles.scorecardLabelText}>Hole</Text></View>
+                    {frontNine.map((row) => (
+                      <View key={`h-${row.hole}`} style={[styles.scorecardDataCell, row.hole === holeIndex + 1 && styles.scorecardDataCellActive]}>
+                        <Text style={styles.scorecardDataText}>{row.hole}</Text>
                       </View>
-                    );
-                  };
-                  const renderSubtotal = (label, rows) => {
-                    const playedInGroup = rows.filter((r) => r.strokes !== null);
-                    const pStr = sumStrokes(playedInGroup);
-                    const pPar = sumPar(playedInGroup);
-                    const diff = pStr - pPar;
-                    const diffTxt = pStr === 0 ? '—' : diff === 0 ? 'E' : `${diff > 0 ? '+' : ''}${diff}`;
-                    return (
-                      <View key={label} style={styles.scorecardSubtotalRow}>
-                        <Text style={[styles.scorecardCell, styles.scorecardColHole, styles.scorecardSubtotalLabel]}>{label}</Text>
-                        <Text style={[styles.scorecardCell, styles.scorecardColPar, styles.scorecardSubtotalValue]}>{sumPar(rows)}</Text>
-                        <Text style={[styles.scorecardCell, styles.scorecardColScore, styles.scorecardSubtotalValue]}>{pStr || '—'}</Text>
-                        <Text style={[styles.scorecardCell, styles.scorecardColDiff, styles.scorecardSubtotalValue, diff < 0 ? styles.scoreDiffUnder : diff > 0 ? styles.scoreDiffOver : null]}>{diffTxt}</Text>
+                    ))}
+                    {HOLES.length >= 9 && <View style={styles.scorecardTotalCell}><Text style={styles.scorecardTotalCellText}>OUT</Text></View>}
+                    {backNine && backNine.map((row) => (
+                      <View key={`h-${row.hole}`} style={[styles.scorecardDataCell, row.hole === holeIndex + 1 && styles.scorecardDataCellActive]}>
+                        <Text style={styles.scorecardDataText}>{row.hole}</Text>
                       </View>
-                    );
-                  };
-                  return (
-                    <>
-                      {frontNine.map(renderRow)}
-                      {HOLES.length >= 9 && renderSubtotal('OUT (Front 9)', frontNine)}
-                      {backNine && backNine.map(renderRow)}
-                      {backNine && renderSubtotal('IN (Back 9)', backNine)}
-                    </>
-                  );
-                })()}
+                    ))}
+                    {backNine && <View style={styles.scorecardTotalCell}><Text style={styles.scorecardTotalCellText}>IN</Text></View>}
+                    <View style={styles.scorecardTotalCell}><Text style={styles.scorecardTotalCellText}>TOT</Text></View>
+                  </View>
+                  {/* Par row */}
+                  <View style={styles.scorecardTableRow}>
+                    <View style={styles.scorecardLabelCell}><Text style={styles.scorecardLabelText}>Par</Text></View>
+                    {frontNine.map((row) => (
+                      <View key={`p-${row.hole}`} style={styles.scorecardDataCell}><Text style={styles.scorecardDataText}>{row.par}</Text></View>
+                    ))}
+                    {HOLES.length >= 9 && <View style={styles.scorecardTotalCell}><Text style={styles.scorecardTotalCellText}>{sumPar(frontNine)}</Text></View>}
+                    {backNine && backNine.map((row) => (
+                      <View key={`p-${row.hole}`} style={styles.scorecardDataCell}><Text style={styles.scorecardDataText}>{row.par}</Text></View>
+                    ))}
+                    {backNine && <View style={styles.scorecardTotalCell}><Text style={styles.scorecardTotalCellText}>{sumPar(backNine)}</Text></View>}
+                    <View style={styles.scorecardTotalCell}><Text style={styles.scorecardTotalCellText}>{sumPar(scorecardRows)}</Text></View>
+                  </View>
+                  {/* Score row */}
+                  <View style={styles.scorecardTableRow}>
+                    <View style={styles.scorecardLabelCell}><Text style={styles.scorecardLabelText}>Score</Text></View>
+                    {frontNine.map((row) => {
+                      const played = row.strokes !== null;
+                      const shape = played ? getScoreShape(row.strokes, row.par) : null;
+                      return (
+                        <View key={`s-${row.hole}`} style={[styles.scorecardDataCell, row.hole === holeIndex + 1 && styles.scorecardDataCellActive]}>
+                          {!played ? <Text style={styles.scorecardUnplayed}>—</Text>
+                           : shape === 'eagle' ? <View style={styles.scoreBadgeDoubleOuter}><View style={styles.scoreBadgeDoubleInner}><Text style={styles.scoreBadgeText}>{row.strokes}</Text></View></View>
+                           : shape === 'birdie' ? <View style={styles.scoreBadgeSingleCircle}><Text style={styles.scoreBadgeText}>{row.strokes}</Text></View>
+                           : shape === 'bogey' ? <View style={styles.scoreBadgeSingleSquare}><Text style={styles.scoreBadgeText}>{row.strokes}</Text></View>
+                           : shape === 'doubleBogey' ? <View style={styles.scoreBadgeDoubleSquareOuter}><View style={styles.scoreBadgeDoubleSquareInner}><Text style={styles.scoreBadgeText}>{row.strokes}</Text></View></View>
+                           : shape === 'tripleBogey' ? <View style={styles.scoreBadgeSolidSquare}><Text style={styles.scoreBadgeSolidText}>{row.strokes}</Text></View>
+                           : <Text style={styles.scorecardDataText}>{row.strokes}</Text>}
+                        </View>
+                      );
+                    })}
+                    {HOLES.length >= 9 && <View style={styles.scorecardTotalCell}><Text style={styles.scorecardTotalCellText}>{sumStrokes(frontNine.filter(r => r.strokes !== null)) || '—'}</Text></View>}
+                    {backNine && backNine.map((row) => {
+                      const played = row.strokes !== null;
+                      const shape = played ? getScoreShape(row.strokes, row.par) : null;
+                      return (
+                        <View key={`s-${row.hole}`} style={[styles.scorecardDataCell, row.hole === holeIndex + 1 && styles.scorecardDataCellActive]}>
+                          {!played ? <Text style={styles.scorecardUnplayed}>—</Text>
+                           : shape === 'eagle' ? <View style={styles.scoreBadgeDoubleOuter}><View style={styles.scoreBadgeDoubleInner}><Text style={styles.scoreBadgeText}>{row.strokes}</Text></View></View>
+                           : shape === 'birdie' ? <View style={styles.scoreBadgeSingleCircle}><Text style={styles.scoreBadgeText}>{row.strokes}</Text></View>
+                           : shape === 'bogey' ? <View style={styles.scoreBadgeSingleSquare}><Text style={styles.scoreBadgeText}>{row.strokes}</Text></View>
+                           : shape === 'doubleBogey' ? <View style={styles.scoreBadgeDoubleSquareOuter}><View style={styles.scoreBadgeDoubleSquareInner}><Text style={styles.scoreBadgeText}>{row.strokes}</Text></View></View>
+                           : shape === 'tripleBogey' ? <View style={styles.scoreBadgeSolidSquare}><Text style={styles.scoreBadgeSolidText}>{row.strokes}</Text></View>
+                           : <Text style={styles.scorecardDataText}>{row.strokes}</Text>}
+                        </View>
+                      );
+                    })}
+                    {backNine && <View style={styles.scorecardTotalCell}><Text style={styles.scorecardTotalCellText}>{sumStrokes(backNine.filter(r => r.strokes !== null)) || '—'}</Text></View>}
+                    <View style={styles.scorecardTotalCell}><Text style={[styles.scorecardTotalCellText, scorecardDiffStyle]}>{scorecardTotalStrokes || '—'}</Text></View>
+                  </View>
+                </View>
               </ScrollView>
               <View style={styles.scorecardTotals}>
                 <View style={styles.scorecardTotalRow}>
-                  <Text style={styles.scorecardTotalLabel}>Played</Text>
-                  <Text style={styles.scorecardTotalValue}>{playedRows.length} / {HOLES.length} holes</Text>
-                </View>
-                <View style={styles.scorecardTotalRow}>
-                  <Text style={styles.scorecardTotalLabel}>Strokes / Par</Text>
-                  <Text style={styles.scorecardTotalValue}>{scorecardTotalStrokes || '—'} / {scorecardTotalPar}</Text>
-                </View>
-                <View style={styles.scorecardTotalRow}>
-                  <Text style={styles.scorecardTotalLabel}>Score</Text>
-                  <Text style={[styles.scorecardTotalValue, scorecardDiffStyle]}>{scorecardTotalStrokes ? scorecardDiffText : '—'}</Text>
+                  <Text style={styles.scorecardTotalLabel}>{playedRows.length}/{HOLES.length} played</Text>
+                  <Text style={styles.scorecardTotalValue}>{scorecardTotalStrokes || '—'} strokes (par {scorecardTotalPar})</Text>
+                  <Text style={[styles.scorecardTotalValue, scorecardDiffStyle, { fontSize: 18 }]}>{scorecardTotalStrokes ? scorecardDiffText : '—'}</Text>
                 </View>
               </View>
               {!isLastHole ? (
@@ -3123,7 +3117,7 @@ const styles = StyleSheet.create({
   },
   scorecardCard: {
     width: '100%',
-    maxWidth: 340,
+    maxWidth: 420,
     borderRadius: 16,
     backgroundColor: '#14351f',
     borderWidth: 1,
@@ -3149,72 +3143,64 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800'
   },
-  scorecardRowsWrap: {
-    maxHeight: 220
+  scorecardScrollH: {
+    maxHeight: 160
   },
-  scorecardRowsContent: {
-    gap: 4
+  scorecardTable: {
+    flexDirection: 'column',
+    gap: 3
   },
-  scorecardRow: {
+  scorecardTableRow: {
     flexDirection: 'row',
-    borderRadius: 8,
-    paddingVertical: 5,
-    paddingHorizontal: 4
+    alignItems: 'center',
+    gap: 1
   },
-  scorecardRowCurrent: {
-    backgroundColor: 'rgba(88, 154, 96, 0.28)',
-    borderWidth: 1,
-    borderColor: 'rgba(152, 214, 159, 0.7)'
+  scorecardLabelCell: {
+    width: 44,
+    height: 32,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingLeft: 2
   },
-  scorecardCell: {
-    justifyContent: 'center'
-  },
-  scorecardCellText: {
-    color: '#f2f9ed',
-    fontSize: 13,
-    fontWeight: '700'
-  },
-  scorecardColHole: {
-    width: '38%'
-  },
-  scorecardUnplayed: {
-    color: 'rgba(255,255,255,0.25)',
-    fontSize: 13
-  },
-  scorecardSubtotalRow: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderRadius: 6,
-    paddingVertical: 5,
-    paddingHorizontal: 4,
-    marginVertical: 3
-  },
-  scorecardSubtotalLabel: {
+  scorecardLabelText: {
     color: '#c8dfc4',
     fontSize: 11,
+    fontWeight: '800'
+  },
+  scorecardDataCell: {
+    width: 34,
+    height: 32,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  scorecardDataCellActive: {
+    backgroundColor: 'rgba(88, 154, 96, 0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(152, 214, 159, 0.8)'
+  },
+  scorecardDataText: {
+    color: '#f2f9ed',
+    fontSize: 12,
     fontWeight: '700'
   },
-  scorecardSubtotalValue: {
-    color: '#f0f9ed',
+  scorecardTotalCell: {
+    width: 38,
+    height: 32,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  scorecardTotalCellText: {
+    color: '#f4fcef',
     fontSize: 12,
     fontWeight: '800'
   },
-  scorecardColPar: {
-    width: '17%',
-    alignItems: 'center'
-  },
-  scorecardColScore: {
-    width: '24%',
-    alignItems: 'center'
-  },
-  scorecardColDiff: {
-    width: '21%',
-    alignItems: 'flex-end'
-  },
-  scorecardHoleText: {
-    color: '#f2f9ed',
-    fontSize: 13,
-    fontWeight: '700'
+  scorecardUnplayed: {
+    color: 'rgba(255,255,255,0.25)',
+    fontSize: 12
   },
   scoreBadgeText: {
     color: '#f2f9ed',
