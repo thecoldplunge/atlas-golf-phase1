@@ -260,7 +260,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v1.4.0';
+const BUILD_VERSION = 'web v1.4.1';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -287,8 +287,9 @@ const getAimAngleToCup = (ballPos, cup) => Math.atan2(cup.y - ballPos.y, cup.x -
 const speedFromPower = (powerPct, club = CLUBS[0]) => {
   const powerFrac = clamp(powerPct / 100, 0, 1.2);
   const targetCarryWorld = (club.carryYards / YARDS_PER_WORLD) * powerFrac;
-  // Analytically derive speed so ball carries exactly the target distance under air drag
-  const hangTime = (0.6 + club.launch * 0.9) * powerFrac;
+  // Hang time must match strikeBall: (3.2 + launch * 0.8) * launchRatio
+  const launchRatio = clamp(powerPct / 125, 0, 1);
+  const hangTime = (3.2 + club.launch * 0.8) * launchRatio;
   const expFactor = 1 - Math.exp(-0.14 * hangTime);
   return expFactor > 0.001 ? (targetCarryWorld * 0.14 / expFactor) : targetCarryWorld * 2;
 };
@@ -943,8 +944,7 @@ export default function App() {
       flightRef.current = { z: 0, vz: 0 };
     } else {
       // Real golf: all clubs peak ~90-105ft (Trackman PGA data)
-      // Driver: long gradual arc. Wedge: steep short arc. Same peak height.
-      const targetHangTime = (2.5 + selectedClub.launch * 0.6) * launchRatio;
+      const targetHangTime = (3.2 + selectedClub.launch * 0.8) * launchRatio;
       const launchVz = (GRAVITY * targetHangTime * 0.5) * shotMetrics.launchAdjust;
       flightRef.current = {
         z: 0.08,

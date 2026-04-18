@@ -32,11 +32,11 @@ function simulateShot(club, powerPct) {
   const powerFrac = clamp(powerPct / 100, 0, 1.2);
   const targetCarryWorld = (club.carryYards / YARDS_PER_WORLD) * powerFrac;
 
-  // Real golf: all clubs peak ~90-105ft (Trackman PGA data)
-  const hangTime = (2.5 + club.launch * 0.6) * powerFrac;
+  // Must match strikeBall: (2.5 + launch * 0.6) * launchRatio
+  const launchRatio = clamp(powerPct / 125, 0, 1);
+  const hangTime = (3.2 + club.launch * 0.8) * launchRatio;
 
   // Analytically compute horizSpeed so ball carries exactly targetCarryWorld
-  // carryDist = vx * (1 - e^(-drag*hangTime)) / drag
   const expFactor = 1 - Math.exp(-AIR_DRAG * hangTime);
   const vx = expFactor > 0.001 ? (targetCarryWorld * AIR_DRAG / expFactor) : targetCarryWorld * 2;
 
