@@ -1060,6 +1060,8 @@ export default function App() {
   const fullSwingPathRef = useRef([]); // entire drag path for visualization
   const peakPowerRef = useRef(0); // max power reached during backswing
   const backDeviationRef = useRef(0); // backswing L/R deviation (-1 to 1)
+  const transitionTimeRef = useRef(0); // timestamp when backswing locked into forward swing
+  const backswingStartTimeRef = useRef(0); // timestamp when backswing began
   const swingLockedRef = useRef(false); // true once forward swing starts
   const [lastShotStats, setLastShotStats] = useState(null);
   const [showShotStats, setShowShotStats] = useState(false);
@@ -2034,10 +2036,12 @@ export default function App() {
     };
   };
 
-  const strikeBall = (deviation = 0) => {
+  const strikeBall = (deviation = 0, { tempoMult = 1.0, tempoTag = 'Normal' } = {}) => {
+    // Apply tempo multiplier to deviation — rushed/slow swings are less accurate
+    const tempoAdjustedDeviation = clamp(deviation * tempoMult, -1, 1);
     if (sunk || ballMoving) return;
 
-    const launch = getLaunchData(deviation);
+    const launch = getLaunchData(tempoAdjustedDeviation);
     const speed = speedFromPower(launch.effectivePower, selectedClub);
     const liePhys = SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough;
     const [penMin, penMax] = liePhys.powerPenalty;
@@ -2107,7 +2111,8 @@ export default function App() {
     });
 
     setBallHeight(flightRef.current.z);
-    setTempoLabel(`${shotShapeLabel} • ${launch.effectivePower}%`);
+    const tempoEmoji = tempoTag === 'Perfect' ? '✨' : tempoTag === 'Smooth' ? '👌' : tempoTag === 'Rushed' ? '⚡' : tempoTag === 'Slow' ? '🐢' : '';
+    setTempoLabel(`${tempoEmoji}${tempoTag} • ${shotShapeLabel} • ${launch.effectivePower}%`);
     setStrokesCurrent((s) => s + 1);
     setShotControlOpen(false);
     setPuttPreview(null);
@@ -2178,6 +2183,8 @@ export default function App() {
           swingLowestRef.current = { x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY };
           swingTrailRef.current = [];
           fullSwingPathRef.current = [{ x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY, phase: 'start' }];
+          backswingStartTimeRef.current = Date.now();
+          transitionTimeRef.current = 0;
           setSwingPhase('backswing');
           powerRef.current = 0;
           peakPowerRef.current = 0;
@@ -2212,6 +2219,11 @@ export default function App() {
               powerRef.current = peakPowerRef.current;
               setPowerPct(peakPowerRef.current);
               setSwingPhase('forward');
+              transitionTimeRef.current = Date.now();
+              // Short buzz at the top of backswing — cue to pause
+              if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                navigator.vibrate(30);
+              }
             }
           } else {
             // FORWARD SWING: track deviation
@@ -2227,7 +2239,36 @@ export default function App() {
         },
         onPanResponderRelease: () => {
           if (powerRef.current > 5) {
-            strikeBall(swingDeviationRef.current);
+            // Compute tempo: time between reaching the top and releasing (forward swing duration)
+            const now = Date.now();
+            const forwardMs = transitionTimeRef.current > 0 ? now - transitionTimeRef.current : 999;
+            // Perfect tempo window: 80-220ms forward swing (smooth transition, not rushed or crawling)
+            // Rushed: < 60ms (blew through the top)
+            // Slow: > 350ms (froze at the top)
+            let tempoMult = 1.0; // accuracy multiplier (lower = worse)
+            let tempoTag = 'Normal';
+            if (forwardMs < 60) {
+              // Rushed — penalize deviation (magnify it)
+              tempoMult = 1.35;
+              tempoTag = 'Rushed';
+            } else if (forwardMs <= 220) {
+              // Perfect window
+              tempoMult = 0.82;
+              tempoTag = 'Perfect';
+              // Double-tap vibration for perfect tempo
+              if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                navigator.vibrate([20, 60, 20]);
+              }
+            } else if (forwardMs <= 350) {
+              // Good but slightly slow
+              tempoMult = 0.92;
+              tempoTag = 'Smooth';
+            } else {
+              // Too slow — mild penalty
+              tempoMult = 1.12;
+              tempoTag = 'Slow';
+            }
+            strikeBall(swingDeviationRef.current, { tempoMult, tempoTag });
           } else {
             setSwingPhase('idle');
             setPowerPct(0);
