@@ -136,7 +136,7 @@ const getAimAngleToCup = (ballPos, cup) => Math.atan2(cup.y - ballPos.y, cup.x -
 export default function App() {
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
   const courseWidth = clamp(screenWidth - 24, 280, 430);
-  const courseHeight = Math.min(screenHeight * 0.62, courseWidth * 1.6);
+  const courseHeight = Math.min(screenHeight * 0.58, courseWidth * 1.6);
 
   const [holeIndex, setHoleIndex] = useState(0);
   const [strokesCurrent, setStrokesCurrent] = useState(0);
@@ -380,7 +380,7 @@ export default function App() {
   const setAimFromTouch = (locationX, locationY) => {
     const target = toWorld({ x: locationX, y: locationY });
     const dir = { x: target.x - ballRef.current.x, y: target.y - ballRef.current.y };
-    if (magnitude(dir) < 1.25) {
+    if (magnitude(dir) < 0.2) {
       return;
     }
     setAimAngle(Math.atan2(dir.y, dir.x));
@@ -389,21 +389,15 @@ export default function App() {
   const aimResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: (evt) => {
+        onStartShouldSetPanResponder: () => {
           if (sunk || swingActive || ballMoving) {
             return false;
           }
-          const touch = toWorld({
-            x: evt.nativeEvent.locationX,
-            y: evt.nativeEvent.locationY
-          });
-          const distFromBall = Math.hypot(touch.x - ballRef.current.x, touch.y - ballRef.current.y);
-          if (distFromBall > 20) {
-            return false;
-          }
+          return true;
+        },
+        onPanResponderGrant: (evt) => {
           setIsAiming(true);
           setAimFromTouch(evt.nativeEvent.locationX, evt.nativeEvent.locationY);
-          return true;
         },
         onMoveShouldSetPanResponder: () => false,
         onPanResponderMove: (evt) => {
@@ -749,54 +743,37 @@ export default function App() {
         <Text style={styles.tip}>
           {isAiming
             ? 'Adjusting aim...'
-            : 'Aim: drag near ball or use L/R buttons. Swing: pull down, flick up through center.'}
+            : 'Aim: tap or press-and-drag anywhere on course. Swing: pull down, flick up through center.'}
         </Text>
 
-        <View style={styles.row}>
-          <Pressable
-            style={[styles.button, styles.ghost]}
-            onPress={() => setAimAngle((a) => a - degToRad(4))}
-            disabled={sunk || ballMoving}
-          >
-            <Text style={styles.buttonText}>Aim Left</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.button, styles.ghost]}
-            onPress={() => setAimAngle((a) => a + degToRad(4))}
-            disabled={sunk || ballMoving}
-          >
-            <Text style={styles.buttonText}>Aim Right</Text>
-          </Pressable>
-        </View>
+        <View style={styles.controlsRow}>
+          <View style={styles.swingArea}>
+            <View style={[styles.swingPad, swingActive && styles.swingPadActive]} {...swingResponder.panHandlers}>
+              <View style={styles.padRing}>
+                <View style={styles.padCenter} />
+              </View>
+              <View
+                style={[
+                  styles.pullMarker,
+                  {
+                    top: PAD_CENTER + pullDistance - 7,
+                    backgroundColor: overSwing ? '#bc3b2f' : '#f0ead3'
+                  }
+                ]}
+              />
+            </View>
+          </View>
 
-        <View style={styles.powerWrap}>
-          <View style={styles.powerHeader}>
+          <View style={styles.powerMeterWrap}>
             <Text style={styles.powerLabel}>Power {powerPct}%</Text>
-            <Text style={[styles.powerLabel, overSwing && styles.overSwingText]}>
+            <View style={styles.powerMeterTrack}>
+              <View style={[styles.powerMeterSafe, { height: `${(100 / 125) * 100}%` }]} />
+              <View style={[styles.powerMeterFill, { height: `${(powerPct / 125) * 100}%` }]} />
+              <View style={styles.powerMeterCut} />
+            </View>
+            <Text style={[styles.powerHint, overSwing && styles.overSwingText]}>
               {overSwing ? 'Over-swing zone' : 'Ideal up to 100%'}
             </Text>
-          </View>
-          <View style={styles.powerTrack}>
-            <View style={[styles.powerSafe, { width: `${(100 / 125) * 100}%` }]} />
-            <View style={[styles.powerBar, { width: `${(powerPct / 125) * 100}%` }]} />
-            <View style={styles.powerCut} />
-          </View>
-        </View>
-
-        <View style={styles.swingArea}>
-          <View style={[styles.swingPad, swingActive && styles.swingPadActive]} {...swingResponder.panHandlers}>
-            <View style={styles.padRing}>
-              <View style={styles.padCenter} />
-            </View>
-            <View
-              style={[
-                styles.pullMarker,
-                {
-                  top: PAD_CENTER + pullDistance - 7,
-                  backgroundColor: overSwing ? '#bc3b2f' : '#f0ead3'
-                }
-              ]}
-            />
           </View>
         </View>
 
@@ -966,9 +943,9 @@ const styles = StyleSheet.create({
   footer: {
     width: '100%',
     paddingHorizontal: 14,
-    paddingTop: 8,
+    paddingTop: 6,
     paddingBottom: 14,
-    gap: 8
+    gap: 7
   },
   tip: {
     fontSize: 13,
@@ -1005,53 +982,67 @@ const styles = StyleSheet.create({
   disabled: {
     opacity: 0.45
   },
-  powerWrap: {
-    gap: 4
-  },
-  powerHeader: {
+  controlsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between'
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12
   },
   powerLabel: {
     fontSize: 12,
     color: '#304232',
-    fontWeight: '700'
+    fontWeight: '700',
+    textAlign: 'center'
+  },
+  powerHint: {
+    fontSize: 11,
+    color: '#304232',
+    fontWeight: '700',
+    textAlign: 'center'
   },
   overSwingText: {
     color: '#9e352b'
   },
-  powerTrack: {
-    height: 12,
-    borderRadius: 999,
+  powerMeterWrap: {
+    width: 84,
+    alignItems: 'center',
+    gap: 4
+  },
+  powerMeterTrack: {
+    width: 30,
+    height: SWING_PAD_SIZE + 6,
+    borderRadius: 18,
     backgroundColor: '#d9e4d0',
     overflow: 'hidden',
     position: 'relative'
   },
-  powerSafe: {
+  powerMeterSafe: {
     position: 'absolute',
     left: 0,
-    top: 0,
+    right: 0,
     bottom: 0,
     backgroundColor: '#afd58f'
   },
-  powerBar: {
+  powerMeterFill: {
     position: 'absolute',
     left: 0,
-    top: 0,
+    right: 0,
     bottom: 0,
     backgroundColor: '#3f8f4c'
   },
-  powerCut: {
+  powerMeterCut: {
     position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: `${(100 / 125) * 100}%`,
-    width: 2,
+    left: 0,
+    right: 0,
+    bottom: `${(100 / 125) * 100}%`,
+    height: 2,
     backgroundColor: '#9e352b'
   },
   swingArea: {
+    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    paddingTop: 2
   },
   swingPad: {
     width: SWING_PAD_SIZE,

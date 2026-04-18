@@ -66,8 +66,9 @@ Expo will boot the app in the iOS Simulator.
 
 ## Gameplay controls
 
-- Set aim first by dragging near the ball, or use `Aim Left` / `Aim Right`
-- Swing uses a fixed bottom-center control pad (Golden Tee style):
+- Set aim by tapping anywhere on the course
+- You can also press and hold on the course, then drag to continuously adjust aim
+- Swing uses a lower control pad (Golden Tee style) with a vertical power meter on its right
 - Start thumb in the center ring
 - Pull straight down to load power (0% to 125%)
 - Flick straight up through center to strike
