@@ -250,7 +250,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v0.5.0';
+const BUILD_VERSION = 'web v0.5.1';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1343,22 +1343,8 @@ export default function App() {
             </Pressable>
 
             <View style={styles.swingDock}>
-              <Pressable
-                style={[styles.swingPad, shotControlOpen && styles.swingPadActive]}
-                onPress={() => {
-                  if (shotControlOpen) {
-                    setShotControlOpen(false);
-                    setLastShotNote('Shot shape set. Tap Hit to strike the ball.');
-                  } else {
-                    strikeBall();
-                  }
-                }}
-              >
-                <View style={styles.swingHaloOuter} />
-                <View style={styles.swingHaloInner}>
-                  <Text style={styles.swingPct}>{shotControlOpen ? 'Done' : 'Hit'}</Text>
-                </View>
-                {shotControlOpen ? (
+              {shotControlOpen ? (
+                <View style={[styles.swingPad, styles.swingPadActive]}>
                   <View style={styles.shotPadGuideWrap} {...shotControlResponder.panHandlers}>
                     <View style={styles.shotPadCrosshairH} pointerEvents="none" />
                     <View style={styles.shotPadCrosshairV} pointerEvents="none" />
@@ -1374,10 +1360,32 @@ export default function App() {
                       ]}
                     />
                   </View>
-                ) : (
+                  <Pressable
+                    style={styles.shotDoneButton}
+                    onPress={() => {
+                      setShotControlOpen(false);
+                      setLastShotNote('Shot shape set. Tap Hit to strike the ball.');
+                    }}
+                  >
+                    <Text style={styles.shotDoneText}>Done</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable
+                  style={styles.swingPad}
+                  onPress={() => {
+                    if (!sunk && !ballMoving) {
+                      strikeBall();
+                    }
+                  }}
+                >
+                  <View style={styles.swingHaloOuter} />
+                  <View style={styles.swingHaloInner}>
+                    <Text style={styles.swingPct}>Hit</Text>
+                  </View>
                   <View style={styles.spinDotClosed} pointerEvents="none" />
-                )}
-              </Pressable>
+                </Pressable>
+              )}
             </View>
           </View>
 
@@ -1889,6 +1897,23 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.08 }],
     shadowOpacity: 0.78,
     shadowRadius: 14
+  },
+  shotDoneButton: {
+    position: 'absolute',
+    bottom: 8,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    zIndex: 10
+  },
+  shotDoneText: {
+    color: '#f6fbef',
+    fontSize: 13,
+    fontWeight: '700'
   },
   spinDotClosed: {
     position: 'absolute',
