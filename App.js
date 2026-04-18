@@ -106,7 +106,7 @@ const HOLES = [
 const WORLD = { w: 100, h: 160 };
 const SWING_PAD_SIZE = 148;
 const PAD_CENTER = SWING_PAD_SIZE / 2;
-const SWING_START_RADIUS = 34;
+const SWING_START_RADIUS = 60;
 const MIN_PULL_TO_ARM = 12;
 const MAX_PULL_DISTANCE = 92;
 const PREVIEW_POWERS = [25, 50, 75, 100];
@@ -422,6 +422,11 @@ export default function App() {
     setAimAngle(Math.atan2(dir.y, dir.x));
   };
 
+  const isTouchInsideCourse = (evt) => {
+    const { locationX, locationY } = evt.nativeEvent;
+    return locationX >= 0 && locationX <= courseWidth && locationY >= 0 && locationY <= courseHeight;
+  };
+
   const aimResponder = useMemo(
     () =>
       PanResponder.create({
@@ -431,12 +436,19 @@ export default function App() {
           }
           return true;
         },
+        onStartShouldSetPanResponderCapture: (evt) => isTouchInsideCourse(evt),
         onPanResponderGrant: (evt) => {
+          if (!isTouchInsideCourse(evt)) {
+            return;
+          }
           setIsAiming(true);
           setAimFromTouch(evt.nativeEvent.locationX, evt.nativeEvent.locationY);
         },
         onMoveShouldSetPanResponder: () => false,
         onPanResponderMove: (evt) => {
+          if (!isTouchInsideCourse(evt)) {
+            return;
+          }
           setAimFromTouch(evt.nativeEvent.locationX, evt.nativeEvent.locationY);
         },
         onPanResponderRelease: () => {
@@ -446,7 +458,7 @@ export default function App() {
           setIsAiming(false);
         }
       }),
-    [ballMoving, sunk, swingActive]
+    [ballMoving, courseHeight, courseWidth, sunk, swingActive]
   );
 
   const fireSwingShot = ({ releaseDx, releaseDy }) => {
@@ -490,11 +502,25 @@ export default function App() {
           if (sunk || ballMoving) {
             return false;
           }
+          return true;
+        },
+        onStartShouldSetPanResponderCapture: () => {
+          if (sunk || ballMoving) {
+            return false;
+          }
+          return true;
+        },
+        onPanResponderGrant: (evt) => {
           const dx = evt.nativeEvent.locationX - PAD_CENTER;
           const dy = evt.nativeEvent.locationY - PAD_CENTER;
           const dist = Math.hypot(dx, dy);
           if (dist > SWING_START_RADIUS) {
-            return false;
+            swingTrackRef.current.active = false;
+            setSwingActive(false);
+            setPullDistance(0);
+            setPowerPct(0);
+            setLastShotNote('Start the swing closer to pad center.');
+            return;
           }
 
           swingTrackRef.current = {
@@ -510,9 +536,9 @@ export default function App() {
           setPullDistance(0);
           setPowerPct(0);
           setWaterNotice(false);
-          return true;
         },
-        onMoveShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: () => swingTrackRef.current.active,
+        onMoveShouldSetPanResponderCapture: () => swingTrackRef.current.active,
         onPanResponderMove: (evt) => {
           const track = swingTrackRef.current;
           if (!track.active) {
@@ -620,7 +646,6 @@ export default function App() {
     <SafeAreaView style={styles.root}>
       <StatusBar style="dark" />
       <View style={styles.header}>
-        <Text style={styles.title}>Lo-Fi Pocket Golf</Text>
         <Text style={styles.meta}>
           Hole {holeIndex + 1}/{HOLES.length} • {currentHole.name} • Par {currentHole.par}
         </Text>
@@ -946,12 +971,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 4,
     paddingBottom: 6
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#18261b',
-    letterSpacing: 0.3
   },
   meta: {
     fontSize: 14,
