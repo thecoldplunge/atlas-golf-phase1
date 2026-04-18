@@ -211,6 +211,39 @@ const CLUBS = [
   { key: 'DR', name: 'Driver', short: 'DR', speed: 1.46, launch: 0.46, roll: 1.16, spin: 0.92, carryYards: 250 }
 ];
 
+const PLAYER_ATTRIBUTES = {
+  // Skill categories (0-100 scale, 50 = amateur, 80 = pro, 100 = perfect)
+  driving: { level: 50, description: 'Driver distance and accuracy off the tee' },
+  fairwayWoods: { level: 50, description: 'Accuracy and distance with 3W, 5W, 7W' },
+  irons: { level: 50, description: 'Iron accuracy and distance control' },
+  wedges: { level: 50, description: 'Short game touch and spin control' },
+  recovery: { level: 50, description: 'Ability from sand, deep rough, plugged lies' },
+  putting: { level: 50, description: 'Putting accuracy and distance control' },
+
+  // Core attributes
+  power: { level: 50, description: 'Raw swing speed, affects max distance with all clubs' },
+  accuracy: { level: 50, description: 'Consistency of swing path, reduces deviation spread' },
+  touch: { level: 50, description: 'Fine power control, tighter power variance' },
+  spinControl: { level: 50, description: 'Ability to shape shots with draw/fade/backspin' },
+
+  // Mental game
+  focus: { level: 50, description: 'Resistance to pressure, maintains accuracy under stress' },
+  composure: { level: 50, description: 'Recovery from bad shots, prevents tilt' },
+  courseManagement: { level: 50, description: 'Smart club selection and risk assessment' }
+};
+
+// Equipment modifiers (future: each club can have equipment that modifies attributes)
+const EQUIPMENT_SLOTS = {
+  driver: { name: 'Stock Driver', powerMod: 0, accuracyMod: 0, spinMod: 0 },
+  irons: { name: 'Stock Irons', powerMod: 0, accuracyMod: 0, spinMod: 0 },
+  wedges: { name: 'Stock Wedges', powerMod: 0, accuracyMod: 0, spinMod: 0 },
+  putter: { name: 'Stock Putter', powerMod: 0, accuracyMod: 0, spinMod: 0 },
+  ball: { name: 'Standard Ball', spinMod: 0, distanceMod: 0 }
+};
+// TODO: Wire PLAYER_ATTRIBUTES into getLaunchData(), strikeBall(), and swingSensitivity
+// TODO: Wire EQUIPMENT_SLOTS into club stats modification
+// TODO: Add player profile screen to view/upgrade attributes
+
 const SURFACE_PHYSICS = {
   // powerPenalty: [min, max] for random range per shot. swingSensitivity: multiplier on swing deviation (1.0 = normal)
   rough: { rollFriction: 4.2, bounce: 0.18, landingDamping: 0.72, wallRestitution: 0.62, powerPenalty: [0.8, 0.9], swingSensitivity: 1.4, label: 'Rough', emoji: '🌿', color: '#3a6b2a' },
@@ -288,7 +321,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v2.5.0';
+const BUILD_VERSION = 'web v2.6.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -424,6 +457,8 @@ export default function App() {
   const [holeIndex, setHoleIndex] = useState(0);
   const [strokesCurrent, setStrokesCurrent] = useState(0);
   const [scores, setScores] = useState(Array(HOLES.length).fill(null));
+  const [holeScores, setHoleScores] = useState([]); // array of {hole: number, par: number, strokes: number, name: string}
+  const [showScorecard, setShowScorecard] = useState(false);
   const [roundWind, setRoundWind] = useState(() => generateWind());
   const [ball, setBall] = useState(HOLES[0].ballStart);
   const [aimAngle, setAimAngle] = useState(getAimAngleToCup(HOLES[0].ballStart, HOLES[0].cup));
@@ -545,6 +580,7 @@ export default function App() {
 
   const retryHole = () => {
     setSunk(false);
+    setShowScorecard(false);
     setWaterNotice(false);
     setStrokesCurrent(0);
     setScores((prev) => {
@@ -552,6 +588,7 @@ export default function App() {
       next[holeIndex] = null;
       return next;
     });
+    setHoleScores((prev) => prev.filter((entry) => entry.hole !== holeIndex + 1));
     velocityRef.current = { x: 0, y: 0 };
     flightRef.current = { z: 0, vz: 0 };
     setBallHeight(0);
@@ -577,6 +614,22 @@ export default function App() {
     manualPanUntilRef.current = 0;
   };
 
+  const goToNextHole = () => {
+    if (isLastHole) {
+      return;
+    }
+    setShowScorecard(false);
+    setHoleIndex((h) => h + 1);
+  };
+
+  const startNewRound = () => {
+    setShowScorecard(false);
+    setHoleScores([]);
+    setScores(Array(HOLES.length).fill(null));
+    setRoundWind(generateWind());
+    setHoleIndex(0);
+  };
+
   useEffect(() => { ballRef.current = ball; }, [ball]);
   useEffect(() => { cameraRef.current = camera; }, [camera]);
   useEffect(() => { sunkRef.current = sunk; }, [sunk]);
@@ -599,6 +652,7 @@ export default function App() {
 
   useEffect(() => {
     setSunk(false);
+    setShowScorecard(false);
     setWaterNotice(false);
     setStrokesCurrent(0);
     velocityRef.current = { x: 0, y: 0 };
@@ -817,11 +871,16 @@ export default function App() {
       setBallHeight(0);
       setBall(currentHole.cup);
       ballRef.current = currentHole.cup;
+      setHoleScores((prev) => [
+        ...prev,
+        { hole: holeIndex + 1, par: currentHole.par, strokes: strokesCurrent, name: currentHole.name }
+      ]);
       setScores((prev) => {
         const next = [...prev];
         next[holeIndex] = strokesCurrent;
         return next;
       });
+      setShowScorecard(true);
     }
   }, [ball, ballHeight, currentHole.cup.x, currentHole.cup.y, holeIndex, strokesCurrent, sunk]);
 
@@ -888,8 +947,27 @@ export default function App() {
     }
   }, [puttingMode, shotControlOpen]);
 
-  const totalScore = scores.reduce((sum, s) => (typeof s === 'number' ? sum + s : sum), 0);
-  const completed = scores.filter((s) => s != null).length;
+  const scorecardTotalStrokes = holeScores.reduce((sum, row) => sum + row.strokes, 0);
+  const scorecardTotalPar = holeScores.reduce((sum, row) => sum + row.par, 0);
+  const scorecardDiff = scorecardTotalStrokes - scorecardTotalPar;
+  const scorecardDiffText = scorecardDiff === 0 ? 'E' : `${scorecardDiff > 0 ? '+' : ''}${scorecardDiff}`;
+  const scorecardDiffStyle = scorecardDiff < 0 ? styles.scoreDiffUnder : scorecardDiff > 0 ? styles.scoreDiffOver : styles.scoreDiffEven;
+
+  const getScoreShape = (strokes, par) => {
+    const diff = strokes - par;
+    if (diff <= -2) return 'eagle';
+    if (diff === -1) return 'birdie';
+    if (diff === 1) return 'bogey';
+    if (diff === 2) return 'doubleBogey';
+    if (diff >= 3) return 'tripleBogey';
+    return 'par';
+  };
+
+  const getHoleDiffText = (strokes, par) => {
+    const diff = strokes - par;
+    if (diff === 0) return 'E';
+    return `${diff > 0 ? '+' : ''}${diff}`;
+  };
 
   const setAimFromTouch = (pageX, pageY) => {
     const frame = courseFrameRef.current;
@@ -1425,7 +1503,6 @@ export default function App() {
   const worldOffsetX = viewWidth / 2 - camera.x * pixelsPerWorld;
   const worldOffsetY = viewHeight / 2 - camera.y * pixelsPerWorld;
 
-  const finishedAll = scores.every((s) => typeof s === 'number');
   const isLastHole = holeIndex === HOLES.length - 1;
   const shotMetrics = getShotControlMetrics();
   const overSwing = powerPct > 100;
@@ -1887,9 +1964,7 @@ export default function App() {
                     disabled={!sunk}
                     onPress={() => {
                       setMenuOpen(false);
-                      if (!isLastHole) {
-                        setHoleIndex((h) => h + 1);
-                      }
+                      goToNextHole();
                     }}
                   >
                     <Text style={styles.menuItemText}>{isLastHole ? 'Round Done' : 'Next Hole'}</Text>
@@ -2088,6 +2163,8 @@ export default function App() {
           <Text style={styles.helperText}>
             {isAiming
               ? 'Adjusting aim...'
+              : showScorecard
+                ? 'Review your scorecard to continue.'
               : puttingMode
                 ? 'Putting mode: place aim point on the green, tap Simulate Putt, then swing to match the target power.'
                 : shotControlOpen
@@ -2099,24 +2176,6 @@ export default function App() {
           <Text style={styles.lastShotText}>{lastShotNote}</Text>
 
           {waterNotice && !sunk ? <Text style={styles.warning}>Water hazard: +1 stroke, ball reset.</Text> : null}
-          {sunk ? (
-            <View style={styles.sunkRow}>
-              <Text style={styles.success}>Hole complete in {strokesCurrent} strokes.</Text>
-              {!isLastHole ? (
-                <Pressable style={styles.nextHoleBtn} onPress={() => setHoleIndex((h) => h + 1)}>
-                  <Text style={styles.nextHoleBtnText}>Next Hole →</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          ) : null}
-
-          {finishedAll ? (
-            <View style={styles.summary}>
-              <Text style={styles.summaryTitle}>Round Complete</Text>
-              <Text style={styles.summaryText}>Played holes: {completed}</Text>
-              <Text style={styles.summaryText}>Final strokes: {totalScore}</Text>
-            </View>
-          ) : null}
         </View>
 
         {/* Ball Lie PiP */}
@@ -2128,6 +2187,91 @@ export default function App() {
             {((SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty[1]) < 1 ? (
               <Text style={styles.liePenalty}>{Math.round((SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty[0] * 100)}-{Math.round((SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty[1] * 100)}% power</Text>
             ) : null}
+          </View>
+        ) : null}
+
+        {showScorecard ? (
+          <View style={styles.scorecardOverlay}>
+            <View style={styles.scorecardCard}>
+              <Text style={styles.scorecardTitle}>{isLastHole ? 'Round Complete!' : 'Scorecard'}</Text>
+              <View style={styles.scorecardHeaderRow}>
+                <Text style={[styles.scorecardHeaderCell, styles.scorecardColHole]}>Hole</Text>
+                <Text style={[styles.scorecardHeaderCell, styles.scorecardColPar]}>Par</Text>
+                <Text style={[styles.scorecardHeaderCell, styles.scorecardColScore]}>Score</Text>
+                <Text style={[styles.scorecardHeaderCell, styles.scorecardColDiff]}>+/-</Text>
+              </View>
+              <ScrollView style={styles.scorecardRowsWrap} contentContainerStyle={styles.scorecardRowsContent}>
+                {holeScores.map((row) => {
+                  const scoreShape = getScoreShape(row.strokes, row.par);
+                  const isCurrentRow = row.hole === holeIndex + 1;
+                  return (
+                    <View key={`score-row-${row.hole}`} style={[styles.scorecardRow, isCurrentRow && styles.scorecardRowCurrent]}>
+                      <View style={[styles.scorecardCell, styles.scorecardColHole]}>
+                        <Text style={styles.scorecardHoleText}>{row.hole}</Text>
+                      </View>
+                      <View style={[styles.scorecardCell, styles.scorecardColPar]}>
+                        <Text style={styles.scorecardCellText}>{row.par}</Text>
+                      </View>
+                      <View style={[styles.scorecardCell, styles.scorecardColScore]}>
+                        {scoreShape === 'eagle' ? (
+                          <View style={styles.scoreBadgeDoubleOuter}>
+                            <View style={styles.scoreBadgeDoubleInner}>
+                              <Text style={styles.scoreBadgeText}>{row.strokes}</Text>
+                            </View>
+                          </View>
+                        ) : scoreShape === 'birdie' ? (
+                          <View style={styles.scoreBadgeSingleCircle}>
+                            <Text style={styles.scoreBadgeText}>{row.strokes}</Text>
+                          </View>
+                        ) : scoreShape === 'bogey' ? (
+                          <View style={styles.scoreBadgeSingleSquare}>
+                            <Text style={styles.scoreBadgeText}>{row.strokes}</Text>
+                          </View>
+                        ) : scoreShape === 'doubleBogey' ? (
+                          <View style={styles.scoreBadgeDoubleSquareOuter}>
+                            <View style={styles.scoreBadgeDoubleSquareInner}>
+                              <Text style={styles.scoreBadgeText}>{row.strokes}</Text>
+                            </View>
+                          </View>
+                        ) : scoreShape === 'tripleBogey' ? (
+                          <View style={styles.scoreBadgeSolidSquare}>
+                            <Text style={styles.scoreBadgeSolidText}>{row.strokes}</Text>
+                          </View>
+                        ) : (
+                          <Text style={styles.scorecardCellText}>{row.strokes}</Text>
+                        )}
+                      </View>
+                      <View style={[styles.scorecardCell, styles.scorecardColDiff]}>
+                        <Text style={styles.scorecardCellText}>{getHoleDiffText(row.strokes, row.par)}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+              <View style={styles.scorecardTotals}>
+                <View style={styles.scorecardTotalRow}>
+                  <Text style={styles.scorecardTotalLabel}>Total strokes</Text>
+                  <Text style={styles.scorecardTotalValue}>{scorecardTotalStrokes}</Text>
+                </View>
+                <View style={styles.scorecardTotalRow}>
+                  <Text style={styles.scorecardTotalLabel}>Total par</Text>
+                  <Text style={styles.scorecardTotalValue}>{scorecardTotalPar}</Text>
+                </View>
+                <View style={styles.scorecardTotalRow}>
+                  <Text style={styles.scorecardTotalLabel}>Overall score</Text>
+                  <Text style={[styles.scorecardTotalValue, scorecardDiffStyle]}>{scorecardDiffText}</Text>
+                </View>
+              </View>
+              {!isLastHole ? (
+                <Pressable style={styles.nextHoleBtn} onPress={goToNextHole}>
+                  <Text style={styles.nextHoleBtnText}>Next Hole →</Text>
+                </Pressable>
+              ) : (
+                <Pressable style={styles.nextHoleBtn} onPress={startNewRound}>
+                  <Text style={styles.nextHoleBtnText}>New Round</Text>
+                </Pressable>
+              )}
+            </View>
           </View>
         ) : null}
 
@@ -2937,6 +3081,196 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '700'
+  },
+  scorecardOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 260,
+    paddingHorizontal: 12
+  },
+  scorecardCard: {
+    width: '100%',
+    maxWidth: 340,
+    borderRadius: 16,
+    backgroundColor: '#14351f',
+    borderWidth: 1,
+    borderColor: 'rgba(190, 231, 188, 0.28)',
+    padding: 14,
+    gap: 8
+  },
+  scorecardTitle: {
+    color: '#f4fcef',
+    fontSize: 22,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 4
+  },
+  scorecardHeaderRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.18)',
+    paddingBottom: 6
+  },
+  scorecardHeaderCell: {
+    color: '#c8dfc4',
+    fontSize: 12,
+    fontWeight: '800'
+  },
+  scorecardRowsWrap: {
+    maxHeight: 220
+  },
+  scorecardRowsContent: {
+    gap: 4
+  },
+  scorecardRow: {
+    flexDirection: 'row',
+    borderRadius: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 4
+  },
+  scorecardRowCurrent: {
+    backgroundColor: 'rgba(88, 154, 96, 0.28)',
+    borderWidth: 1,
+    borderColor: 'rgba(152, 214, 159, 0.7)'
+  },
+  scorecardCell: {
+    justifyContent: 'center'
+  },
+  scorecardCellText: {
+    color: '#f2f9ed',
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  scorecardColHole: {
+    width: '27%'
+  },
+  scorecardColPar: {
+    width: '20%',
+    alignItems: 'center'
+  },
+  scorecardColScore: {
+    width: '28%',
+    alignItems: 'center'
+  },
+  scorecardColDiff: {
+    width: '25%',
+    alignItems: 'flex-end'
+  },
+  scorecardHoleText: {
+    color: '#f2f9ed',
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  scoreBadgeText: {
+    color: '#f2f9ed',
+    fontSize: 12,
+    fontWeight: '800'
+  },
+  scoreBadgeSingleCircle: {
+    minWidth: 26,
+    height: 26,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: '#22c55e',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 7
+  },
+  scoreBadgeDoubleOuter: {
+    minWidth: 30,
+    height: 30,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: '#22c55e',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2
+  },
+  scoreBadgeDoubleInner: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: '#22c55e',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6
+  },
+  scoreBadgeSingleSquare: {
+    minWidth: 26,
+    height: 26,
+    borderWidth: 2,
+    borderColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 7
+  },
+  scoreBadgeDoubleSquareOuter: {
+    minWidth: 30,
+    height: 30,
+    borderWidth: 2,
+    borderColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2
+  },
+  scoreBadgeDoubleSquareInner: {
+    minWidth: 22,
+    height: 22,
+    borderWidth: 2,
+    borderColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6
+  },
+  scoreBadgeSolidSquare: {
+    minWidth: 26,
+    height: 26,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 7
+  },
+  scoreBadgeSolidText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800'
+  },
+  scorecardTotals: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.18)',
+    paddingTop: 8,
+    gap: 5
+  },
+  scorecardTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  scorecardTotalLabel: {
+    color: '#d4e9d2',
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  scorecardTotalValue: {
+    color: '#f4fcef',
+    fontSize: 14,
+    fontWeight: '800'
+  },
+  scoreDiffUnder: {
+    color: '#22c55e'
+  },
+  scoreDiffOver: {
+    color: '#ef4444'
+  },
+  scoreDiffEven: {
+    color: '#ffffff'
   },
   overSwingText: {
     color: '#e07f6d'
