@@ -188,7 +188,7 @@ const MIN_BOUNCE_VZ = 3.2;
 const CURVE_FORCE = 1.0;
 const CURVE_LAUNCH_BLEND = 0.3;
 const PUTTING_ZOOM_MULT = 1.8;
-const SLOPE_FORCE = 0.6;
+const SLOPE_FORCE = 1.8;
 const PUTT_PREVIEW_DT = 1 / 120;
 const PUTT_PREVIEW_MAX_TICKS = 1400;
 const PUTT_PREVIEW_SAMPLE_TICKS = 8;
@@ -288,7 +288,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v2.4.0';
+const BUILD_VERSION = 'web v2.5.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -436,6 +436,7 @@ export default function App() {
   const powerRef = useRef(0);
   const [swingPhase, setSwingPhase] = useState('idle'); // idle | backswing | forward
   const [swingDeviation, setSwingDeviation] = useState(0); // -1 to 1, how far off center on forward swing
+  const swingDeviationRef = useRef(0);
   const swingStartRef = useRef({ x: 0, y: 0 });
   const swingLowestRef = useRef({ x: 0, y: 0 });
   const swingTrailRef = useRef([]); // [{x,y}] trail of forward swing path
@@ -619,6 +620,20 @@ export default function App() {
     shotAimAngleRef.current = getAimAngleToCup(currentHole.ballStart, currentHole.cup);
     setTempoLabel('Blue dot centered');
     setLastShotNote('Tap Yards to shape the shot, then tap the big ball to strike it.');
+    // Auto-select club based on par and distance
+    const holeDistYards = Math.hypot(currentHole.cup.x - currentHole.ballStart.x, currentHole.cup.y - currentHole.ballStart.y) * YARDS_PER_WORLD;
+    if (currentHole.par >= 4) {
+      setSelectedClubIndex(CLUBS.length - 1); // Driver
+    } else {
+      // Par 3: find club closest to hole distance
+      let bestIdx = CLUBS.length - 1;
+      let bestDiff = Infinity;
+      for (let i = 1; i < CLUBS.length; i++) { // skip putter
+        const diff = Math.abs(CLUBS[i].carryYards - holeDistYards);
+        if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+      }
+      setSelectedClubIndex(bestIdx);
+    }
   }, [holeIndex, currentHole.ballStart, currentHole.cup]);
 
   useEffect(() => {
@@ -1277,6 +1292,7 @@ export default function App() {
     setPowerPct(0);
     powerRef.current = 0;
     setSwingDeviation(0);
+    swingDeviationRef.current = 0;
     if (puttingMode) {
       const swingPower = Math.round(launch.effectivePower);
       const targetText = typeof puttTargetPowerPct === 'number' ? ` (Target: ${puttTargetPowerPct}%)` : '';
@@ -1376,11 +1392,12 @@ export default function App() {
             const devPx = currentX - centerX;
             const devNorm = clamp(devPx / 60, -1, 1);
             setSwingDeviation(devNorm);
+            swingDeviationRef.current = devNorm;
           }
         },
         onPanResponderRelease: () => {
           if (powerRef.current > 5) {
-            strikeBall(swingDeviation);
+            strikeBall(swingDeviationRef.current);
           } else {
             setSwingPhase('idle');
             setPowerPct(0);
