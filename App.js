@@ -2589,41 +2589,23 @@ export default function App() {
   }
 
   if (gameScreen === 'backstory-listen') {
+    const audioRef = { current: typeof window !== 'undefined' ? (window.__igtAudio || (window.__igtAudio = new Audio('/backstory.mp3'))) : null };
     const startSpeech = () => {
-      if (typeof window === 'undefined' || !window.speechSynthesis) return;
-      window.speechSynthesis.cancel();
-      const fullText = BACKSTORY_PARAGRAPHS.join('\n\n');
-      const utterance = new SpeechSynthesisUtterance(fullText);
-      utterance.rate = 0.88;
-      utterance.pitch = 0.95;
-      utterance.volume = 1;
-      // Try to find a deep/dramatic voice
-      const voices = window.speechSynthesis.getVoices();
-      const preferred = voices.find(v => v.name.includes('Daniel') || v.name.includes('Google UK English Male') || v.name.includes('Alex'));
-      if (preferred) utterance.voice = preferred;
-      utterance.onend = () => { setIsSpeaking(false); setSpeechPaused(false); };
-      window.speechSynthesis.speak(utterance);
+      if (!audioRef.current) return;
+      audioRef.current.currentTime = 0;
+      audioRef.current.play();
       setIsSpeaking(true);
       setSpeechPaused(false);
+      audioRef.current.onended = () => { setIsSpeaking(false); setSpeechPaused(false); };
     };
     const pauseSpeech = () => {
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.pause();
-        setSpeechPaused(true);
-      }
+      if (audioRef.current) { audioRef.current.pause(); setSpeechPaused(true); }
     };
     const resumeSpeech = () => {
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.resume();
-        setSpeechPaused(false);
-      }
+      if (audioRef.current) { audioRef.current.play(); setSpeechPaused(false); }
     };
     const stopSpeech = () => {
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-        setIsSpeaking(false);
-        setSpeechPaused(false);
-      }
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; setIsSpeaking(false); setSpeechPaused(false); }
     };
     return (
       <SafeAreaView style={styles.root}>
