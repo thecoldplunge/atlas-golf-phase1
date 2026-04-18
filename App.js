@@ -1660,6 +1660,17 @@ export default function App() {
             } : null);
             setShowShotStats(true);
             shotStartPosRef.current = null;
+            // Auto-select best club for remaining distance
+            if (endLie !== 'green') {
+              const remainYards = Math.hypot(tickHole.cup.x - next.x, tickHole.cup.y - next.y) * YARDS_PER_WORLD;
+              let autoBest = CLUBS.length - 1;
+              let autoBestDiff = Infinity;
+              for (let ci = 1; ci < CLUBS.length; ci++) {
+                const d = Math.abs(CLUBS[ci].carryYards - remainYards);
+                if (d < autoBestDiff) { autoBestDiff = d; autoBest = ci; }
+              }
+              setSelectedClubIndex(autoBest);
+            }
           }
         }
       }
