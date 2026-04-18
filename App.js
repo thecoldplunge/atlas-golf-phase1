@@ -250,7 +250,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v0.6.0';
+const BUILD_VERSION = 'web v0.7.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -352,6 +352,11 @@ export default function App() {
   const [shotControlOpen, setShotControlOpen] = useState(false);
   const [spinOffset, setSpinOffset] = useState({ x: 0, y: 0 });
   const [powerPct, setPowerPct] = useState(100);
+  const [swingPhase, setSwingPhase] = useState('idle'); // idle | charging | releasing
+  const [tempoPosition, setTempoPosition] = useState(0); // -1 to 1, 0 = center
+  const tempoRef = useRef(0);
+  const tempoDirectionRef = useRef(1);
+  const swingStartYRef = useRef(0);
   const [selectedClubIndex, setSelectedClubIndex] = useState(15);
   const [menuOpen, setMenuOpen] = useState(false);
   const [clubPickerOpen, setClubPickerOpen] = useState(false);
@@ -501,6 +506,14 @@ export default function App() {
       }
       const dt = Math.min((ts - lastTsRef.current) / 1000, 0.033);
       lastTsRef.current = ts;
+
+      // Tempo oscillation during swing charge
+      if (swingPhase === 'charging') {
+        tempoRef.current += tempoDirectionRef.current * dt * 2.4;
+        if (tempoRef.current >= 1) { tempoRef.current = 1; tempoDirectionRef.current = -1; }
+        if (tempoRef.current <= -1) { tempoRef.current = -1; tempoDirectionRef.current = 1; }
+        setTempoPosition(tempoRef.current);
+      }
 
       if (!sunk) {
         const vel = velocityRef.current;
@@ -846,10 +859,11 @@ export default function App() {
       return;
     }
 
+    const tempoAccuracy = 1 - Math.abs(tempoRef.current) * 0.35; // perfect=1, worst=0.65
     const shotMetrics = getShotControlMetrics();
     const finalAngle = aimAngle + degToRad(shotMetrics.curveDeg);
     const direction = { x: Math.cos(finalAngle), y: Math.sin(finalAngle) };
-    const speed = speedFromPower(powerPct, selectedClub);
+    const speed = speedFromPower(powerPct, selectedClub) * tempoAccuracy;
     const launchRatio = clamp(powerPct / 125, 0, 1);
     const horizSpeed = speed * (0.62 - selectedClub.launch * 0.04 + (selectedClub.roll / shotMetrics.spinAdjust) * 0.05);
     const clubLaunchBoost = selectedClub.key === 'PT' ? 1 : 0.92 + selectedClub.launch * 0.42;
@@ -907,6 +921,39 @@ export default function App() {
         }
       }),
     [ballMoving, draggingSpinDot, shotControlOpen, sunk, spinOffset.x, spinOffset.y]
+  );
+
+  const swingResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => !sunk && !ballMoving && !shotControlOpen,
+        onPanResponderGrant: (evt) => {
+          swingStartYRef.current = evt.nativeEvent.pageY;
+          setSwingPhase('charging');
+          tempoRef.current = 0;
+          tempoDirectionRef.current = 1;
+          setTempoPosition(0);
+          setPowerPct(0);
+        },
+        onPanResponderMove: (evt) => {
+          const dy = evt.nativeEvent.pageY - swingStartYRef.current;
+          const pct = clamp(Math.abs(dy) / 120 * 100, 0, 115);
+          setPowerPct(Math.round(pct));
+        },
+        onPanResponderRelease: () => {
+          setSwingPhase('idle');
+          if (powerPct > 5) {
+            strikeBall();
+          } else {
+            setPowerPct(100);
+          }
+        },
+        onPanResponderTerminate: () => {
+          setSwingPhase('idle');
+          setPowerPct(100);
+        }
+      }),
+    [ballMoving, shotControlOpen, sunk, powerPct]
   );
 
   const screenBall = toScreen(ball);
@@ -979,7 +1026,7 @@ export default function App() {
       y: screen.y,
       size: 4 + pct * 3,
       opacity: 0.5 + pct * 0.35,
-      color: shotControlOpen ? '#78b7ff' : 'rgba(245, 249, 236, 0.82)'
+      color: '#ffdd44'
     };
   });
 
@@ -1316,17 +1363,6 @@ export default function App() {
           </View>
         </View>
 
-        <View style={styles.powerRailWrap} pointerEvents="none">
-          <Text style={styles.powerRailPct}>{powerPct}%</Text>
-          <View style={styles.powerRailTrack}>
-            <View style={[styles.powerRailSafe, { height: `${(100 / 125) * 100}%` }]} />
-            <View style={[styles.powerRailFill, { height: `${(powerPct / 125) * 100}%` }]} />
-            <View style={styles.powerRailCut} />
-          </View>
-          <Text style={[styles.powerRailMeta, overSwing && styles.overSwingText]}>
-            {overSwing ? 'Over' : 'Power'}
-          </Text>
-        </View>
 
         <View style={styles.bottomOverlay}>
           <View style={styles.bottomMainRow}>
@@ -1373,19 +1409,42 @@ export default function App() {
                   </Pressable>
                 </View>
               ) : (
-                <Pressable
-                  style={styles.swingPad}
-                  accessibilityRole="button"
-                  onPress={() => {
-                    strikeBall();
-                  }}
-                >
+                <View style={styles.swingPad} {...swingResponder.panHandlers}>
+                  {/* Radial power ring */}
+                  <View style={[
+                    styles.powerRing,
+                    {
+                      width: SHOT_PAD_SIZE * clamp(powerPct / 100, 0.15, 1.15),
+                      height: SHOT_PAD_SIZE * clamp(powerPct / 100, 0.15, 1.15),
+                      borderRadius: SHOT_PAD_SIZE * clamp(powerPct / 100, 0.15, 1.15) / 2,
+                      borderColor: powerPct > 100 ? '#ff4444' : '#4adb6a',
+                      opacity: swingPhase === 'charging' ? 0.7 : 0.25
+                    }
+                  ]} />
                   <View style={styles.swingHaloOuter} />
                   <View style={styles.swingHaloInner}>
-                    <Text style={styles.swingPct}>Hit</Text>
+                    <Text style={styles.swingPct}>
+                      {swingPhase === 'charging' ? `${powerPct}%` : 'Hit'}
+                    </Text>
                   </View>
-                  <View style={styles.spinDotClosed} pointerEvents="none" />
-                </Pressable>
+                  {/* Tempo meter */}
+                  {swingPhase === 'charging' ? (
+                    <View style={styles.tempoWrap} pointerEvents="none">
+                      <View style={styles.tempoTrack}>
+                        <View style={[
+                          styles.tempoCenter
+                        ]} />
+                        <View style={[
+                          styles.tempoIndicator,
+                          { left: `${50 + tempoPosition * 40}%` }
+                        ]} />
+                      </View>
+                      <Text style={styles.tempoLabel}>
+                        {Math.abs(tempoPosition) < 0.2 ? 'Perfect' : Math.abs(tempoPosition) < 0.5 ? 'Good' : 'Off'}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
               )}
             </View>
           </View>
@@ -1567,7 +1626,12 @@ const styles = StyleSheet.create({
   },
   aimDot: {
     position: 'absolute',
-    backgroundColor: 'rgba(245, 249, 236, 0.8)'
+    backgroundColor: '#ffdd44',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0,0,0,0.5)',
+    shadowColor: '#ffdd44',
+    shadowOpacity: 0.7,
+    shadowRadius: 4
   },
   aimDotLabel: {
     position: 'absolute',
@@ -1850,6 +1914,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.48,
     shadowRadius: 12
   },
+  powerRing: {
+    position: 'absolute',
+    borderWidth: 3,
+    borderColor: '#4adb6a'
+  },
   swingHaloOuter: {
     position: 'absolute',
     width: 102,
@@ -1906,6 +1975,42 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.08 }],
     shadowOpacity: 0.78,
     shadowRadius: 14
+  },
+  tempoWrap: {
+    position: 'absolute',
+    bottom: -32,
+    width: SHOT_PAD_SIZE,
+    alignItems: 'center',
+    gap: 2
+  },
+  tempoTrack: {
+    width: 120,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    position: 'relative',
+    overflow: 'hidden'
+  },
+  tempoCenter: {
+    position: 'absolute',
+    left: '48%',
+    width: '4%',
+    height: '100%',
+    backgroundColor: 'rgba(74, 219, 106, 0.6)',
+    borderRadius: 2
+  },
+  tempoIndicator: {
+    position: 'absolute',
+    width: 6,
+    height: 8,
+    borderRadius: 3,
+    backgroundColor: '#ffdd44',
+    marginLeft: -3
+  },
+  tempoLabel: {
+    color: '#d0dfcb',
+    fontSize: 10,
+    fontWeight: '700'
   },
   shotDoneButton: {
     position: 'absolute',
