@@ -144,11 +144,11 @@ const CLUBS = [
 const TEMPO_WINDOW = { min: 220, max: 840, idealMin: 360, idealMax: 620, stall: 220 };
 
 const SURFACE_PHYSICS = {
-  rough: { rollFriction: 2.7, bounce: 0.26, landingDamping: 0.82, wallRestitution: 0.66 },
-  fairway: { rollFriction: 2.0, bounce: 0.34, landingDamping: 0.9, wallRestitution: 0.7 },
-  fringe: { rollFriction: 2.35, bounce: 0.28, landingDamping: 0.85, wallRestitution: 0.68 },
-  sand: { rollFriction: 4.9, bounce: 0.14, landingDamping: 0.62, wallRestitution: 0.58 },
-  green: { rollFriction: 1.35, bounce: 0.24, landingDamping: 0.94, wallRestitution: 0.74 }
+  rough: { rollFriction: 4.2, bounce: 0.18, landingDamping: 0.72, wallRestitution: 0.62 },
+  fairway: { rollFriction: 3.3, bounce: 0.24, landingDamping: 0.8, wallRestitution: 0.66 },
+  fringe: { rollFriction: 3.8, bounce: 0.2, landingDamping: 0.76, wallRestitution: 0.64 },
+  sand: { rollFriction: 6.5, bounce: 0.1, landingDamping: 0.54, wallRestitution: 0.52 },
+  green: { rollFriction: 2.6, bounce: 0.14, landingDamping: 0.82, wallRestitution: 0.68 }
 };
 
 const GOLFER_PIXEL_KEY = {
@@ -636,21 +636,20 @@ export default function App() {
     if (sunk) {
       return;
     }
-    if (ballHeight > 0.2 || Math.abs(flightRef.current.vz) > 0.35) {
+    if (ballHeight > 0.28 || Math.abs(flightRef.current.vz) > 0.5) {
       return;
     }
-    const vel = velocityRef.current;
-    const ballStopped = magnitude(vel) < 0.25;
-    if (!ballStopped) {
-      return;
-    }
+    const speed = magnitude(velocityRef.current);
     const dx = ball.x - currentHole.cup.x;
     const dy = ball.y - currentHole.cup.y;
     const dist = Math.hypot(dx, dy);
-    const slowEnough = magnitude(velocityRef.current) < 26 && ballHeight < 0.35;
-    if (dist < CUP_RADIUS_WORLD + BALL_RADIUS_WORLD * 0.7 && slowEnough) {
+    const captureRadius = CUP_RADIUS_WORLD + BALL_RADIUS_WORLD * 1.05;
+    const slowEnough = speed < 14;
+    if (dist < captureRadius && slowEnough) {
       setSunk(true);
       velocityRef.current = { x: 0, y: 0 };
+      flightRef.current = { z: 0, vz: 0 };
+      setBallHeight(0);
       setBall(currentHole.cup);
       ballRef.current = currentHole.cup;
       setScores((prev) => {
@@ -1222,7 +1221,7 @@ export default function App() {
             })}
           </View>
 
-          {aimLineDots.map((dot) => (
+          {!ballMoving && !sunk ? aimLineDots.map((dot) => (
             <View
               key={dot.key}
               style={[
@@ -1236,7 +1235,7 @@ export default function App() {
                 }
               ]}
             />
-          ))}
+          )) : null}
 
           <View
             style={[
