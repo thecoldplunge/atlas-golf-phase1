@@ -258,7 +258,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v1.0.3';
+const BUILD_VERSION = 'web v1.0.4';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -288,7 +288,7 @@ const speedFromPower = (powerPct, club = CLUBS[0]) => {
   const targetWorldDist = (club.carryYards / YARDS_PER_WORLD) * normalized;
   // Need to overshoot initial speed to account for air drag reducing distance
   // At 0.14 drag coeff over ~1.2s, we lose about 8% to drag
-  return targetWorldDist * 1.15;
+  return targetWorldDist * 1.6;
 };
 const expandRect = (rect, inset) => ({
   x: rect.x - inset,
@@ -908,10 +908,10 @@ export default function App() {
       y: direction.y * horizSpeed
     };
     // Hang time calibrated to match distance: higher lofted clubs hang longer proportionally
-    const targetHangTime = selectedClub.key === 'PT' ? 0.3 + launchRatio * 0.5 : 0.8 + selectedClub.launch * 0.6;
+    const targetHangTime = selectedClub.key === 'PT' ? 0.3 + launchRatio * 0.5 : 1.0 + selectedClub.launch * 1.0;
     const launchVz = selectedClub.key === 'PT'
       ? 0.8 + launchRatio * 2.4
-      : (GRAVITY * targetHangTime * 0.5) * launchRatio * shotMetrics.launchAdjust;
+      : (GRAVITY * targetHangTime * 0.5) * Math.max(0.3, launchRatio) * shotMetrics.launchAdjust;
     flightRef.current = {
       z: 0.08,
       vz: launchVz
@@ -1027,7 +1027,7 @@ export default function App() {
 
           if (dy > 0) {
             // Dragging DOWN = backswing, charging power
-            const pct = clamp(Math.round(dy / 1.2), 0, 120);
+            const pct = clamp(Math.round(dy / 0.45), 0, 120);
             powerRef.current = pct;
             setPowerPct(pct);
             swingLowestRef.current = { x: currentX, y: currentY };
