@@ -165,6 +165,8 @@ const GRAVITY = 30;
 const GROUND_EPSILON = 0.05;
 const FRINGE_BUFFER = 8;
 const MIN_BOUNCE_VZ = 3.2;
+const CURVE_FORCE = 1.0;
+const CURVE_LAUNCH_BLEND = 0.3;
 const CLUBS = [
   { key: 'PT', name: 'Putter', short: 'PT', speed: 0.16, launch: 0.03, roll: 0.95, spin: 1.22, carryYards: 40 },
   { key: 'LW', name: 'Lob Wedge', short: 'LW', speed: 0.44, launch: 1.18, roll: 0.52, spin: 0.82, carryYards: 70 },
@@ -258,7 +260,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v1.3.0';
+const BUILD_VERSION = 'web v1.4.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -371,6 +373,8 @@ export default function App() {
   const shotPeakHeightRef = useRef(0);
   const shotCarryRef = useRef(0);
   const shotRollRef = useRef(0);
+  const shotCurveDegRef = useRef(0);
+  const shotAimAngleRef = useRef(getAimAngleToCup(HOLES[0].ballStart, HOLES[0].cup));
   const [currentLie, setCurrentLie] = useState('tee');
   const [selectedClubIndex, setSelectedClubIndex] = useState(15);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -440,6 +444,8 @@ export default function App() {
     setShotControlOpen(false);
     setSpinOffset({ x: 0, y: 0 });
     powerRef.current = 0; setPowerPct(0);
+    shotCurveDegRef.current = 0;
+    shotAimAngleRef.current = getAimAngleToCup(currentHole.ballStart, currentHole.cup);
     setTempoLabel('Blue dot centered');
     const nc = clampCamera(currentHole.ballStart);
     setCamera(nc);
@@ -469,6 +475,8 @@ export default function App() {
     setShotControlOpen(false);
     setSpinOffset({ x: 0, y: 0 });
     powerRef.current = 0; setPowerPct(0);
+    shotCurveDegRef.current = 0;
+    shotAimAngleRef.current = getAimAngleToCup(currentHole.ballStart, currentHole.cup);
     setTempoLabel('Blue dot centered');
     setLastShotNote('Tap Yards to shape the shot, then tap the big ball to strike it.');
     const nc = clampCamera(currentHole.ballStart);
@@ -509,6 +517,8 @@ export default function App() {
     setShotControlOpen(false);
     setSpinOffset({ x: 0, y: 0 });
     powerRef.current = 0; setPowerPct(0);
+    shotCurveDegRef.current = 0;
+    shotAimAngleRef.current = getAimAngleToCup(currentHole.ballStart, currentHole.cup);
     setTempoLabel('Blue dot centered');
     setLastShotNote('Tap Yards to shape the shot, then tap the big ball to strike it.');
   }, [holeIndex, currentHole.ballStart, currentHole.cup]);
@@ -554,6 +564,16 @@ export default function App() {
             const wForce = wind.speed * WIND_FORCE_SCALE * dt;
             vel.x += wDir.x * wForce;
             vel.y += wDir.y * wForce;
+
+            // Shape force: bend in air relative to strike aim axis.
+            const shotCurveDeg = shotCurveDegRef.current;
+            if (Math.abs(shotCurveDeg) > 0.01) {
+              const aim = shotAimAngleRef.current;
+              const perpDir = { x: -Math.sin(aim), y: Math.cos(aim) };
+              const lateralAccel = shotCurveDeg * CURVE_FORCE;
+              vel.x += perpDir.x * lateralAccel * dt;
+              vel.y += perpDir.y * lateralAccel * dt;
+            }
           }
 
           flight.vz -= GRAVITY * dt;
@@ -876,13 +896,13 @@ export default function App() {
     const yNorm = clamp(offset.y / MAX_SPIN_OFFSET, -1, 1);
     const launchAdjust = clamp(1 - yNorm * 0.4, 0.68, 1.38);
     const spinAdjust = clamp(1 - yNorm * 0.36, 0.7, 1.34);
-    const curveDeg = xNorm * 18;
+    const curveDeg = -xNorm * 18;
     let shapeLabel = 'Dead straight';
 
-    if (xNorm < -0.55) shapeLabel = 'Slice';
-    else if (xNorm < -0.18) shapeLabel = 'Fade';
-    else if (xNorm > 0.55) shapeLabel = 'Hook';
-    else if (xNorm > 0.18) shapeLabel = 'Draw';
+    if (xNorm < -0.55) shapeLabel = 'Hook';
+    else if (xNorm < -0.18) shapeLabel = 'Draw';
+    else if (xNorm > 0.55) shapeLabel = 'Slice';
+    else if (xNorm > 0.18) shapeLabel = 'Fade';
 
     let flightLabel = 'Mid flight';
     if (yNorm < -0.4) flightLabel = 'Higher launch, less spin';
@@ -897,7 +917,9 @@ export default function App() {
     const shotMetrics = getShotControlMetrics();
     // deviation: -1 (hard left) to +1 (hard right) from forward swing path
     const swingCurveDeg = deviation * 25; // up to 25° curve from off-center swipe
-    const finalAngle = aimAngle + degToRad(shotMetrics.curveDeg + swingCurveDeg);
+    const totalCurveDeg = shotMetrics.curveDeg + swingCurveDeg;
+    const launchCurveDeg = totalCurveDeg * CURVE_LAUNCH_BLEND;
+    const finalAngle = aimAngle + degToRad(launchCurveDeg);
     const direction = { x: Math.cos(finalAngle), y: Math.sin(finalAngle) };
     const effectivePower = powerRef.current;
     const speed = speedFromPower(effectivePower, selectedClub);
@@ -909,6 +931,8 @@ export default function App() {
       x: direction.x * horizSpeed,
       y: direction.y * horizSpeed
     };
+    shotCurveDegRef.current = totalCurveDeg;
+    shotAimAngleRef.current = aimAngle;
     if (selectedClub.key === 'PT') {
       // Putter: pure ground roll, no flight. Speed calibrated so ball rolls the aim distance.
       const puttSpeed = (selectedClub.carryYards / YARDS_PER_WORLD) * launchRatio * 2.8;
@@ -1102,6 +1126,7 @@ export default function App() {
 
   const aimDir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
   const aimPerp = { x: -aimDir.y, y: aimDir.x };
+  const totalPreviewCurveDeg = shotMetrics.curveDeg + swingDeviation * 25;
   const distanceToCupWorld = Math.hypot(currentHole.cup.x - ball.x, currentHole.cup.y - ball.y);
   const yardsToCup = Math.max(0, Math.round(distanceToCupWorld * YARDS_PER_WORLD));
   const windData = WIND_PRESETS[holeIndex % WIND_PRESETS.length];
@@ -1141,7 +1166,7 @@ export default function App() {
 
   const aimLineDots = [0.25, 0.5, 0.75, 1].map((pct) => {
     const worldDist = aimGuideWorld * pct;
-    const curveOffset = Math.sin(pct * Math.PI * 0.95) * aimGuideWorld * degToRad(shotMetrics.curveDeg) * 0.55 * pct;
+    const curveOffset = Math.sin(pct * Math.PI * 0.95) * aimGuideWorld * degToRad(totalPreviewCurveDeg) * 0.55 * pct;
     const loftOffset = -(shotMetrics.launchAdjust - 1) * 10 * Math.sin(pct * Math.PI) * 0.4;
     const point = {
       x: ball.x + aimDir.x * worldDist + aimPerp.x * curveOffset,
