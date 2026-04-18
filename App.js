@@ -1370,7 +1370,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 60,
-    paddingTop: 12,
+    paddingTop: 52,
     paddingHorizontal: 12,
     elevation: 20
   },
@@ -1385,8 +1385,8 @@ const styles = StyleSheet.create({
     elevation: 30
   },
   menuButton: {
-    width: 42,
-    height: 42,
+    width: 44,
+    height: 44,
     borderRadius: 12,
     backgroundColor: 'rgba(21, 31, 24, 0.82)',
     alignItems: 'center',
@@ -1399,7 +1399,7 @@ const styles = StyleSheet.create({
   },
   menuPanel: {
     position: 'absolute',
-    top: 48,
+    top: 52,
     left: 0,
     width: 150,
     borderRadius: 14,
