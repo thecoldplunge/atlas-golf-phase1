@@ -241,7 +241,7 @@ const WIND_PRESETS = [
   { speed: 25, dir: 'SW' },
   { speed: 25, dir: 'E' }
 ];
-const WIND_FORCE_SCALE = 1.2;
+const WIND_FORCE_SCALE = 0.18;
 const SHOT_SHAPE_HINTS = {
   PT: 'Low roll',
   LW: 'High soft',
@@ -260,7 +260,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v1.4.2';
+const BUILD_VERSION = 'web v1.4.3';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
