@@ -953,7 +953,7 @@ const getSlopeDirectionUnit = (dir) => {
   return normalize(parsed);
 };
 const getGreenSlopeForce = (hole, point, surfaceName) => {
-  if (surfaceName !== 'green') {
+  if (surfaceName !== 'green' && surfaceName !== 'fringe') {
     return { x: 0, y: 0 };
   }
   const green = hole.terrain?.green;
@@ -1942,8 +1942,8 @@ export default function App() {
     let overpowerMult = 1.0;
     if (effectivePowerForPenalty > 100) {
       const overPct = effectivePowerForPenalty - 100; // 0-20
-      // Exponential: 1.0 at 100%, ~1.15 at 105%, ~1.6 at 110%, ~2.8 at 115%, ~5.0 at 120%
-      overpowerMult = Math.pow(1.08, overPct);
+      // Exponential: 1.0 at 100%, ~1.08 at 105%, ~1.35 at 110%, ~1.8 at 115%, ~2.4 at 120%
+      overpowerMult = 1.0 + (Math.pow(1.06, overPct) - 1) * 1.2;
     }
     const baseSensitivity = 40; // up from 25 — more punishing baseline
     const swingCurveDeg = deviation * baseSensitivity * lieSwingSens * overpowerMult;
@@ -2247,7 +2247,7 @@ export default function App() {
 
   const aimDir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
   const aimPerp = { x: -aimDir.y, y: aimDir.x };
-  const previewOverpowerMult = powerPct > 100 ? Math.pow(1.08, powerPct - 100) : 1.0;
+  const previewOverpowerMult = powerPct > 100 ? 1.0 + (Math.pow(1.06, powerPct - 100) - 1) * 1.2 : 1.0;
   const totalPreviewCurveDeg = shotMetrics.curveDeg + swingDeviation * 40 * previewOverpowerMult;
   const distanceToCupWorld = Math.hypot(currentHole.cup.x - ball.x, currentHole.cup.y - ball.y);
   const yardsToCup = Math.max(0, Math.round(distanceToCupWorld * YARDS_PER_WORLD));
