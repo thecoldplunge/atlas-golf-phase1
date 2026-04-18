@@ -142,7 +142,7 @@ const HOLES = [
   }
 ];
 
-const WORLD = { w: 520, h: 840 };
+const WORLD = { w: 1040, h: 1680 };
 const CAMERA_ZOOM = 3.2;
 const IS_WEB = Platform.OS === 'web';
 const MANUAL_PAN_GRACE_MS = 2200;
@@ -250,7 +250,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v0.5.2';
+const BUILD_VERSION = 'web v0.6.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -735,7 +735,7 @@ export default function App() {
           }
           return true;
         },
-        onStartShouldSetPanResponderCapture: (evt) => isTouchInsideCourse(evt),
+        onStartShouldSetPanResponderCapture: () => false,
         onPanResponderGrant: (evt) => {
           syncCourseFrame();
           if (!isTouchInsideCourse(evt)) {
@@ -750,10 +750,6 @@ export default function App() {
             return;
           }
           isTwoFingerPanningRef.current = false;
-          if (Platform.OS === 'web') {
-            setIsAiming(false);
-            return;
-          }
           setIsAiming(true);
           setAimFromTouch(evt.nativeEvent.pageX, evt.nativeEvent.pageY);
         },
@@ -776,19 +772,24 @@ export default function App() {
             return;
           }
           panCentroidRef.current = null;
-          if (Platform.OS === 'web') {
-            manualPanUntilRef.current = Date.now() + MANUAL_PAN_GRACE_MS;
-            const startCamera = webPanStartCameraRef.current || cameraRef.current;
-            setCamera(clampCamera({
-              x: startCamera.x - gestureState.dx / pixelsPerWorld,
-              y: startCamera.y - gestureState.dy / pixelsPerWorld
-            }));
-            setIsAiming(false);
-            return;
-          }
           if (isTwoFingerPanningRef.current) {
             setIsAiming(false);
             return;
+          }
+          // On web: short drag = aim, long drag = pan
+          if (Platform.OS === 'web') {
+            const totalMove = Math.hypot(gestureState.dx, gestureState.dy);
+            if (totalMove > 40) {
+              // Long drag — switch to pan mode
+              setIsAiming(false);
+              manualPanUntilRef.current = Date.now() + MANUAL_PAN_GRACE_MS;
+              const startCamera = webPanStartCameraRef.current || cameraRef.current;
+              setCamera(clampCamera({
+                x: startCamera.x - gestureState.dx / pixelsPerWorld,
+                y: startCamera.y - gestureState.dy / pixelsPerWorld
+              }));
+              return;
+            }
           }
           if (!isTouchInsideCourse(evt)) {
             return;
@@ -796,7 +797,7 @@ export default function App() {
           setAimFromTouch(evt.nativeEvent.pageX, evt.nativeEvent.pageY);
         },
         onPanResponderRelease: (evt, gestureState) => {
-          if (Platform.OS === 'web' && isTouchInsideCourse(evt) && Math.abs(gestureState.dx) < 8 && Math.abs(gestureState.dy) < 8) {
+          if (isTouchInsideCourse(evt) && Math.abs(gestureState.dx) < 40 && Math.abs(gestureState.dy) < 40) {
             setAimFromTouch(evt.nativeEvent.pageX, evt.nativeEvent.pageY);
           }
           setIsAiming(false);
@@ -1000,10 +1001,10 @@ export default function App() {
           ref={courseRef}
           onLayout={syncCourseFrame}
           style={[styles.course, { width: viewWidth, height: viewHeight }]}
-          {...aimResponder.panHandlers}
         >
-          <View style={styles.courseTintTop} pointerEvents="none" />
-          <View style={styles.courseTintBottom} pointerEvents="none" />
+          <View style={StyleSheet.absoluteFill} pointerEvents="box-none" {...aimResponder.panHandlers}>
+            <View style={styles.courseTintTop} pointerEvents="none" />
+            <View style={styles.courseTintBottom} pointerEvents="none" />
 
           <View
             style={[
@@ -1234,6 +1235,7 @@ export default function App() {
               />
             </>
           ) : null}
+          </View>
         </View>
 
         <View style={styles.topOverlay} pointerEvents="box-none">
@@ -1326,7 +1328,7 @@ export default function App() {
           </Text>
         </View>
 
-        <View style={styles.bottomOverlay} pointerEvents="box-none">
+        <View style={styles.bottomOverlay}>
           <View style={styles.bottomMainRow}>
             <Pressable
               style={[styles.clubCard, shotControlOpen && styles.clubCardActive]}
@@ -1373,10 +1375,9 @@ export default function App() {
               ) : (
                 <Pressable
                   style={styles.swingPad}
+                  accessibilityRole="button"
                   onPress={() => {
-                    if (!sunk && !ballMoving) {
-                      strikeBall();
-                    }
+                    strikeBall();
                   }}
                 >
                   <View style={styles.swingHaloOuter} />
@@ -1456,6 +1457,14 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#223923'
+  },
+  aimOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 300,
+    zIndex: 10
   },
   courseShell: {
     flex: 1
