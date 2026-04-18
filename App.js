@@ -1218,29 +1218,6 @@ export default function App() {
 
           <View
             style={[
-              styles.flagPole,
-              {
-                left: screenCup.x - 1,
-                top: screenCup.y - 18 * pixelsPerWorld,
-                height: 17 * pixelsPerWorld
-              }
-            ]}
-          />
-          <View
-            style={[
-              styles.flag,
-              {
-                left: screenCup.x,
-                top: screenCup.y - 18 * pixelsPerWorld,
-                borderTopWidth: 4 * pixelsPerWorld,
-                borderBottomWidth: 4 * pixelsPerWorld,
-                borderRightWidth: 9 * pixelsPerWorld
-              }
-            ]}
-          />
-
-          <View
-            style={[
               styles.cup,
               {
                 width: cupRadius * 2,
@@ -1282,34 +1259,38 @@ export default function App() {
             ))}
           </View>
 
-          <View
-            style={[
-              styles.ballShadow,
-              {
-                width: ballRadius * 2.05,
-                height: ballRadius * 1.15,
-                borderRadius: ballRadius,
-                left: screenBall.x - ballRadius * 1.02,
-                top: screenBall.y - ballRadius * 0.46,
-                opacity: Math.max(0.08, shadowOpacity),
-                transform: [{ scaleX: shadowScale }, { scaleY: shadowScale * 0.96 }]
-              }
-            ]}
-          />
+          {!sunk ? (
+            <>
+              <View
+                style={[
+                  styles.ballShadow,
+                  {
+                    width: ballRadius * 2.05,
+                    height: ballRadius * 1.15,
+                    borderRadius: ballRadius,
+                    left: screenBall.x - ballRadius * 1.02,
+                    top: screenBall.y - ballRadius * 0.46,
+                    opacity: Math.max(0.08, shadowOpacity),
+                    transform: [{ scaleX: shadowScale }, { scaleY: shadowScale * 0.96 }]
+                  }
+                ]}
+              />
 
-          <View
-            style={[
-              styles.ball,
-              {
-                width: ballRadius * 2,
-                height: ballRadius * 2,
-                borderRadius: ballRadius,
-                left: screenBall.x - ballRadius,
-                top: screenBall.y - ballRadius - liftPx,
-                transform: [{ scale: ballVisualScale }]
-              }
-            ]}
-          />
+              <View
+                style={[
+                  styles.ball,
+                  {
+                    width: ballRadius * 2,
+                    height: ballRadius * 2,
+                    borderRadius: ballRadius,
+                    left: screenBall.x - ballRadius,
+                    top: screenBall.y - ballRadius - liftPx,
+                    transform: [{ scale: ballVisualScale }]
+                  }
+                ]}
+              />
+            </>
+          ) : null}
         </View>
 
         <View style={styles.topOverlay} pointerEvents="box-none">
@@ -1575,19 +1556,6 @@ const styles = StyleSheet.create({
   aimDot: {
     position: 'absolute',
     backgroundColor: 'rgba(245, 249, 236, 0.8)'
-  },
-  flagPole: {
-    position: 'absolute',
-    width: 2,
-    backgroundColor: '#edf4e4'
-  },
-  flag: {
-    position: 'absolute',
-    width: 0,
-    height: 0,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
-    borderRightColor: '#f15b4f'
   },
   cup: {
     position: 'absolute',
