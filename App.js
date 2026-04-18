@@ -21,7 +21,6 @@ const HOLES = [
     id: 1,
     name: 'Pine Meadow',
     par: 4,
-    windFactor: 0.6,
     ballStart: { x: H_OFF_X + 100, y: H_OFF_Y + 296 },
     cup: { x: H_OFF_X + 156, y: H_OFF_Y + 36 },
     terrain: {
@@ -47,7 +46,6 @@ const HOLES = [
     id: 2,
     name: 'Split Gate',
     par: 3,
-    windFactor: 0.4,
     ballStart: { x: H_OFF_X + 100, y: H_OFF_Y + 300 },
     cup: { x: H_OFF_X + 164, y: H_OFF_Y + 36 },
     terrain: {
@@ -68,7 +66,6 @@ const HOLES = [
     id: 3,
     name: 'Dogleg Drift',
     par: 4,
-    windFactor: 0.8,
     ballStart: { x: H_OFF_X + 32, y: H_OFF_Y + 296 },
     cup: { x: H_OFF_X + 168, y: H_OFF_Y + 44 },
     terrain: {
@@ -94,7 +91,6 @@ const HOLES = [
     id: 4,
     name: 'Bumper Tunnel',
     par: 4,
-    windFactor: 1.0,
     ballStart: { x: H_OFF_X + 24, y: H_OFF_Y + 300 },
     cup: { x: H_OFF_X + 176, y: H_OFF_Y + 28 },
     terrain: {
@@ -121,7 +117,6 @@ const HOLES = [
     id: 5,
     name: 'Mini Maze',
     par: 5,
-    windFactor: 0.7,
     ballStart: { x: H_OFF_X + 16, y: H_OFF_Y + 296 },
     cup: { x: H_OFF_X + 184, y: H_OFF_Y + 20 },
     terrain: {
@@ -240,12 +235,14 @@ const WIND_DIRS = {
 };
 const WIND_ARROWS = { N: '↑', S: '↓', E: '→', W: '←', NE: '↗', NW: '↖', SE: '↘', SW: '↙' };
 const WIND_DIR_KEYS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-const generateWind = () => HOLES.map((hole) => {
-  const dir = WIND_DIR_KEYS[Math.floor(Math.random() * WIND_DIR_KEYS.length)];
-  const maxSpeed = Math.round(25 * (hole.windFactor || 1.0));
-  const speed = Math.max(1, Math.round(Math.random() * maxSpeed));
-  return { speed, dir };
-});
+const generateWind = () => {
+  // One random speed for the whole round (1-25 mph), direction shifts per hole
+  const roundSpeed = Math.max(1, Math.round(Math.random() * 25));
+  return HOLES.map(() => {
+    const dir = WIND_DIR_KEYS[Math.floor(Math.random() * WIND_DIR_KEYS.length)];
+    return { speed: roundSpeed, dir };
+  });
+};
 const WIND_FORCE_SCALE = 0.18;
 const SHOT_SHAPE_HINTS = {
   PT: 'Low roll',
@@ -265,7 +262,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v1.5.0';
+const BUILD_VERSION = 'web v1.5.1';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
