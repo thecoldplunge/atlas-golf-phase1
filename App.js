@@ -258,7 +258,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v1.1.0';
+const BUILD_VERSION = 'web v1.1.1';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -288,7 +288,7 @@ const speedFromPower = (powerPct, club = CLUBS[0]) => {
   const targetWorldDist = (club.carryYards / YARDS_PER_WORLD) * normalized;
   // Need to overshoot initial speed to account for air drag reducing distance
   // At 0.14 drag coeff over ~1.2s, we lose about 8% to drag
-  return targetWorldDist * 1.6;
+  return targetWorldDist * 0.85;
 };
 const expandRect = (rect, inset) => ({
   x: rect.x - inset,
