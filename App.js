@@ -287,7 +287,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v2.2.1';
+const BUILD_VERSION = 'web v2.2.2';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -344,9 +344,13 @@ const estimateStraightDistance = (powerPct, club, strike = { launch: 1, spin: 1 
   return (club.carryYards * shotRatio * strike.launch) / YARDS_PER_WORLD;
 };
 const puttPowerForDistance = (distanceWorld) => {
+  // On a flat green, total roll distance ≈ v0 / friction (geometric drag series)
+  // So v0_needed = distance * friction. Then launchRatio = v0 / basePuttSpeed.
+  const greenFriction = SURFACE_PHYSICS.green.rollFriction; // 2.6
   const basePuttSpeed = (CLUBS[0].carryYards / YARDS_PER_WORLD) * 2.8;
-  const launchRatio = basePuttSpeed > 0 ? distanceWorld / basePuttSpeed : 0;
-  return clamp(Math.round(clamp(launchRatio, 0, 1) * 125), 0, 125);
+  const v0Needed = distanceWorld * greenFriction * 1.04; // 4% overshoot corrects discrete sim gap
+  const launchRatio = basePuttSpeed > 0 ? v0Needed / basePuttSpeed : 0;
+  return clamp(Math.round(clamp(launchRatio, 0, 1) * 125), 5, 125);
 };
 const getSlopeDirectionUnit = (dir) => {
   const parsed = WIND_DIRS[dir] || { x: 0, y: 0 };
