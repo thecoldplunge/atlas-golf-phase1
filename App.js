@@ -868,7 +868,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v2.8.0';
+const BUILD_VERSION = 'web v2.9.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1027,6 +1027,7 @@ export default function App() {
   const swingTrailRef = useRef([]); // [{x,y}] trail of forward swing path
   const fullSwingPathRef = useRef([]); // entire drag path for visualization
   const peakPowerRef = useRef(0); // max power reached during backswing
+  const backDeviationRef = useRef(0); // backswing L/R deviation (-1 to 1)
   const swingLockedRef = useRef(false); // true once forward swing starts
   const [lastShotStats, setLastShotStats] = useState(null);
   const [showShotStats, setShowShotStats] = useState(false);
@@ -1835,7 +1836,16 @@ export default function App() {
   const getLaunchData = (deviation = 0, options = {}) => {
     const shotMetrics = getShotControlMetrics();
     const lieSwingSens = (SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).swingSensitivity || 1.0;
-    const swingCurveDeg = deviation * 25 * lieSwingSens;
+    // Exponential overpower penalty: above 100%, deviation is amplified exponentially
+    const effectivePowerForPenalty = options.powerPct ?? powerRef.current;
+    let overpowerMult = 1.0;
+    if (effectivePowerForPenalty > 100) {
+      const overPct = effectivePowerForPenalty - 100; // 0-20
+      // Exponential: 1.0 at 100%, ~1.15 at 105%, ~1.6 at 110%, ~2.8 at 115%, ~5.0 at 120%
+      overpowerMult = Math.pow(1.08, overPct);
+    }
+    const baseSensitivity = 40; // up from 25 — more punishing baseline
+    const swingCurveDeg = deviation * baseSensitivity * lieSwingSens * overpowerMult;
     const totalCurveDeg = shotMetrics.curveDeg + swingCurveDeg;
     const launchCurveDeg = totalCurveDeg * CURVE_LAUNCH_BLEND;
     const baseAimAngle = options.aimAngle ?? aimAngle;
@@ -1990,6 +2000,7 @@ export default function App() {
     powerRef.current = 0;
     setSwingDeviation(0);
     swingDeviationRef.current = 0;
+    backDeviationRef.current = 0;
     if (puttingMode) {
       const swingPower = Math.round(launch.effectivePower);
       const targetText = typeof puttTargetPowerPct === 'number' ? ` (Target: ${puttTargetPowerPct}%)` : '';
@@ -2073,6 +2084,9 @@ export default function App() {
               powerRef.current = pct;
               peakPowerRef.current = Math.max(peakPowerRef.current, pct);
               setPowerPct(pct);
+              // Track backswing L/R deviation from start X
+              const backDevPx = currentX - swingStartRef.current.x;
+              backDeviationRef.current = clamp(backDevPx / 50, -1, 1);
               swingLowestRef.current = { x: currentX, y: currentY };
               swingTrailRef.current = [];
             } else if (peakPowerRef.current > 5 && dyFromLowest < -8) {
@@ -2087,9 +2101,11 @@ export default function App() {
             swingTrailRef.current.push({ x: currentX, y: currentY });
             const centerX = swingLowestRef.current.x;
             const devPx = currentX - centerX;
-            const devNorm = clamp(devPx / 60, -1, 1);
-            setSwingDeviation(devNorm);
-            swingDeviationRef.current = devNorm;
+            const forwardDev = clamp(devPx / 45, -1, 1); // tighter threshold (was 60)
+            // Combine back + forward deviation (back contributes ~40%)
+            const combinedDev = clamp(forwardDev + backDeviationRef.current * 0.4, -1, 1);
+            setSwingDeviation(combinedDev);
+            swingDeviationRef.current = combinedDev;
           }
         },
         onPanResponderRelease: () => {
@@ -2129,7 +2145,8 @@ export default function App() {
 
   const aimDir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
   const aimPerp = { x: -aimDir.y, y: aimDir.x };
-  const totalPreviewCurveDeg = shotMetrics.curveDeg + swingDeviation * 25;
+  const previewOverpowerMult = powerPct > 100 ? Math.pow(1.08, powerPct - 100) : 1.0;
+  const totalPreviewCurveDeg = shotMetrics.curveDeg + swingDeviation * 40 * previewOverpowerMult;
   const distanceToCupWorld = Math.hypot(currentHole.cup.x - ball.x, currentHole.cup.y - ball.y);
   const yardsToCup = Math.max(0, Math.round(distanceToCupWorld * YARDS_PER_WORLD));
   const windData = roundWind[safeHoleIndex] || { speed: 0, dir: 'N' };
