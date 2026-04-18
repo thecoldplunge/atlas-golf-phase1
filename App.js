@@ -212,15 +212,16 @@ const CLUBS = [
 ];
 
 const SURFACE_PHYSICS = {
-  rough: { rollFriction: 4.2, bounce: 0.18, landingDamping: 0.72, wallRestitution: 0.62, powerPenalty: 0.85, label: 'Rough', emoji: '🌿', color: '#3a6b2a' },
-  deepRough: { rollFriction: 5.8, bounce: 0.12, landingDamping: 0.6, wallRestitution: 0.55, powerPenalty: 0.65, label: 'Deep Rough', emoji: '🌾', color: '#2d5420' },
-  secondCut: { rollFriction: 3.8, bounce: 0.2, landingDamping: 0.76, wallRestitution: 0.63, powerPenalty: 0.9, label: 'Second Cut', emoji: '🌱', color: '#4a8535' },
-  fairway: { rollFriction: 3.3, bounce: 0.24, landingDamping: 0.8, wallRestitution: 0.66, powerPenalty: 1.0, label: 'Fairway', emoji: '🏌️', color: '#5aad42' },
-  fringe: { rollFriction: 3.8, bounce: 0.2, landingDamping: 0.76, wallRestitution: 0.64, powerPenalty: 0.95, label: 'Fringe', emoji: '🟢', color: '#4d9940' },
-  sand: { rollFriction: 6.5, bounce: 0.1, landingDamping: 0.54, wallRestitution: 0.52, powerPenalty: 0.6, label: 'Bunker', emoji: '⛱️', color: '#d4b96a' },
-  pluggedSand: { rollFriction: 8.0, bounce: 0.05, landingDamping: 0.4, wallRestitution: 0.4, powerPenalty: 0.4, label: 'Plugged Lie', emoji: '🥚', color: '#c9a84e' },
-  green: { rollFriction: 2.6, bounce: 0.14, landingDamping: 0.82, wallRestitution: 0.68, powerPenalty: 1.0, label: 'Green', emoji: '⛳', color: '#3dba4a' },
-  tee: { rollFriction: 3.0, bounce: 0.22, landingDamping: 0.85, wallRestitution: 0.7, powerPenalty: 1.05, label: 'Tee Box', emoji: '🏌️', color: '#5aad42' }
+  // powerPenalty: [min, max] for random range per shot. swingSensitivity: multiplier on swing deviation (1.0 = normal)
+  rough: { rollFriction: 4.2, bounce: 0.18, landingDamping: 0.72, wallRestitution: 0.62, powerPenalty: [0.8, 0.9], swingSensitivity: 1.4, label: 'Rough', emoji: '🌿', color: '#3a6b2a' },
+  deepRough: { rollFriction: 5.8, bounce: 0.12, landingDamping: 0.6, wallRestitution: 0.55, powerPenalty: [0.65, 0.75], swingSensitivity: 1.8, label: 'Deep Rough', emoji: '🌾', color: '#2d5420' },
+  secondCut: { rollFriction: 3.8, bounce: 0.2, landingDamping: 0.76, wallRestitution: 0.63, powerPenalty: [0.88, 0.92], swingSensitivity: 1.2, label: 'Second Cut', emoji: '🌱', color: '#4a8535' },
+  fairway: { rollFriction: 3.3, bounce: 0.24, landingDamping: 0.8, wallRestitution: 0.66, powerPenalty: [0.95, 0.95], swingSensitivity: 1.0, label: 'Fairway', emoji: '🏌️', color: '#5aad42' },
+  fringe: { rollFriction: 3.8, bounce: 0.2, landingDamping: 0.76, wallRestitution: 0.64, powerPenalty: [0.95, 0.95], swingSensitivity: 1.1, label: 'Fringe', emoji: '🟢', color: '#4d9940' },
+  sand: { rollFriction: 6.5, bounce: 0.1, landingDamping: 0.54, wallRestitution: 0.52, powerPenalty: [0.6, 0.65], swingSensitivity: 2.0, label: 'Bunker', emoji: '⛱️', color: '#d4b96a' },
+  pluggedSand: { rollFriction: 8.0, bounce: 0.05, landingDamping: 0.4, wallRestitution: 0.4, powerPenalty: [0.35, 0.45], swingSensitivity: 2.4, label: 'Plugged Lie', emoji: '🥚', color: '#c9a84e' },
+  green: { rollFriction: 2.6, bounce: 0.14, landingDamping: 0.82, wallRestitution: 0.68, powerPenalty: [1.0, 1.0], swingSensitivity: 1.0, label: 'Green', emoji: '⛳', color: '#3dba4a' },
+  tee: { rollFriction: 3.0, bounce: 0.22, landingDamping: 0.85, wallRestitution: 0.7, powerPenalty: [1.0, 1.0], swingSensitivity: 1.0, label: 'Tee Box', emoji: '🏌️', color: '#5aad42' }
 };
 
 const GOLFER_PIXEL_KEY = {
@@ -287,7 +288,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v2.3.0';
+const BUILD_VERSION = 'web v2.3.1';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1121,7 +1122,8 @@ export default function App() {
 
   const getLaunchData = (deviation = 0, options = {}) => {
     const shotMetrics = getShotControlMetrics();
-    const swingCurveDeg = deviation * 25;
+    const lieSwingSens = (SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).swingSensitivity || 1.0;
+    const swingCurveDeg = deviation * 25 * lieSwingSens;
     const totalCurveDeg = shotMetrics.curveDeg + swingCurveDeg;
     const launchCurveDeg = totalCurveDeg * CURVE_LAUNCH_BLEND;
     const baseAimAngle = options.aimAngle ?? aimAngle;
@@ -1199,7 +1201,9 @@ export default function App() {
 
     const launch = getLaunchData(deviation);
     const speed = speedFromPower(launch.effectivePower, selectedClub);
-    const liePenalty = (SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty;
+    const liePhys = SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough;
+    const [penMin, penMax] = liePhys.powerPenalty;
+    const liePenalty = penMin + Math.random() * (penMax - penMin);
     const horizSpeed = speed * liePenalty;
 
     velocityRef.current = {
@@ -2104,8 +2108,8 @@ export default function App() {
             <View style={[styles.lieColorBar, { backgroundColor: (SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).color }]} />
             <Text style={styles.lieEmoji}>{(SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).emoji}</Text>
             <Text style={styles.lieLabel}>{(SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).label}</Text>
-            {(SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty < 1 ? (
-              <Text style={styles.liePenalty}>{Math.round((SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty * 100)}% power</Text>
+            {((SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty[1]) < 1 ? (
+              <Text style={styles.liePenalty}>{Math.round((SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty[0] * 100)}-{Math.round((SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty[1] * 100)}% power</Text>
             ) : null}
           </View>
         ) : null}
