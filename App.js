@@ -257,15 +257,11 @@ const getSurfaceAtPoint = (hole, point) => {
   return 'rough';
 };
 const estimateStraightDistance = (powerPct, club, tempo) => {
-  const startSpeed = speedFromPower(powerPct, club, tempo);
-  if (startSpeed <= STOP_SPEED) {
-    return 0;
-  }
-  const launchRatio = clamp(powerPct / 125, 0, 1);
-  const carry = 4 + launchRatio * launchRatio * 22 * club.speed + 16 * club.launch * tempo.launch;
-  const rollSpeed = startSpeed * (0.8 + club.roll * 0.15 - club.launch * 0.08);
-  const friction = PREVIEW_FRICTION * (1.14 / club.roll);
-  return carry + Math.max(0, (rollSpeed - STOP_SPEED) / friction);
+  const shotRatio = clamp(powerPct / 125, 0, 1);
+  const effectiveSpeed = speedFromPower(powerPct, club, tempo);
+  const carry = shotRatio * shotRatio * 12 * club.speed + 10 * club.launch * tempo.launch;
+  const rollout = Math.max(0, effectiveSpeed - STOP_SPEED) / (PREVIEW_FRICTION * (1.6 / club.roll));
+  return carry + rollout * 0.68;
 };
 
 export default function App() {
@@ -673,7 +669,7 @@ export default function App() {
     const direction = { x: Math.cos(finalAngle), y: Math.sin(finalAngle) };
     const speed = speedFromPower(shotPower, selectedClub, tempo);
     const launchRatio = clamp(shotPower / 125, 0, 1);
-    const horizSpeed = speed * (0.84 - selectedClub.launch * 0.06 + selectedClub.roll * 0.08);
+    const horizSpeed = speed * (0.62 - selectedClub.launch * 0.04 + selectedClub.roll * 0.05);
     const clubLaunchBoost = selectedClub.key === 'PT'
       ? 1
       : 1.35 + selectedClub.launch * 0.95;
