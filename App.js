@@ -222,7 +222,8 @@ const pointInCircle = (p, c) => {
 
 const getAimAngleToCup = (ballPos, cup) => Math.atan2(cup.y - ballPos.y, cup.x - ballPos.x);
 const speedFromPower = (powerPct, club = CLUBS[0], tempo = { speed: 1, launch: 1, accuracy: 1, note: 'Smooth tempo.' }) => {
-  const base = 95 + (powerPct / 125) * 290;
+  const normalized = clamp(powerPct / 100, 0, 1.12);
+  const base = 42 + normalized * 122;
   return base * club.speed * tempo.speed;
 };
 const getTempoFeedback = (track, sampleTs = Date.now()) => {
