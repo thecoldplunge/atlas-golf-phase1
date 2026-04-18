@@ -8,7 +8,8 @@ import {
   Text,
   View,
   ScrollView,
-  Platform
+  Platform,
+  useWindowDimensions
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
@@ -235,7 +236,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v0.3.2';
+const BUILD_VERSION = 'web v0.3.3';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -300,9 +301,9 @@ const estimateStraightDistance = (powerPct, club, strike = { launch: 1, spin: 1 
 };
 
 export default function App() {
-  const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-  const viewWidth = screenWidth;
-  const viewHeight = screenHeight;
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const viewWidth = Math.max(screenWidth || 0, 320);
+  const viewHeight = Math.max(screenHeight || 0, 568);
   const basePixelsPerWorld = Math.max(screenWidth / WORLD.w, screenHeight / WORLD.h);
   const pixelsPerWorld = basePixelsPerWorld * CAMERA_ZOOM;
   const halfVpW = (viewWidth / 2) / pixelsPerWorld;
