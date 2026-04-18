@@ -166,7 +166,7 @@ const GROUND_EPSILON = 0.05;
 const FRINGE_BUFFER = 8;
 const MIN_BOUNCE_VZ = 3.2;
 const CLUBS = [
-  { key: 'PT', name: 'Putter', short: 'PT', speed: 0.16, launch: 0.03, roll: 0.95, spin: 1.22, carryYards: 20 },
+  { key: 'PT', name: 'Putter', short: 'PT', speed: 0.16, launch: 0.03, roll: 0.95, spin: 1.22, carryYards: 40 },
   { key: 'LW', name: 'Lob Wedge', short: 'LW', speed: 0.44, launch: 1.18, roll: 0.52, spin: 0.82, carryYards: 70 },
   { key: 'SW', name: 'Sand Wedge', short: 'SW', speed: 0.5, launch: 1.08, roll: 0.56, spin: 0.85, carryYards: 80 },
   { key: 'GW', name: 'Gap Wedge', short: 'GW', speed: 0.56, launch: 0.98, roll: 0.6, spin: 0.9, carryYards: 90 },
@@ -258,7 +258,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v1.1.1';
+const BUILD_VERSION = 'web v1.1.2';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -909,15 +909,22 @@ export default function App() {
       x: direction.x * horizSpeed,
       y: direction.y * horizSpeed
     };
-    // Hang time calibrated to match distance: higher lofted clubs hang longer proportionally
-    const targetHangTime = selectedClub.key === 'PT' ? 0.3 + launchRatio * 0.5 : 1.0 + selectedClub.launch * 1.0;
-    const launchVz = selectedClub.key === 'PT'
-      ? 0.8 + launchRatio * 2.4
-      : (GRAVITY * targetHangTime * 0.5) * Math.max(0.3, launchRatio) * shotMetrics.launchAdjust;
-    flightRef.current = {
-      z: 0.08,
-      vz: launchVz
-    };
+    if (selectedClub.key === 'PT') {
+      // Putter: pure ground roll, no flight. Speed calibrated so ball rolls the aim distance.
+      const puttSpeed = (selectedClub.carryYards / YARDS_PER_WORLD) * launchRatio * 2.8;
+      velocityRef.current = {
+        x: direction.x * puttSpeed,
+        y: direction.y * puttSpeed
+      };
+      flightRef.current = { z: 0, vz: 0 };
+    } else {
+      const targetHangTime = 1.0 + selectedClub.launch * 1.0;
+      const launchVz = (GRAVITY * targetHangTime * 0.5) * Math.max(0.3, launchRatio) * shotMetrics.launchAdjust;
+      flightRef.current = {
+        z: 0.08,
+        vz: launchVz
+      };
+    }
 
     // Track shot stats
     shotStartPosRef.current = { ...ballRef.current };
