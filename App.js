@@ -12,137 +12,141 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
+// All holes are centered in a 700x700 region of the world starting at offset (170, 200)
+// This gives ~170 units of rough on left/right and ~200+ units top/bottom
+const H_OFF_X = 170;
+const H_OFF_Y = 200;
 const HOLES = [
   {
     id: 1,
     name: 'Pine Meadow',
     par: 4,
-    ballStart: { x: 100, y: 296 },
-    cup: { x: 156, y: 36 },
+    ballStart: { x: H_OFF_X + 100, y: H_OFF_Y + 296 },
+    cup: { x: H_OFF_X + 156, y: H_OFF_Y + 36 },
     terrain: {
-      tee: { x: 86, y: 288, w: 28, h: 20, r: 8 },
+      tee: { x: H_OFF_X + 86, y: H_OFF_Y + 288, w: 28, h: 20, r: 8 },
       fairway: [
-        { x: 78, y: 204, w: 44, h: 100, r: 24 },
-        { x: 86, y: 124, w: 60, h: 104, r: 28 },
-        { x: 116, y: 56, w: 48, h: 84, r: 24 }
+        { x: H_OFF_X + 78, y: H_OFF_Y + 204, w: 44, h: 100, r: 24 },
+        { x: H_OFF_X + 86, y: H_OFF_Y + 124, w: 60, h: 104, r: 28 },
+        { x: H_OFF_X + 116, y: H_OFF_Y + 56, w: 48, h: 84, r: 24 }
       ],
-      green: { x: 134, y: 14, w: 48, h: 52, r: 26 }
+      green: { x: H_OFF_X + 134, y: H_OFF_Y + 14, w: 48, h: 52, r: 26 }
     },
     obstacles: [
-      { type: 'circle', x: 54, y: 216, r: 10, look: 'tree' },
-      { type: 'circle', x: 144, y: 190, r: 10, look: 'tree' },
-      { type: 'circle', x: 60, y: 130, r: 12, look: 'tree' }
+      { type: 'circle', x: H_OFF_X + 54, y: H_OFF_Y + 216, r: 10, look: 'tree' },
+      { type: 'circle', x: H_OFF_X + 144, y: H_OFF_Y + 190, r: 10, look: 'tree' },
+      { type: 'circle', x: H_OFF_X + 60, y: H_OFF_Y + 130, r: 12, look: 'tree' }
     ],
     hazards: [
-      { type: 'sandRect', x: 122, y: 34, w: 20, h: 16 },
-      { type: 'sandRect', x: 168, y: 40, w: 20, h: 16 }
+      { type: 'sandRect', x: H_OFF_X + 122, y: H_OFF_Y + 34, w: 20, h: 16 },
+      { type: 'sandRect', x: H_OFF_X + 168, y: H_OFF_Y + 40, w: 20, h: 16 }
     ]
   },
   {
     id: 2,
     name: 'Split Gate',
     par: 3,
-    ballStart: { x: 100, y: 300 },
-    cup: { x: 164, y: 36 },
+    ballStart: { x: H_OFF_X + 100, y: H_OFF_Y + 300 },
+    cup: { x: H_OFF_X + 164, y: H_OFF_Y + 36 },
     terrain: {
-      tee: { x: 88, y: 292, w: 24, h: 16, r: 6 },
+      tee: { x: H_OFF_X + 88, y: H_OFF_Y + 292, w: 24, h: 16, r: 6 },
       fairway: [
-        { x: 84, y: 208, w: 36, h: 100, r: 20 },
-        { x: 120, y: 60, w: 52, h: 160, r: 28 }
+        { x: H_OFF_X + 84, y: H_OFF_Y + 208, w: 36, h: 100, r: 20 },
+        { x: H_OFF_X + 120, y: H_OFF_Y + 60, w: 52, h: 160, r: 28 }
       ],
-      green: { x: 140, y: 12, w: 52, h: 52, r: 26 }
+      green: { x: H_OFF_X + 140, y: H_OFF_Y + 12, w: 52, h: 52, r: 26 }
     },
     obstacles: [
-      { type: 'rect', x: 40, y: 184, w: 120, h: 16 },
-      { type: 'rect', x: 0, y: 112, w: 116, h: 16 }
+      { type: 'rect', x: H_OFF_X + 40, y: H_OFF_Y + 184, w: 120, h: 16 },
+      { type: 'rect', x: H_OFF_X + 0, y: H_OFF_Y + 112, w: 116, h: 16 }
     ],
-    hazards: [{ type: 'sandRect', x: 124, y: 104, w: 60, h: 36 }]
+    hazards: [{ type: 'sandRect', x: H_OFF_X + 124, y: H_OFF_Y + 104, w: 60, h: 36 }]
   },
   {
     id: 3,
     name: 'Dogleg Drift',
     par: 4,
-    ballStart: { x: 32, y: 296 },
-    cup: { x: 168, y: 44 },
+    ballStart: { x: H_OFF_X + 32, y: H_OFF_Y + 296 },
+    cup: { x: H_OFF_X + 168, y: H_OFF_Y + 44 },
     terrain: {
-      tee: { x: 20, y: 288, w: 24, h: 16, r: 6 },
+      tee: { x: H_OFF_X + 20, y: H_OFF_Y + 288, w: 24, h: 16, r: 6 },
       fairway: [
-        { x: 16, y: 220, w: 40, h: 88, r: 20 },
-        { x: 28, y: 136, w: 84, h: 100, r: 28 },
-        { x: 112, y: 60, w: 60, h: 96, r: 24 }
+        { x: H_OFF_X + 16, y: H_OFF_Y + 220, w: 40, h: 88, r: 20 },
+        { x: H_OFF_X + 28, y: H_OFF_Y + 136, w: 84, h: 100, r: 28 },
+        { x: H_OFF_X + 112, y: H_OFF_Y + 60, w: 60, h: 96, r: 24 }
       ],
-      green: { x: 144, y: 20, w: 52, h: 52, r: 26 }
+      green: { x: H_OFF_X + 144, y: H_OFF_Y + 20, w: 52, h: 52, r: 26 }
     },
     obstacles: [
-      { type: 'rect', x: 48, y: 220, w: 120, h: 16 },
-      { type: 'rect', x: 32, y: 128, w: 116, h: 16 },
-      { type: 'circle', x: 144, y: 184, r: 16 }
+      { type: 'rect', x: H_OFF_X + 48, y: H_OFF_Y + 220, w: 120, h: 16 },
+      { type: 'rect', x: H_OFF_X + 32, y: H_OFF_Y + 128, w: 116, h: 16 },
+      { type: 'circle', x: H_OFF_X + 144, y: H_OFF_Y + 184, r: 16 }
     ],
     hazards: [
-      { type: 'waterRect', x: 0, y: 172, w: 48, h: 36 },
-      { type: 'sandRect', x: 116, y: 96, w: 68, h: 32 }
+      { type: 'waterRect', x: H_OFF_X + 0, y: H_OFF_Y + 172, w: 48, h: 36 },
+      { type: 'sandRect', x: H_OFF_X + 116, y: H_OFF_Y + 96, w: 68, h: 32 }
     ]
   },
   {
     id: 4,
     name: 'Bumper Tunnel',
     par: 4,
-    ballStart: { x: 24, y: 300 },
-    cup: { x: 176, y: 28 },
+    ballStart: { x: H_OFF_X + 24, y: H_OFF_Y + 300 },
+    cup: { x: H_OFF_X + 176, y: H_OFF_Y + 28 },
     terrain: {
-      tee: { x: 12, y: 292, w: 24, h: 16, r: 6 },
+      tee: { x: H_OFF_X + 12, y: H_OFF_Y + 292, w: 24, h: 16, r: 6 },
       fairway: [
-        { x: 8, y: 228, w: 40, h: 80, r: 20 },
-        { x: 40, y: 156, w: 72, h: 88, r: 28 },
-        { x: 120, y: 44, w: 60, h: 112, r: 24 }
+        { x: H_OFF_X + 8, y: H_OFF_Y + 228, w: 40, h: 80, r: 20 },
+        { x: H_OFF_X + 40, y: H_OFF_Y + 156, w: 72, h: 88, r: 28 },
+        { x: H_OFF_X + 120, y: H_OFF_Y + 44, w: 60, h: 112, r: 24 }
       ],
-      green: { x: 152, y: 4, w: 48, h: 48, r: 24 }
+      green: { x: H_OFF_X + 152, y: H_OFF_Y + 4, w: 48, h: 48, r: 24 }
     },
     obstacles: [
-      { type: 'rect', x: 0, y: 212, w: 144, h: 16 },
-      { type: 'rect', x: 56, y: 140, w: 144, h: 16 },
-      { type: 'circle', x: 76, y: 92, r: 16 },
-      { type: 'circle', x: 120, y: 64, r: 14 }
+      { type: 'rect', x: H_OFF_X + 0, y: H_OFF_Y + 212, w: 144, h: 16 },
+      { type: 'rect', x: H_OFF_X + 56, y: H_OFF_Y + 140, w: 144, h: 16 },
+      { type: 'circle', x: H_OFF_X + 76, y: H_OFF_Y + 92, r: 16 },
+      { type: 'circle', x: H_OFF_X + 120, y: H_OFF_Y + 64, r: 14 }
     ],
     hazards: [
-      { type: 'sandRect', x: 20, y: 52, w: 48, h: 28 },
-      { type: 'waterRect', x: 144, y: 192, w: 56, h: 40 }
+      { type: 'sandRect', x: H_OFF_X + 20, y: H_OFF_Y + 52, w: 48, h: 28 },
+      { type: 'waterRect', x: H_OFF_X + 144, y: H_OFF_Y + 192, w: 56, h: 40 }
     ]
   },
   {
     id: 5,
     name: 'Mini Maze',
     par: 5,
-    ballStart: { x: 16, y: 296 },
-    cup: { x: 184, y: 20 },
+    ballStart: { x: H_OFF_X + 16, y: H_OFF_Y + 296 },
+    cup: { x: H_OFF_X + 184, y: H_OFF_Y + 20 },
     terrain: {
-      tee: { x: 4, y: 288, w: 24, h: 16, r: 6 },
+      tee: { x: H_OFF_X + 4, y: H_OFF_Y + 288, w: 24, h: 16, r: 6 },
       fairway: [
-        { x: 8, y: 260, w: 32, h: 44, r: 16 },
-        { x: 0, y: 192, w: 36, h: 80, r: 20 },
-        { x: 28, y: 132, w: 56, h: 72, r: 24 },
-        { x: 80, y: 72, w: 60, h: 76, r: 24 },
-        { x: 132, y: 28, w: 56, h: 64, r: 24 }
+        { x: H_OFF_X + 8, y: H_OFF_Y + 260, w: 32, h: 44, r: 16 },
+        { x: H_OFF_X + 0, y: H_OFF_Y + 192, w: 36, h: 80, r: 20 },
+        { x: H_OFF_X + 28, y: H_OFF_Y + 132, w: 56, h: 72, r: 24 },
+        { x: H_OFF_X + 80, y: H_OFF_Y + 72, w: 60, h: 76, r: 24 },
+        { x: H_OFF_X + 132, y: H_OFF_Y + 28, w: 56, h: 64, r: 24 }
       ],
-      green: { x: 160, y: 0, w: 48, h: 48, r: 24 }
+      green: { x: H_OFF_X + 160, y: H_OFF_Y + 0, w: 48, h: 48, r: 24 }
     },
     obstacles: [
-      { type: 'rect', x: 32, y: 252, w: 128, h: 16 },
-      { type: 'rect', x: 0, y: 192, w: 120, h: 16 },
-      { type: 'rect', x: 80, y: 132, w: 120, h: 16 },
-      { type: 'rect', x: 0, y: 72, w: 128, h: 16 },
-      { type: 'circle', x: 152, y: 108, r: 14 },
-      { type: 'circle', x: 52, y: 36, r: 14 }
+      { type: 'rect', x: H_OFF_X + 32, y: H_OFF_Y + 252, w: 128, h: 16 },
+      { type: 'rect', x: H_OFF_X + 0, y: H_OFF_Y + 192, w: 120, h: 16 },
+      { type: 'rect', x: H_OFF_X + 80, y: H_OFF_Y + 132, w: 120, h: 16 },
+      { type: 'rect', x: H_OFF_X + 0, y: H_OFF_Y + 72, w: 128, h: 16 },
+      { type: 'circle', x: H_OFF_X + 152, y: H_OFF_Y + 108, r: 14 },
+      { type: 'circle', x: H_OFF_X + 52, y: H_OFF_Y + 36, r: 14 }
     ],
     hazards: [
-      { type: 'waterRect', x: 128, y: 224, w: 72, h: 32 },
-      { type: 'waterRect', x: 0, y: 96, w: 52, h: 28 },
-      { type: 'sandRect', x: 140, y: 44, w: 40, h: 28 }
+      { type: 'waterRect', x: H_OFF_X + 128, y: H_OFF_Y + 224, w: 72, h: 32 },
+      { type: 'waterRect', x: H_OFF_X + 0, y: H_OFF_Y + 96, w: 52, h: 28 },
+      { type: 'sandRect', x: H_OFF_X + 140, y: H_OFF_Y + 44, w: 40, h: 28 }
     ]
   }
 ];
 
-const WORLD = { w: 1040, h: 1680 };
+const WORLD = { w: 1040, h: 1100 };
 const CAMERA_ZOOM = 3.2;
 const IS_WEB = Platform.OS === 'web';
 const MANUAL_PAN_GRACE_MS = 2200;
@@ -250,7 +254,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v0.7.3';
+const BUILD_VERSION = 'web v0.7.4';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
