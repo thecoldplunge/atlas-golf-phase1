@@ -236,7 +236,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v0.4.3';
+const BUILD_VERSION = 'web v0.4.4';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -955,8 +955,7 @@ export default function App() {
       y: screen.y,
       size: 4 + pct * 3,
       opacity: 0.5 + pct * 0.35,
-      color: shotControlOpen ? '#78b7ff' : 'rgba(245, 249, 236, 0.82)',
-      label: `${Math.round(pct * 100)}%`
+      color: shotControlOpen ? '#78b7ff' : 'rgba(245, 249, 236, 0.82)'
     };
   });
 
@@ -1119,34 +1118,22 @@ export default function App() {
           </View>
 
           {!ballMoving && !sunk ? aimLineDots.map((dot) => (
-            <View key={dot.key} pointerEvents="none">
-              <View
-                style={[
-                  styles.aimDot,
-                  {
-                    width: dot.size,
-                    height: dot.size,
-                    borderRadius: dot.size / 2,
-                    left: dot.x - dot.size / 2,
-                    top: dot.y - dot.size / 2,
-                    opacity: dot.opacity,
-                    backgroundColor: dot.color
-                  }
-                ]}
-              />
-              <Text
-                style={[
-                  styles.aimDotLabel,
-                  {
-                    left: dot.x - 14,
-                    top: dot.y + dot.size / 2 + 2,
-                    opacity: dot.opacity
-                  }
-                ]}
-              >
-                {dot.label}
-              </Text>
-            </View>
+            <View
+              key={dot.key}
+              pointerEvents="none"
+              style={[
+                styles.aimDot,
+                {
+                  width: dot.size,
+                  height: dot.size,
+                  borderRadius: dot.size / 2,
+                  left: dot.x - dot.size / 2,
+                  top: dot.y - dot.size / 2,
+                  opacity: dot.opacity,
+                  backgroundColor: dot.color
+                }
+              ]}
+            />
           )) : null}
 
           <View
@@ -1333,16 +1320,16 @@ export default function App() {
                 style={[styles.swingPad, shotControlOpen && styles.swingPadActive]}
                 onPress={() => {
                   if (shotControlOpen) {
-                    strikeBall();
+                    setShotControlOpen(false);
+                    setLastShotNote('Shot shape set. Tap Hit to strike the ball.');
                   } else {
-                    setShotControlOpen(true);
-                    setLastShotNote('Shot shape opened. Drag the blue dot, then tap Hit again to strike it.');
+                    strikeBall();
                   }
                 }}
               >
                 <View style={styles.swingHaloOuter} />
                 <View style={styles.swingHaloInner}>
-                  <Text style={styles.swingPct}>{shotControlOpen ? 'Shoot' : 'Hit'}</Text>
+                  <Text style={styles.swingPct}>{shotControlOpen ? 'Done' : 'Hit'}</Text>
                 </View>
                 {shotControlOpen ? (
                   <View style={styles.shotPadGuideWrap} {...shotControlResponder.panHandlers}>
