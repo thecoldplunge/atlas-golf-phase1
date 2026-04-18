@@ -1638,7 +1638,8 @@ export default function App() {
       return;
     }
 
-    if (!ballMoving && onPuttingSurface && !puttingMode) {
+    // Auto-enter putting mode on green only (fringe lets you choose)
+    if (!ballMoving && lie === 'green' && !puttingMode) {
       setPuttingMode(true);
       setSelectedClubIndex(0);
       setShotControlOpen(false);
@@ -3214,6 +3215,20 @@ export default function App() {
 
           {puttingMode ? (
             <View style={styles.puttCompactBar}>
+              <Pressable
+                style={styles.puttChipToggle}
+                onPress={() => {
+                  setPuttingMode(false);
+                  setPuttPreview(null);
+                  setPuttAimPoint(null);
+                  setPuttSimulated(false);
+                  setPuttTargetPowerPct(null);
+                  setPuttSwingFeedback('');
+                  setSelectedClubIndex(1); // switch to LW for chip
+                }}
+              >
+                <Text style={styles.puttChipToggleText}>🏌️ Chip</Text>
+              </Pressable>
               <View style={styles.puttCompactInfo}>
                 <Text style={styles.puttCompactTarget}>Target: {puttTargetText}</Text>
                 <Text style={styles.puttCompactSub}>{puttStatusText}</Text>
@@ -3231,6 +3246,25 @@ export default function App() {
             </View>
           ) : (
             <>
+              {(currentLie === 'green' || currentLie === 'fringe') && !ballMoving && !sunk ? (
+                <Pressable
+                  style={styles.puttToggleBtn}
+                  onPress={() => {
+                    setPuttingMode(true);
+                    setSelectedClubIndex(0);
+                    setShotControlOpen(false);
+                    setSpinOffset({ x: 0, y: 0 });
+                    setPuttPreview(null);
+                    setPuttAimPoint(null);
+                    setPuttSimulated(false);
+                    setPuttTargetPowerPct(null);
+                    setPuttSwingFeedback('');
+                    setTempoLabel('Place aim point');
+                  }}
+                >
+                  <Text style={styles.puttToggleBtnText}>⛳ Switch to Putt</Text>
+                </Pressable>
+              ) : null}
               <View style={styles.clubSelectorWrap}>
                 <Pressable
                   style={styles.clubPickerTrigger}
@@ -3945,6 +3979,33 @@ const styles = StyleSheet.create({
     bottom: 10,
     zIndex: 90,
     gap: 8
+  },
+  puttChipToggle: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginRight: 6
+  },
+  puttChipToggleText: {
+    color: '#f5fbef',
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  puttToggleBtn: {
+    backgroundColor: 'rgba(74,158,63,0.3)',
+    borderWidth: 1,
+    borderColor: '#4a9e3f',
+    borderRadius: 8,
+    paddingVertical: 8,
+    marginHorizontal: 6,
+    marginBottom: 4,
+    alignItems: 'center'
+  },
+  puttToggleBtnText: {
+    color: '#88F8BB',
+    fontSize: 13,
+    fontWeight: '800'
   },
   puttCompactBar: {
     flexDirection: 'row',
