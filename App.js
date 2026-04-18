@@ -258,7 +258,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v1.0.1';
+const BUILD_VERSION = 'web v1.0.2';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -358,6 +358,7 @@ export default function App() {
   const swingStartRef = useRef({ x: 0, y: 0 });
   const swingLowestRef = useRef({ x: 0, y: 0 });
   const swingTrailRef = useRef([]); // [{x,y}] trail of forward swing path
+  const fullSwingPathRef = useRef([]); // entire drag path for visualization
   const [lastShotStats, setLastShotStats] = useState(null);
   const [showShotStats, setShowShotStats] = useState(false);
   const shotStartPosRef = useRef(null);
@@ -921,6 +922,16 @@ export default function App() {
     const contactLabel = Math.abs(deviation) < 0.08 ? 'Center' : Math.abs(deviation) < 0.25 ? (deviation < 0 ? 'Slight Heel' : 'Slight Toe') : (deviation < 0 ? 'Heel' : 'Toe');
     const shotShapeLabel = Math.abs(deviation) < 0.1 ? 'Straight' : deviation < -0.3 ? 'Hook' : deviation > 0.3 ? 'Slice' : deviation < 0 ? 'Draw' : 'Fade';
 
+    // Normalize swing path for visualization (relative to start, scaled to fit a box)
+    const rawPath = [...fullSwingPathRef.current];
+    let swingPath = [];
+    if (rawPath.length > 2) {
+      const sx = rawPath[0].x, sy = rawPath[0].y;
+      const pts = rawPath.map(p => ({ x: p.x - sx, y: p.y - sy, phase: p.phase }));
+      const maxAbs = Math.max(1, ...pts.map(p => Math.max(Math.abs(p.x), Math.abs(p.y))));
+      swingPath = pts.map(p => ({ x: p.x / maxAbs, y: p.y / maxAbs, phase: p.phase }));
+    }
+
     setLastShotStats({
       club: selectedClub.short,
       clubName: selectedClub.name,
@@ -933,7 +944,8 @@ export default function App() {
       totalDist: 0,
       peakHeight: 0,
       startLie: currentLie,
-      endLie: 'unknown'
+      endLie: 'unknown',
+      swingPath
     });
 
     setBallHeight(flightRef.current.z);
@@ -994,6 +1006,7 @@ export default function App() {
           swingStartRef.current = { x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY };
           swingLowestRef.current = { x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY };
           swingTrailRef.current = [];
+          fullSwingPathRef.current = [{ x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY, phase: 'start' }];
           setSwingPhase('backswing');
           powerRef.current = 0;
           setPowerPct(0);
@@ -1003,6 +1016,8 @@ export default function App() {
           const currentY = evt.nativeEvent.pageY;
           const currentX = evt.nativeEvent.pageX;
           const dy = currentY - swingStartRef.current.y;
+
+          fullSwingPathRef.current.push({ x: currentX, y: currentY, phase: dy > 0 ? 'back' : 'forward' });
 
           if (dy > 0) {
             // Dragging DOWN = backswing, charging power
@@ -1609,6 +1624,52 @@ export default function App() {
           <Pressable style={styles.shotStatsOverlay} onPress={() => setShowShotStats(false)}>
             <View style={styles.shotStatsCard}>
               <Text style={styles.shotStatsTitle}>📊 Shot Stats</Text>
+
+              {/* Swing Path Visualization */}
+              {lastShotStats.swingPath && lastShotStats.swingPath.length > 2 ? (
+                <View style={styles.swingPathBox}>
+                  <Text style={styles.swingPathLabel}>Swing Path</Text>
+                  <View style={styles.swingPathCanvas}>
+                    {/* Center line (ideal straight path) */}
+                    <View style={styles.swingPathCenterLine} />
+                    {/* Draw the swing trail as dots */}
+                    {lastShotStats.swingPath.map((pt, i) => {
+                      const cx = 60 + pt.x * 55;
+                      const cy = 75 + pt.y * 70;
+                      const isBack = pt.phase === 'back' || pt.phase === 'start';
+                      const size = isBack ? 4 : 5;
+                      return (
+                        <View
+                          key={i}
+                          style={{
+                            position: 'absolute',
+                            left: cx - size / 2,
+                            top: cy - size / 2,
+                            width: size,
+                            height: size,
+                            borderRadius: size / 2,
+                            backgroundColor: isBack ? '#4adb6a' : '#ffdd44',
+                            opacity: 0.4 + (i / lastShotStats.swingPath.length) * 0.6
+                          }}
+                        />
+                      );
+                    })}
+                    {/* Start dot */}
+                    <View style={[styles.swingPathDot, { left: 57, top: 72, backgroundColor: '#fff' }]} />
+                  </View>
+                  <View style={styles.swingPathLegend}>
+                    <View style={styles.swingPathLegendItem}>
+                      <View style={[styles.swingPathLegendDot, { backgroundColor: '#4adb6a' }]} />
+                      <Text style={styles.swingPathLegendText}>Backswing</Text>
+                    </View>
+                    <View style={styles.swingPathLegendItem}>
+                      <View style={[styles.swingPathLegendDot, { backgroundColor: '#ffdd44' }]} />
+                      <Text style={styles.swingPathLegendText}>Forward</Text>
+                    </View>
+                  </View>
+                </View>
+              ) : null}
+
               <View style={styles.shotStatsGrid}>
                 <View style={styles.shotStatRow}>
                   <Text style={styles.shotStatLabel}>Club</Text>
@@ -2329,8 +2390,63 @@ const styles = StyleSheet.create({
     color: '#e8f3e0',
     fontSize: 18,
     fontWeight: '800',
-    marginBottom: 12,
+    marginBottom: 8,
     textAlign: 'center'
+  },
+  swingPathBox: {
+    marginBottom: 12,
+    alignItems: 'center'
+  },
+  swingPathLabel: {
+    color: '#8aab82',
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 4
+  },
+  swingPathCanvas: {
+    width: 120,
+    height: 150,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    position: 'relative',
+    overflow: 'hidden'
+  },
+  swingPathCenterLine: {
+    position: 'absolute',
+    left: 59,
+    top: 0,
+    bottom: 0,
+    width: 2,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 1
+  },
+  swingPathDot: {
+    position: 'absolute',
+    width: 7,
+    height: 7,
+    borderRadius: 4
+  },
+  swingPathLegend: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 4
+  },
+  swingPathLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4
+  },
+  swingPathLegendDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3
+  },
+  swingPathLegendText: {
+    color: '#8aab82',
+    fontSize: 9,
+    fontWeight: '600'
   },
   shotStatsGrid: {
     gap: 6
