@@ -250,7 +250,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v0.7.0';
+const BUILD_VERSION = 'web v0.7.3';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -923,38 +923,39 @@ export default function App() {
     [ballMoving, draggingSpinDot, shotControlOpen, sunk, spinOffset.x, spinOffset.y]
   );
 
-  const swingResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => !sunk && !ballMoving && !shotControlOpen,
-        onPanResponderGrant: (evt) => {
-          swingStartYRef.current = evt.nativeEvent.pageY;
-          setSwingPhase('charging');
-          tempoRef.current = 0;
-          tempoDirectionRef.current = 1;
-          setTempoPosition(0);
-          setPowerPct(0);
-        },
-        onPanResponderMove: (evt) => {
-          const dy = evt.nativeEvent.pageY - swingStartYRef.current;
-          const pct = clamp(Math.abs(dy) / 120 * 100, 0, 115);
-          setPowerPct(Math.round(pct));
-        },
-        onPanResponderRelease: () => {
-          setSwingPhase('idle');
-          if (powerPct > 5) {
-            strikeBall();
-          } else {
-            setPowerPct(100);
-          }
-        },
-        onPanResponderTerminate: () => {
-          setSwingPhase('idle');
-          setPowerPct(100);
-        }
-      }),
-    [ballMoving, shotControlOpen, sunk, powerPct]
-  );
+  const handleSwingStart = (evt) => {
+    if (sunk || ballMoving || shotControlOpen) return;
+    const y = evt.nativeEvent?.pageY ?? evt.pageY ?? 0;
+    swingStartYRef.current = y;
+    setSwingPhase('charging');
+    tempoRef.current = 0;
+    tempoDirectionRef.current = 1;
+    setTempoPosition(0);
+    setPowerPct(0);
+  };
+  const handleSwingMove = (evt) => {
+    if (swingPhase !== 'charging') return;
+    const y = evt.nativeEvent?.pageY ?? evt.pageY ?? 0;
+    const dy = y - swingStartYRef.current;
+    const pct = clamp(Math.abs(dy) / 120 * 100, 0, 115);
+    setPowerPct(Math.round(pct));
+  };
+  const handleSwingEnd = () => {
+    if (swingPhase !== 'charging') {
+      // Simple tap = 100% power strike
+      if (!sunk && !ballMoving && !shotControlOpen) {
+        setPowerPct(100);
+        strikeBall();
+      }
+      return;
+    }
+    setSwingPhase('idle');
+    if (powerPct > 5) {
+      strikeBall();
+    } else {
+      setPowerPct(100);
+    }
+  };
 
   const screenBall = toScreen(ball);
   const screenCup = toScreen(currentHole.cup);
@@ -1409,7 +1410,16 @@ export default function App() {
                   </Pressable>
                 </View>
               ) : (
-                <View style={styles.swingPad} {...swingResponder.panHandlers}>
+                <Pressable
+                  style={styles.swingPad}
+                  accessibilityRole="button"
+                  onPress={() => {
+                    if (!sunk && !ballMoving && !shotControlOpen) {
+                      setPowerPct(100);
+                      setTimeout(() => strikeBall(), 10);
+                    }
+                  }}
+                >
                   {/* Radial power ring */}
                   <View style={[
                     styles.powerRing,
@@ -1444,7 +1454,7 @@ export default function App() {
                       </Text>
                     </View>
                   ) : null}
-                </View>
+                </Pressable>
               )}
             </View>
           </View>
