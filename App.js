@@ -1167,6 +1167,8 @@ export default function App() {
   const backDeviationRef = useRef(0); // backswing L/R deviation (-1 to 1)
   const transitionTimeRef = useRef(0); // timestamp when backswing locked into forward swing
   const backswingStartTimeRef = useRef(0); // timestamp when backswing began
+  const shotTracerRef = useRef([]); // world positions for shot tracer
+  const [shotTracer, setShotTracer] = useState([]);
   const swingLockedRef = useRef(false); // true once forward swing starts
   const [lastShotStats, setLastShotStats] = useState(null);
   const [showShotStats, setShowShotStats] = useState(false);
@@ -1616,6 +1618,18 @@ export default function App() {
             ballRef.current = next;
             setBall(next);
             setBallHeight(flight.z);
+            // Record tracer points (every 3rd tick to keep it lightweight)
+            if (flight.z > 0.1 && shotTracerRef.current.length % 1 === 0) {
+              const maxTracerYards = 200;
+              const maxTracerWorld = maxTracerYards / YARDS_PER_WORLD;
+              const trail = shotTracerRef.current;
+              // Only keep tail within 200 yards of current position
+              while (trail.length > 0 && Math.hypot(next.x - trail[0].x, next.y - trail[0].y) > maxTracerWorld) {
+                trail.shift();
+              }
+              trail.push({ x: next.x, y: next.y, z: flight.z });
+              if (trail.length % 3 === 0) setShotTracer([...trail]);
+            }
           }
 
           if (magnitude(vel) < 6 && flight.z <= GROUND_EPSILON && Math.abs(flight.vz) < 0.35) {
@@ -1629,6 +1643,8 @@ export default function App() {
 
           // Ball stopped — compute final stats
           if (magnitude(vel) < 0.3 && flight.z <= GROUND_EPSILON && Math.abs(flight.vz) < 0.15 && shotStartPosRef.current) {
+            shotTracerRef.current = [];
+            setShotTracer([]);
             const totalDist = Math.round(Math.hypot(next.x - shotStartPosRef.current.x, next.y - shotStartPosRef.current.y) * YARDS_PER_WORLD);
             const carry = Math.round(shotCarryRef.current);
             const roll = Math.max(0, totalDist - carry);
@@ -2219,6 +2235,8 @@ export default function App() {
     });
 
     setBallHeight(flightRef.current.z);
+    shotTracerRef.current = [];
+    setShotTracer([]);
     const tempoEmoji = tempoTag === 'Perfect' ? '✨' : tempoTag === 'Smooth' ? '👌' : tempoTag === 'Rushed' ? '⚡' : tempoTag === 'Slow' ? '🐢' : '';
     setTempoLabel(`${tempoEmoji}${tempoTag} • ${shotShapeLabel} • ${launch.effectivePower}%`);
     setStrokesCurrent((s) => s + 1);
@@ -3270,6 +3288,29 @@ export default function App() {
               />
             ))}
           </View>
+
+          {/* Shot Tracer */}
+          {shotTracer.length > 2 ? shotTracer.map((pt, i) => {
+            if (i === 0) return null;
+            const sx = (pt.x - cameraRef.current.x) * pixelsPerWorld + viewportW / 2;
+            const sy = (pt.y - cameraRef.current.y) * pixelsPerWorld + viewportH / 2 - (pt.z || 0) * pixelsPerWorld * 0.35;
+            const opacity = Math.max(0.05, (i / shotTracer.length) * 0.9);
+            return (
+              <View
+                key={i}
+                style={{
+                  position: 'absolute',
+                  left: sx - 1,
+                  top: sy - 1,
+                  width: 2.5,
+                  height: 2.5,
+                  borderRadius: 1.25,
+                  backgroundColor: '#ffd700',
+                  opacity
+                }}
+              />
+            );
+          }) : null}
 
           {!sunk ? (
             <>
