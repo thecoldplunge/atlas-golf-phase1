@@ -147,11 +147,11 @@ const CAMERA_ZOOM = 3.2;
 const MANUAL_PAN_GRACE_MS = 2200;
 const BALL_RADIUS_WORLD = 1.2;
 const CUP_RADIUS_WORLD = 2.0;
-const SWING_PAD_SIZE = 148;
-const PAD_CENTER = SWING_PAD_SIZE / 2;
-const SWING_START_RADIUS = 60;
-const MIN_PULL_TO_ARM = 12;
-const MAX_PULL_DISTANCE = 92;
+const SHOT_PAD_SIZE = 184;
+const PAD_CENTER = SHOT_PAD_SIZE / 2;
+const SHOT_PAD_RADIUS = 78;
+const SPIN_DOT_RADIUS = 16;
+const MAX_SPIN_OFFSET = SHOT_PAD_RADIUS - SPIN_DOT_RADIUS - 10;
 const YARDS_PER_WORLD = 2.6;
 const AIM_DOT_STEP_WORLD = 3.6;
 const PREVIEW_FRICTION = 2.1;
@@ -178,7 +178,6 @@ const CLUBS = [
   { key: '3W', name: '3 Wood', short: '3w', speed: 1.4, launch: 0.52, roll: 1.13, spin: 0.96 },
   { key: 'DR', name: 'Driver', short: 'DR', speed: 1.5, launch: 0.48, roll: 1.18, spin: 0.92 }
 ];
-const TEMPO_WINDOW = { min: 220, max: 840, idealMin: 360, idealMax: 620, stall: 220 };
 
 const SURFACE_PHYSICS = {
   rough: { rollFriction: 4.2, bounce: 0.18, landingDamping: 0.72, wallRestitution: 0.62 },
@@ -259,47 +258,10 @@ const pointInCircle = (p, c) => {
 };
 
 const getAimAngleToCup = (ballPos, cup) => Math.atan2(cup.y - ballPos.y, cup.x - ballPos.x);
-const speedFromPower = (powerPct, club = CLUBS[0], tempo = { speed: 1, launch: 1, accuracy: 1, note: 'Smooth tempo.' }) => {
+const speedFromPower = (powerPct, club = CLUBS[0]) => {
   const normalized = clamp(powerPct / 100, 0, 1.12);
   const base = 28 + normalized * 78;
-  return base * club.speed * tempo.speed;
-};
-const getTempoFeedback = (track, sampleTs = Date.now()) => {
-  const deepestTs = track.deepestTs || track.lastPullTs || sampleTs;
-  const crossedTs = track.crossedTs || 0;
-  const backswingMs = Math.max(1, deepestTs - track.startTs);
-  const elapsedMs = Math.max(1, sampleTs - track.startTs);
-  const topHoldMs = crossedTs
-    ? Math.max(0, crossedTs - deepestTs)
-    : Math.max(0, sampleTs - deepestTs);
-  const stallMs = Math.max(track.maxPauseMs, topHoldMs);
-  const pullSpeed = track.maxPullDown / backswingMs;
-  const flickMs = crossedTs ? Math.max(1, sampleTs - crossedTs) : 0;
-  let speed = 1;
-  let launch = 1;
-  let accuracy = 1;
-  let note = 'Smooth tempo';
-
-  if (backswingMs < TEMPO_WINDOW.min || pullSpeed > 0.32 || flickMs > 0 && flickMs < 45) {
-    speed = 0.92;
-    launch = 0.94;
-    accuracy = 0.76;
-    note = 'Too quick';
-  } else if (backswingMs > TEMPO_WINDOW.max || stallMs > TEMPO_WINDOW.stall) {
-    speed = 0.9;
-    launch = 1.02;
-    accuracy = 0.82;
-    note = 'Too slow';
-  } else if (backswingMs >= TEMPO_WINDOW.idealMin && backswingMs <= TEMPO_WINDOW.idealMax && stallMs < 140) {
-    speed = 1.03;
-    launch = 1.02;
-    accuracy = 1.08;
-    note = 'Smooth tempo';
-  } else {
-    note = 'Decent tempo';
-  }
-
-  return { speed, launch, accuracy, note, backswingMs, stallMs, pullSpeed, elapsedMs };
+  return base * club.speed;
 };
 const expandRect = (rect, inset) => ({
   x: rect.x - inset,
@@ -328,11 +290,11 @@ const getSurfaceAtPoint = (hole, point) => {
   }
   return 'rough';
 };
-const estimateStraightDistance = (powerPct, club, tempo) => {
+const estimateStraightDistance = (powerPct, club, strike = { launch: 1, spin: 1 }) => {
   const shotRatio = clamp(powerPct / 125, 0, 1);
-  const effectiveSpeed = speedFromPower(powerPct, club, tempo);
-  const carry = shotRatio * shotRatio * 12 * club.speed + 10 * club.launch * tempo.launch;
-  const rollout = Math.max(0, effectiveSpeed - STOP_SPEED) / (PREVIEW_FRICTION * (1.6 / club.roll));
+  const effectiveSpeed = speedFromPower(powerPct, club);
+  const carry = shotRatio * shotRatio * 12 * club.speed + 10 * club.launch * strike.launch;
+  const rollout = Math.max(0, effectiveSpeed - STOP_SPEED) / (PREVIEW_FRICTION * (1.6 / (club.roll / strike.spin)));
   return carry + rollout * 0.68;
 };
 
@@ -353,14 +315,14 @@ export default function App() {
   const [isAiming, setIsAiming] = useState(false);
   const [sunk, setSunk] = useState(false);
   const [waterNotice, setWaterNotice] = useState(false);
-  const [swingActive, setSwingActive] = useState(false);
-  const [pullDistance, setPullDistance] = useState(0);
-  const [powerPct, setPowerPct] = useState(0);
+  const [shotControlOpen, setShotControlOpen] = useState(false);
+  const [spinOffset, setSpinOffset] = useState({ x: 0, y: 0 });
+  const [powerPct, setPowerPct] = useState(100);
   const [selectedClubIndex, setSelectedClubIndex] = useState(15);
   const [menuOpen, setMenuOpen] = useState(false);
   const [clubPickerOpen, setClubPickerOpen] = useState(false);
-  const [lastShotNote, setLastShotNote] = useState('Pull down with tempo, then flick up through center.');
-  const [tempoLabel, setTempoLabel] = useState('Tempo idle');
+  const [lastShotNote, setLastShotNote] = useState('Tap Yards to shape the shot, then tap the big ball to strike it.');
+  const [tempoLabel, setTempoLabel] = useState('Blue dot centered');
   const [golferBallAnchor, setGolferBallAnchor] = useState(HOLES[0].ballStart);
   const [ballHeight, setBallHeight] = useState(0);
   const [camera, setCamera] = useState({ x: HOLES[0].ballStart.x, y: HOLES[0].ballStart.y });
@@ -377,21 +339,7 @@ export default function App() {
   const frameRef = useRef(null);
   const courseRef = useRef(null);
   const courseFrameRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
-  const swingTrackRef = useRef({
-    active: false,
-    armed: false,
-    maxPullDown: 0,
-    maxPullLateral: 0,
-    deepest: { x: 0, y: 0 },
-    crossedCenter: false,
-    maxUpLateral: 0,
-    startTs: 0,
-    lastMoveTs: 0,
-    lastPullTs: 0,
-    maxPauseMs: 0,
-    deepestTs: 0,
-    crossedTs: 0
-  });
+  const shotControlStartRef = useRef({ x: 0, y: 0 });
 
   const currentHole = HOLES[holeIndex];
   const selectedClub = CLUBS[selectedClubIndex];
@@ -433,10 +381,10 @@ export default function App() {
     setBall(currentHole.ballStart);
     setAimAngle(getAimAngleToCup(currentHole.ballStart, currentHole.cup));
     setIsAiming(false);
-    setSwingActive(false);
-    setPullDistance(0);
-    setPowerPct(0);
-    setTempoLabel('Tempo idle');
+    setShotControlOpen(false);
+    setSpinOffset({ x: 0, y: 0 });
+    setPowerPct(100);
+    setTempoLabel('Blue dot centered');
     const nc = clampCamera(currentHole.ballStart);
     setCamera(nc);
     cameraRef.current = nc;
@@ -462,11 +410,11 @@ export default function App() {
     setBall(currentHole.ballStart);
     setAimAngle(getAimAngleToCup(currentHole.ballStart, currentHole.cup));
     setIsAiming(false);
-    setSwingActive(false);
-    setPullDistance(0);
-    setPowerPct(0);
-    setTempoLabel('Tempo idle');
-    setLastShotNote('Pull down with tempo, then flick up through center.');
+    setShotControlOpen(false);
+    setSpinOffset({ x: 0, y: 0 });
+    setPowerPct(100);
+    setTempoLabel('Blue dot centered');
+    setLastShotNote('Tap Yards to shape the shot, then tap the big ball to strike it.');
     const nc = clampCamera(currentHole.ballStart);
     setCamera(nc);
     cameraRef.current = nc;
@@ -505,11 +453,11 @@ export default function App() {
     setBall(currentHole.ballStart);
     setAimAngle(getAimAngleToCup(currentHole.ballStart, currentHole.cup));
     setIsAiming(false);
-    setSwingActive(false);
-    setPullDistance(0);
-    setPowerPct(0);
-    setTempoLabel('Tempo idle');
-    setLastShotNote('Pull down with tempo, then flick up through center.');
+    setShotControlOpen(false);
+    setSpinOffset({ x: 0, y: 0 });
+    setPowerPct(100);
+    setTempoLabel('Blue dot centered');
+    setLastShotNote('Tap Yards to shape the shot, then tap the big ball to strike it.');
   }, [holeIndex, currentHole.ballStart, currentHole.cup]);
 
   useEffect(() => {
@@ -832,32 +780,39 @@ export default function App() {
     [ballMoving, pixelsPerWorld, sunk, swingActive]
   );
 
-  const fireSwingShot = ({ releaseDx, releaseDy, releaseTs }) => {
-    const track = swingTrackRef.current;
-    const pull = clamp(track.maxPullDown, 0, MAX_PULL_DISTANCE);
-    const shotPower = Math.round((pull / MAX_PULL_DISTANCE) * 125);
-    const overswingPct = Math.max(0, shotPower - 100);
-    const overswingRatio = overswingPct / 25;
-    const tempo = getTempoFeedback(track, releaseTs);
+  const getShotControlMetrics = (offset = spinOffset) => {
+    const xNorm = clamp(offset.x / MAX_SPIN_OFFSET, -1, 1);
+    const yNorm = clamp(offset.y / MAX_SPIN_OFFSET, -1, 1);
+    const launchAdjust = clamp(1 - yNorm * 0.4, 0.68, 1.38);
+    const spinAdjust = clamp(1 - yNorm * 0.36, 0.7, 1.34);
+    const curveDeg = xNorm * 18;
+    let shapeLabel = 'Dead straight';
 
-    const upTravel = Math.max(1, track.deepest.y - releaseDy);
-    const xTravel = releaseDx - track.deepest.x;
-    const slope = Math.abs(xTravel) / upTravel;
-    const lateral = Math.max(track.maxPullLateral, track.maxUpLateral, Math.abs(releaseDx));
-    const crookedNorm = clamp(slope * 1.35 + lateral / 24, 0, 1.4);
+    if (xNorm < -0.55) shapeLabel = 'Slice';
+    else if (xNorm < -0.18) shapeLabel = 'Fade';
+    else if (xNorm > 0.55) shapeLabel = 'Hook';
+    else if (xNorm > 0.18) shapeLabel = 'Draw';
 
-    const rawSign = Math.sign(releaseDx || xTravel || track.deepest.x || 1);
-    const tempoMiss = (1 - tempo.accuracy) * 24;
-    const errorDeg = crookedNorm * (4.5 + overswingRatio * 16) + tempoMiss;
-    const finalAngle = aimAngle + degToRad(errorDeg * rawSign);
+    let flightLabel = 'Mid flight';
+    if (yNorm < -0.4) flightLabel = 'Higher launch, less spin';
+    else if (yNorm > 0.4) flightLabel = 'Lower launch, more spin';
 
+    return { xNorm, yNorm, launchAdjust, spinAdjust, curveDeg, shapeLabel, flightLabel };
+  };
+
+  const strikeBall = () => {
+    if (sunk || ballMoving) {
+      return;
+    }
+
+    const shotMetrics = getShotControlMetrics();
+    const finalAngle = aimAngle + degToRad(shotMetrics.curveDeg);
     const direction = { x: Math.cos(finalAngle), y: Math.sin(finalAngle) };
-    const speed = speedFromPower(shotPower, selectedClub, tempo);
-    const launchRatio = clamp(shotPower / 125, 0, 1);
-    const horizSpeed = speed * (0.62 - selectedClub.launch * 0.04 + selectedClub.roll * 0.05);
-    const clubLaunchBoost = selectedClub.key === 'PT'
-      ? 1
-      : 0.92 + selectedClub.launch * 0.42;
+    const speed = speedFromPower(powerPct, selectedClub);
+    const launchRatio = clamp(powerPct / 125, 0, 1);
+    const horizSpeed = speed * (0.62 - selectedClub.launch * 0.04 + (selectedClub.roll / shotMetrics.spinAdjust) * 0.05);
+    const clubLaunchBoost = selectedClub.key === 'PT' ? 1 : 0.92 + selectedClub.launch * 0.42;
+
     velocityRef.current = {
       x: direction.x * horizSpeed,
       y: direction.y * horizSpeed
@@ -866,171 +821,69 @@ export default function App() {
       z: 0.08,
       vz: selectedClub.key === 'PT'
         ? 0.22 + launchRatio * 0.75
-        : (4.8 + launchRatio * 13.5 + overswingRatio * 2.2) * selectedClub.launch * tempo.launch * clubLaunchBoost
+        : (4.8 + launchRatio * 13.5) * selectedClub.launch * shotMetrics.launchAdjust * clubLaunchBoost
     };
-    setBallHeight(flightRef.current.z);
-    setTempoLabel(tempo.note);
-    setStrokesCurrent((s) => s + 1);
 
-    if (errorDeg > 11) {
-      setLastShotNote(`${selectedClub.name}: ${tempo.note} cadence added ${errorDeg.toFixed(1)}° miss.`);
-    } else if (overswingPct > 0) {
-      setLastShotNote(`${selectedClub.short} ${shotPower}% overswing. Tempo: ${tempo.note}.`);
-    } else {
-      setLastShotNote(`${selectedClub.name} at ${shotPower}% power. Tempo: ${tempo.note}.`);
-    }
+    setBallHeight(flightRef.current.z);
+    setTempoLabel(`${shotMetrics.shapeLabel} • ${shotMetrics.flightLabel}`);
+    setStrokesCurrent((s) => s + 1);
+    setShotControlOpen(false);
+    setLastShotNote(`${selectedClub.short} hit with ${shotMetrics.shapeLabel.toLowerCase()} and ${shotMetrics.flightLabel.toLowerCase()}.`);
   };
 
-  const swingResponder = useMemo(
+  const shotControlResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: (evt) => {
-          if (sunk || ballMoving) {
-            return false;
-          }
-          return true;
-        },
-        onStartShouldSetPanResponderCapture: () => {
-          if (sunk || ballMoving) {
-            return false;
-          }
-          return true;
-        },
+        onStartShouldSetPanResponder: () => !sunk && !ballMoving,
+        onStartShouldSetPanResponderCapture: () => !sunk && !ballMoving,
         onPanResponderGrant: (evt) => {
           const dx = evt.nativeEvent.locationX - PAD_CENTER;
           const dy = evt.nativeEvent.locationY - PAD_CENTER;
-          const dist = Math.hypot(dx, dy);
-          if (dist > SWING_START_RADIUS) {
-            swingTrackRef.current.active = false;
-            setSwingActive(false);
-            setPullDistance(0);
-            setPowerPct(0);
-            setLastShotNote('Start the swing closer to pad center.');
-            return;
+          shotControlStartRef.current = { x: dx, y: dy };
+          const distance = Math.hypot(dx, dy);
+          if (distance <= SPIN_DOT_RADIUS + 12) {
+            setShotControlOpen(true);
           }
-
-          const now = Date.now();
-          swingTrackRef.current = {
-            active: true,
-            armed: false,
-            maxPullDown: 0,
-            maxPullLateral: 0,
-            deepest: { x: 0, y: 0 },
-            crossedCenter: false,
-            maxUpLateral: 0,
-            startTs: now,
-            lastMoveTs: now,
-            lastPullTs: now,
-            maxPauseMs: 0,
-            deepestTs: now,
-            crossedTs: 0
-          };
-          setSwingActive(true);
-          setPullDistance(0);
-          setPowerPct(0);
-          setTempoLabel('Build tempo...');
-          setWaterNotice(false);
         },
-        onMoveShouldSetPanResponder: () => swingTrackRef.current.active,
-        onMoveShouldSetPanResponderCapture: () => swingTrackRef.current.active,
         onPanResponderMove: (evt) => {
-          const track = swingTrackRef.current;
-          if (!track.active) {
+          if (!shotControlOpen) {
             return;
           }
-
-          const now = Date.now();
           const dx = evt.nativeEvent.locationX - PAD_CENTER;
           const dy = evt.nativeEvent.locationY - PAD_CENTER;
-
-          if (dy > track.maxPullDown) {
-            track.maxPauseMs = Math.max(track.maxPauseMs, now - track.lastPullTs);
-            track.maxPullDown = dy;
-            track.deepest = { x: dx, y: dy };
-            track.lastPullTs = now;
-            track.deepestTs = now;
-          }
-
-          track.lastMoveTs = now;
-          track.maxPullLateral = Math.max(track.maxPullLateral, Math.abs(dx));
-
-          if (track.maxPullDown >= MIN_PULL_TO_ARM) {
-            track.armed = true;
-          }
-
-          if (track.armed && dy < track.maxPullDown - 2) {
-            track.maxUpLateral = Math.max(track.maxUpLateral, Math.abs(dx));
-          }
-
-          if (track.armed && dy < -6) {
-            track.crossedCenter = true;
-            if (!track.crossedTs) {
-              track.crossedTs = now;
-            }
-          }
-
-          const clampedPull = clamp(track.maxPullDown, 0, MAX_PULL_DISTANCE);
-          setPullDistance(clampedPull);
-          setPowerPct(Math.round((clampedPull / MAX_PULL_DISTANCE) * 125));
-
-          const tempoPreview = getTempoFeedback(track, now);
-          setTempoLabel(tempoPreview.note);
+          const distance = Math.hypot(dx, dy);
+          const scale = distance > MAX_SPIN_OFFSET ? MAX_SPIN_OFFSET / distance : 1;
+          const nextOffset = { x: dx * scale, y: dy * scale };
+          setSpinOffset(nextOffset);
+          const metrics = getShotControlMetrics(nextOffset);
+          setTempoLabel(`${metrics.shapeLabel} • ${metrics.flightLabel}`);
         },
         onPanResponderRelease: (evt) => {
-          const track = swingTrackRef.current;
-          const releaseDx = evt.nativeEvent.locationX - PAD_CENTER;
-          const releaseDy = evt.nativeEvent.locationY - PAD_CENTER;
+          const dx = evt.nativeEvent.locationX - PAD_CENTER;
+          const dy = evt.nativeEvent.locationY - PAD_CENTER;
+          const moveDistance = Math.hypot(dx - shotControlStartRef.current.x, dy - shotControlStartRef.current.y);
+          const tapDistance = Math.hypot(dx, dy);
 
-          if (!track.armed) {
-            setLastShotNote('Pull farther down to load power.');
-          } else if (!track.crossedCenter) {
-            setLastShotNote('Flick up through center to strike the ball.');
-          } else {
-            fireSwingShot({ releaseDx, releaseDy, releaseTs: Date.now() });
+          if (shotControlOpen && moveDistance < 10 && tapDistance > SPIN_DOT_RADIUS + 18 && tapDistance <= SHOT_PAD_RADIUS) {
+            strikeBall();
+            return;
           }
 
-          swingTrackRef.current = {
-            active: false,
-            armed: false,
-            maxPullDown: 0,
-            maxPullLateral: 0,
-            deepest: { x: 0, y: 0 },
-            crossedCenter: false,
-            maxUpLateral: 0,
-            startTs: 0,
-            lastMoveTs: 0,
-            lastPullTs: 0,
-            maxPauseMs: 0,
-            deepestTs: 0,
-            crossedTs: 0
-          };
-          setSwingActive(false);
-          setPullDistance(0);
-          setPowerPct(0);
+          if (!shotControlOpen && tapDistance <= SPIN_DOT_RADIUS + 12) {
+            setShotControlOpen(true);
+            setLastShotNote('Drag the blue dot to add shape, then tap the ball to hit it.');
+            return;
+          }
+
+          if (shotControlOpen && tapDistance > SHOT_PAD_RADIUS + 10) {
+            setShotControlOpen(false);
+          }
         },
         onPanResponderTerminate: () => {
-          swingTrackRef.current = {
-            active: false,
-            armed: false,
-            maxPullDown: 0,
-            maxPullLateral: 0,
-            deepest: { x: 0, y: 0 },
-            crossedCenter: false,
-            maxUpLateral: 0,
-            startTs: 0,
-            lastMoveTs: 0,
-            lastPullTs: 0,
-            maxPauseMs: 0,
-            deepestTs: 0,
-            crossedTs: 0
-          };
-          setSwingActive(false);
-          setPullDistance(0);
-          setPowerPct(0);
-          setTempoLabel('Tempo idle');
+          setShotControlOpen(false);
         }
       }),
-    [aimAngle, ballMoving, selectedClub, sunk]
+    [ballMoving, shotControlOpen, sunk, powerPct, selectedClub, aimAngle]
   );
 
   const screenBall = toScreen(ball);
@@ -1045,19 +898,19 @@ export default function App() {
 
   const finishedAll = scores.every((s) => typeof s === 'number');
   const isLastHole = holeIndex === HOLES.length - 1;
+  const shotMetrics = getShotControlMetrics();
   const overSwing = powerPct > 100;
-  const previewTempo = swingActive ? getTempoFeedback(swingTrackRef.current) : { speed: 1, launch: 1, accuracy: 1, note: 'Tempo idle' };
-  const neutralTempo = { speed: 1, launch: 1, accuracy: 1, note: 'Neutral' };
+  const neutralStrike = { launch: 1, spin: 1 };
 
   const aimDir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
   const aimPerp = { x: -aimDir.y, y: aimDir.x };
   const distanceToCupWorld = Math.hypot(currentHole.cup.x - ball.x, currentHole.cup.y - ball.y);
   const yardsToCup = Math.max(0, Math.round(distanceToCupWorld * YARDS_PER_WORLD));
   const windLabel = WIND_PRESETS[holeIndex % WIND_PRESETS.length];
-  const stockClubYards = Math.round(estimateStraightDistance(100, selectedClub, neutralTempo) * YARDS_PER_WORLD);
-  const previewPower = swingActive ? powerPct : 100;
-  const previewYards = Math.round(estimateStraightDistance(previewPower, selectedClub, previewTempo) * YARDS_PER_WORLD);
-  const shotShape = SHOT_SHAPE_HINTS[selectedClub.key] || 'Neutral';
+  const stockClubYards = Math.round(estimateStraightDistance(100, selectedClub, neutralStrike) * YARDS_PER_WORLD);
+  const previewPower = powerPct;
+  const previewYards = Math.round(estimateStraightDistance(previewPower, selectedClub, { launch: shotMetrics.launchAdjust, spin: shotMetrics.spinAdjust }) * YARDS_PER_WORLD);
+  const shotShape = `${SHOT_SHAPE_HINTS[selectedClub.key] || 'Neutral'} • ${shotMetrics.shapeLabel}`;
   const shotNumber = sunk ? strokesCurrent : strokesCurrent + 1;
 
   const rayToWorldEdge = (() => {
@@ -1080,7 +933,7 @@ export default function App() {
     return Math.max(0, Math.min(...candidates));
   })();
   const aimGuideWorld = clamp(
-    Math.max(distanceToCupWorld + 12, estimateStraightDistance(100, selectedClub, previewTempo) * 1.1),
+    Math.max(distanceToCupWorld + 12, estimateStraightDistance(100, selectedClub, { launch: shotMetrics.launchAdjust, spin: shotMetrics.spinAdjust }) * 1.1),
     6,
     rayToWorldEdge
   );
@@ -1404,10 +1257,10 @@ export default function App() {
                 <Text style={styles.hudLabel}>Shot</Text>
                 <Text style={styles.hudValue}>{shotNumber}</Text>
               </View>
-              <View style={styles.hudItem}>
+              <Pressable style={[styles.hudItem, styles.hudItemPressable, shotControlOpen && styles.hudItemActive]} onPress={() => setShotControlOpen((v) => !v)}>
                 <Text style={styles.hudLabel}>Yards</Text>
                 <Text style={styles.hudValue}>{yardsToCup}</Text>
-              </View>
+              </Pressable>
               <View style={styles.hudItem}>
                 <Text style={styles.hudLabel}>Wind</Text>
                 <Text style={styles.hudValue}>{windLabel}</Text>
@@ -1435,24 +1288,32 @@ export default function App() {
               <Text style={styles.clubCardSub}>{selectedClub.short} • {shotShape}</Text>
               <Text style={styles.clubCardYards}>{previewYards} yd</Text>
               <Text style={styles.clubCardMeta}>Stock {stockClubYards} • To pin {yardsToCup}</Text>
-              <Text style={styles.clubCardMeta}>Tempo {tempoLabel}</Text>
+              <Text style={styles.clubCardMeta}>{tempoLabel}</Text>
             </View>
 
             <View style={styles.swingDock}>
-              <View style={[styles.swingPad, swingActive && styles.swingPadActive]} {...swingResponder.panHandlers}>
+              <View style={[styles.swingPad, shotControlOpen && styles.swingPadActive]} {...shotControlResponder.panHandlers}>
                 <View style={styles.swingHaloOuter} />
                 <View style={styles.swingHaloInner}>
-                  <Text style={styles.swingPct}>{powerPct}%</Text>
+                  <Text style={styles.swingPct}>Hit</Text>
                 </View>
-                <View
-                  style={[
-                    styles.pullMarker,
-                    {
-                      top: PAD_CENTER + pullDistance - 8,
-                      backgroundColor: overSwing ? '#cf5d47' : '#f3f3ee'
-                    }
-                  ]}
-                />
+                {shotControlOpen ? (
+                  <View style={styles.shotPadGuideWrap} pointerEvents="none">
+                    <View style={styles.shotPadCrosshairH} />
+                    <View style={styles.shotPadCrosshairV} />
+                    <View
+                      style={[
+                        styles.spinDot,
+                        {
+                          left: PAD_CENTER + spinOffset.x - SPIN_DOT_RADIUS,
+                          top: PAD_CENTER + spinOffset.y - SPIN_DOT_RADIUS
+                        }
+                      ]}
+                    />
+                  </View>
+                ) : (
+                  <View style={styles.spinDotClosed} pointerEvents="none" />
+                )}
               </View>
             </View>
           </View>
@@ -1487,9 +1348,11 @@ export default function App() {
           <Text style={styles.helperText}>
             {isAiming
               ? 'Adjusting aim...'
-              : Platform.OS === 'web'
-                ? 'Pull down then swipe up through center to swing. Drag on the course to pan, tap to aim.'
-                : 'Pull down then swipe up through center to swing. Use two fingers on course to pan camera.'}
+              : shotControlOpen
+                ? 'Drag the blue dot for flight and curve, then tap the ball to hit.'
+                : Platform.OS === 'web'
+                  ? 'Tap Yards to open shot shaping. Drag on the course to pan, tap to aim.'
+                  : 'Tap Yards to open shot shaping. Use two fingers on course to pan camera.'}
           </Text>
           <Text style={styles.lastShotText}>{lastShotNote}</Text>
 
@@ -1722,6 +1585,14 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.05)'
   },
+  hudItemPressable: {
+    borderWidth: 1,
+    borderColor: 'rgba(111, 174, 255, 0.28)'
+  },
+  hudItemActive: {
+    backgroundColor: 'rgba(52, 102, 173, 0.28)',
+    borderColor: 'rgba(111, 174, 255, 0.9)'
+  },
   hudLabel: {
     color: '#9fb59f',
     fontSize: 10,
@@ -1832,14 +1703,14 @@ const styles = StyleSheet.create({
     fontSize: 11
   },
   swingDock: {
-    width: SWING_PAD_SIZE + 8,
+    width: SHOT_PAD_SIZE + 8,
     alignItems: 'center',
     justifyContent: 'center'
   },
   swingPad: {
-    width: SWING_PAD_SIZE,
-    height: SWING_PAD_SIZE,
-    borderRadius: SWING_PAD_SIZE / 2,
+    width: SHOT_PAD_SIZE,
+    height: SHOT_PAD_SIZE,
+    borderRadius: SHOT_PAD_SIZE / 2,
     backgroundColor: 'rgba(7, 11, 9, 0.84)',
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.24)',
@@ -1861,9 +1732,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.16)'
   },
   swingHaloInner: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 92,
+    height: 92,
+    borderRadius: 46,
     borderWidth: 2,
     borderColor: 'rgba(248,251,242,0.8)',
     backgroundColor: 'rgba(255,255,255,0.03)',
@@ -1872,15 +1743,46 @@ const styles = StyleSheet.create({
   },
   swingPct: {
     color: '#f6fbef',
-    fontSize: 14,
-    fontWeight: '700'
+    fontSize: 18,
+    fontWeight: '800'
   },
-  pullMarker: {
+  shotPadGuideWrap: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  shotPadCrosshairH: {
     position: 'absolute',
-    left: PAD_CENTER - 8,
-    width: 16,
-    height: 16,
-    borderRadius: 999
+    width: SHOT_PAD_SIZE - 46,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.18)'
+  },
+  shotPadCrosshairV: {
+    position: 'absolute',
+    width: 1,
+    height: SHOT_PAD_SIZE - 46,
+    backgroundColor: 'rgba(255,255,255,0.18)'
+  },
+  spinDot: {
+    position: 'absolute',
+    width: SPIN_DOT_RADIUS * 2,
+    height: SPIN_DOT_RADIUS * 2,
+    borderRadius: SPIN_DOT_RADIUS,
+    backgroundColor: '#4b94ff',
+    borderWidth: 2,
+    borderColor: '#d8ecff',
+    shadowColor: '#4b94ff',
+    shadowOpacity: 0.55,
+    shadowRadius: 10
+  },
+  spinDotClosed: {
+    position: 'absolute',
+    width: SPIN_DOT_RADIUS * 2,
+    height: SPIN_DOT_RADIUS * 2,
+    borderRadius: SPIN_DOT_RADIUS,
+    backgroundColor: '#4b94ff',
+    borderWidth: 2,
+    borderColor: '#d8ecff'
   },
   clubSelectorWrap: {
     borderRadius: 14,
