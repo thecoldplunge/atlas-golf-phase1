@@ -254,7 +254,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v0.8.0';
+const BUILD_VERSION = 'web v0.9.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -355,13 +355,13 @@ export default function App() {
   const [waterNotice, setWaterNotice] = useState(false);
   const [shotControlOpen, setShotControlOpen] = useState(false);
   const [spinOffset, setSpinOffset] = useState({ x: 0, y: 0 });
-  const [powerPct, setPowerPct] = useState(100);
-  const powerRef = useRef(100);
-  const [swingPhase, setSwingPhase] = useState('idle'); // idle | charging | releasing
-  const [tempoPosition, setTempoPosition] = useState(0); // -1 to 1, 0 = center
-  const tempoRef = useRef(0);
-  const tempoDirectionRef = useRef(1);
-  const swingStartYRef = useRef(0);
+  const [powerPct, setPowerPct] = useState(0);
+  const powerRef = useRef(0);
+  const [swingPhase, setSwingPhase] = useState('idle'); // idle | backswing | forward
+  const [swingDeviation, setSwingDeviation] = useState(0); // -1 to 1, how far off center on forward swing
+  const swingStartRef = useRef({ x: 0, y: 0 });
+  const swingLowestRef = useRef({ x: 0, y: 0 });
+  const swingTrailRef = useRef([]); // [{x,y}] trail of forward swing path
   const [selectedClubIndex, setSelectedClubIndex] = useState(15);
   const [menuOpen, setMenuOpen] = useState(false);
   const [clubPickerOpen, setClubPickerOpen] = useState(false);
@@ -429,7 +429,7 @@ export default function App() {
     setIsAiming(false);
     setShotControlOpen(false);
     setSpinOffset({ x: 0, y: 0 });
-    powerRef.current = 100; setPowerPct(100);
+    powerRef.current = 0; setPowerPct(0);
     setTempoLabel('Blue dot centered');
     const nc = clampCamera(currentHole.ballStart);
     setCamera(nc);
@@ -458,7 +458,7 @@ export default function App() {
     setIsAiming(false);
     setShotControlOpen(false);
     setSpinOffset({ x: 0, y: 0 });
-    powerRef.current = 100; setPowerPct(100);
+    powerRef.current = 0; setPowerPct(0);
     setTempoLabel('Blue dot centered');
     setLastShotNote('Tap Yards to shape the shot, then tap the big ball to strike it.');
     const nc = clampCamera(currentHole.ballStart);
@@ -498,7 +498,7 @@ export default function App() {
     setIsAiming(false);
     setShotControlOpen(false);
     setSpinOffset({ x: 0, y: 0 });
-    powerRef.current = 100; setPowerPct(100);
+    powerRef.current = 0; setPowerPct(0);
     setTempoLabel('Blue dot centered');
     setLastShotNote('Tap Yards to shape the shot, then tap the big ball to strike it.');
   }, [holeIndex, currentHole.ballStart, currentHole.cup]);
@@ -511,13 +511,6 @@ export default function App() {
       const dt = Math.min((ts - lastTsRef.current) / 1000, 0.033);
       lastTsRef.current = ts;
 
-      // Tempo oscillation during swing charge
-      if (swingPhase === 'charging') {
-        tempoRef.current += tempoDirectionRef.current * dt * 2.4;
-        if (tempoRef.current >= 1) { tempoRef.current = 1; tempoDirectionRef.current = -1; }
-        if (tempoRef.current <= -1) { tempoRef.current = -1; tempoDirectionRef.current = 1; }
-        setTempoPosition(tempoRef.current);
-      }
 
       const tickSunk = sunkRef.current;
       const tickHole = HOLES[holeIndexRef.current];
@@ -860,18 +853,16 @@ export default function App() {
     return { xNorm, yNorm, launchAdjust, spinAdjust, curveDeg, shapeLabel, flightLabel };
   };
 
-  const strikeBall = () => {
-    if (sunk || ballMoving) {
-      console.log('[STRIKE] BLOCKED: sunk=', sunk, 'ballMoving=', ballMoving);
-      return;
-    }
+  const strikeBall = (deviation = 0) => {
+    if (sunk || ballMoving) return;
 
-    const tempoAccuracy = 1 - Math.abs(tempoRef.current) * 0.35;
     const shotMetrics = getShotControlMetrics();
-    const finalAngle = aimAngle + degToRad(shotMetrics.curveDeg);
+    // deviation: -1 (hard left) to +1 (hard right) from forward swing path
+    const swingCurveDeg = deviation * 25; // up to 25° curve from off-center swipe
+    const finalAngle = aimAngle + degToRad(shotMetrics.curveDeg + swingCurveDeg);
     const direction = { x: Math.cos(finalAngle), y: Math.sin(finalAngle) };
     const effectivePower = powerRef.current;
-    const speed = speedFromPower(effectivePower, selectedClub) * tempoAccuracy;
+    const speed = speedFromPower(effectivePower, selectedClub);
     const launchRatio = clamp(effectivePower / 125, 0, 1);
     const horizSpeed = speed * (0.62 - selectedClub.launch * 0.04 + (selectedClub.roll / shotMetrics.spinAdjust) * 0.05);
     const clubLaunchBoost = selectedClub.key === 'PT' ? 1 : 0.92 + selectedClub.launch * 0.42;
@@ -888,10 +879,15 @@ export default function App() {
     };
 
     setBallHeight(flightRef.current.z);
-    setTempoLabel(`${shotMetrics.shapeLabel} • ${shotMetrics.flightLabel}`);
+    const deviationLabel = Math.abs(deviation) < 0.1 ? 'Straight' : deviation < -0.3 ? 'Pull' : deviation > 0.3 ? 'Push' : deviation < 0 ? 'Slight pull' : 'Slight push';
+    setTempoLabel(`${deviationLabel} • ${effectivePower}%`);
     setStrokesCurrent((s) => s + 1);
     setShotControlOpen(false);
-    setLastShotNote(`${selectedClub.short} hit with ${shotMetrics.shapeLabel.toLowerCase()} and ${shotMetrics.flightLabel.toLowerCase()}.`);
+    setSwingPhase('idle');
+    setPowerPct(0);
+    powerRef.current = 0;
+    setSwingDeviation(0);
+    setLastShotNote(`${selectedClub.short} — ${deviationLabel.toLowerCase()}, ${effectivePower}% power.`);
   };
 
   const shotControlResponder = useMemo(
@@ -929,6 +925,63 @@ export default function App() {
         }
       }),
     [ballMoving, draggingSpinDot, shotControlOpen, sunk, spinOffset.x, spinOffset.y]
+  );
+
+  const swingResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => !sunk && !ballMoving && !shotControlOpen,
+        onStartShouldSetPanResponderCapture: () => !sunk && !ballMoving && !shotControlOpen,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (evt) => {
+          swingStartRef.current = { x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY };
+          swingLowestRef.current = { x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY };
+          swingTrailRef.current = [];
+          setSwingPhase('backswing');
+          powerRef.current = 0;
+          setPowerPct(0);
+          setSwingDeviation(0);
+        },
+        onPanResponderMove: (evt, gestureState) => {
+          const currentY = evt.nativeEvent.pageY;
+          const currentX = evt.nativeEvent.pageX;
+          const dy = currentY - swingStartRef.current.y;
+
+          if (dy > 0) {
+            // Dragging DOWN = backswing, charging power
+            const pct = clamp(Math.round(dy / 1.2), 0, 120);
+            powerRef.current = pct;
+            setPowerPct(pct);
+            swingLowestRef.current = { x: currentX, y: currentY };
+            swingTrailRef.current = [];
+            setSwingPhase('backswing');
+          } else if (powerRef.current > 5) {
+            // Dragging back UP = forward swing
+            setSwingPhase('forward');
+            swingTrailRef.current.push({ x: currentX, y: currentY });
+            // Calculate horizontal deviation from the straight line (start.x to lowest.x)
+            const centerX = swingStartRef.current.x;
+            const devPx = currentX - centerX;
+            const devNorm = clamp(devPx / 60, -1, 1);
+            setSwingDeviation(devNorm);
+          }
+        },
+        onPanResponderRelease: () => {
+          if (powerRef.current > 5) {
+            strikeBall(swingDeviation);
+          } else {
+            setSwingPhase('idle');
+            setPowerPct(0);
+            powerRef.current = 0;
+          }
+        },
+        onPanResponderTerminate: () => {
+          setSwingPhase('idle');
+          setPowerPct(0);
+          powerRef.current = 0;
+        }
+      }),
+    [ballMoving, shotControlOpen, sunk, swingDeviation]
   );
 
 
@@ -1385,52 +1438,40 @@ export default function App() {
                   </Pressable>
                 </View>
               ) : (
-                <Pressable
-                  style={styles.swingPad}
-                  accessibilityRole="button"
-                  onPress={() => {
-                    if (!sunk && !ballMoving && !shotControlOpen) {
-                      powerRef.current = 100;
-                      powerRef.current = 100; setPowerPct(100);
-                      strikeBall();
-                    }
-                  }}
-                >
+                <View style={styles.swingPad} {...swingResponder.panHandlers}>
                   {/* Radial power ring */}
                   <View style={[
                     styles.powerRing,
                     {
-                      width: SHOT_PAD_SIZE * clamp(powerPct / 100, 0.15, 1.15),
-                      height: SHOT_PAD_SIZE * clamp(powerPct / 100, 0.15, 1.15),
-                      borderRadius: SHOT_PAD_SIZE * clamp(powerPct / 100, 0.15, 1.15) / 2,
+                      width: SHOT_PAD_SIZE * clamp(powerPct / 100, 0.15, 1.2),
+                      height: SHOT_PAD_SIZE * clamp(powerPct / 100, 0.15, 1.2),
+                      borderRadius: SHOT_PAD_SIZE * clamp(powerPct / 100, 0.15, 1.2) / 2,
                       borderColor: powerPct > 100 ? '#ff4444' : '#4adb6a',
-                      opacity: swingPhase === 'charging' ? 0.7 : 0.25
+                      opacity: swingPhase !== 'idle' ? 0.7 : 0.25
                     }
                   ]} />
                   <View style={styles.swingHaloOuter} />
                   <View style={styles.swingHaloInner}>
                     <Text style={styles.swingPct}>
-                      {swingPhase === 'charging' ? `${powerPct}%` : 'Hit'}
+                      {swingPhase === 'backswing' ? `${powerPct}%`
+                        : swingPhase === 'forward' ? (Math.abs(swingDeviation) < 0.1 ? '↑' : swingDeviation < 0 ? '↰' : '↱')
+                        : '⛳'}
                     </Text>
                   </View>
-                  {/* Tempo meter */}
-                  {swingPhase === 'charging' ? (
-                    <View style={styles.tempoWrap} pointerEvents="none">
-                      <View style={styles.tempoTrack}>
-                        <View style={[
-                          styles.tempoCenter
-                        ]} />
-                        <View style={[
-                          styles.tempoIndicator,
-                          { left: `${50 + tempoPosition * 40}%` }
-                        ]} />
-                      </View>
-                      <Text style={styles.tempoLabel}>
-                        {Math.abs(tempoPosition) < 0.2 ? 'Perfect' : Math.abs(tempoPosition) < 0.5 ? 'Good' : 'Off'}
+                  {/* Swing guide */}
+                  {swingPhase !== 'idle' ? (
+                    <View style={styles.swingGuideWrap} pointerEvents="none">
+                      <Text style={styles.swingGuideText}>
+                        {swingPhase === 'backswing' ? '↓ Pull down for power'
+                          : `Swipe up straight! ${Math.abs(swingDeviation) < 0.1 ? '✓ Straight' : swingDeviation < -0.3 ? '← Pull' : swingDeviation > 0.3 ? '→ Push' : swingDeviation < 0 ? '← Slight' : '→ Slight'}`}
                       </Text>
                     </View>
-                  ) : null}
-                </Pressable>
+                  ) : (
+                    <View style={styles.swingGuideWrap} pointerEvents="none">
+                      <Text style={styles.swingGuideText}>Hold & drag down</Text>
+                    </View>
+                  )}
+                </View>
               )}
             </View>
           </View>
@@ -1962,41 +2003,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.78,
     shadowRadius: 14
   },
-  tempoWrap: {
+  swingGuideWrap: {
     position: 'absolute',
-    bottom: -32,
-    width: SHOT_PAD_SIZE,
-    alignItems: 'center',
-    gap: 2
+    bottom: -28,
+    width: SHOT_PAD_SIZE + 40,
+    alignItems: 'center'
   },
-  tempoTrack: {
-    width: 120,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    position: 'relative',
-    overflow: 'hidden'
-  },
-  tempoCenter: {
-    position: 'absolute',
-    left: '48%',
-    width: '4%',
-    height: '100%',
-    backgroundColor: 'rgba(74, 219, 106, 0.6)',
-    borderRadius: 2
-  },
-  tempoIndicator: {
-    position: 'absolute',
-    width: 6,
-    height: 8,
-    borderRadius: 3,
-    backgroundColor: '#ffdd44',
-    marginLeft: -3
-  },
-  tempoLabel: {
+  swingGuideText: {
     color: '#d0dfcb',
-    fontSize: 10,
-    fontWeight: '700'
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center'
   },
   shotDoneButton: {
     position: 'absolute',
