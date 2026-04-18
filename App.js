@@ -258,7 +258,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v1.0.0';
+const BUILD_VERSION = 'web v1.0.1';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -283,11 +283,9 @@ const pointInCircle = (p, c) => {
 
 const getAimAngleToCup = (ballPos, cup) => Math.atan2(cup.y - ballPos.y, cup.x - ballPos.x);
 const speedFromPower = (powerPct, club = CLUBS[0]) => {
-  // Target: X% power with a Y-yard club = ~X% * Y yards of carry
   const normalized = clamp(powerPct / 100, 0, 1.2);
-  const targetWorldDist = (club.carryYards / YARDS_PER_WORLD) * normalized;
-  // Account for air drag over ~1.2s hang time: need ~1.7x initial speed to hit target dist
-  return targetWorldDist * 1.7;
+  const base = 120 + normalized * 340;
+  return base * club.speed;
 };
 const expandRect = (rect, inset) => ({
   x: rect.x - inset,
@@ -898,21 +896,18 @@ export default function App() {
     const effectivePower = powerRef.current;
     const speed = speedFromPower(effectivePower, selectedClub);
     const launchRatio = clamp(effectivePower / 125, 0, 1);
-    const horizSpeed = speed * 0.92;
+    const horizSpeed = speed * (0.62 - selectedClub.launch * 0.04 + (selectedClub.roll / shotMetrics.spinAdjust) * 0.05);
     const clubLaunchBoost = selectedClub.key === 'PT' ? 1 : 0.92 + selectedClub.launch * 0.42;
 
     velocityRef.current = {
       x: direction.x * horizSpeed,
       y: direction.y * horizSpeed
     };
-    // Hang time ~0.8-1.4s depending on club loft. vz = GRAVITY * hangTime / 2
-    const hangTime = 0.7 + selectedClub.launch * 1.4;
-    const launchVz = selectedClub.key === 'PT'
-      ? 0.8 + launchRatio * 2.0
-      : (GRAVITY * hangTime / 2) * launchRatio * shotMetrics.launchAdjust;
     flightRef.current = {
       z: 0.08,
-      vz: launchVz
+      vz: selectedClub.key === 'PT'
+        ? 0.8 + launchRatio * 2.4
+        : (14 + launchRatio * 38) * selectedClub.launch * shotMetrics.launchAdjust * clubLaunchBoost
     };
 
     // Track shot stats
