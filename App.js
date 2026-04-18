@@ -868,7 +868,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v2.9.0';
+const BUILD_VERSION = 'web v3.0.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1015,6 +1015,8 @@ export default function App() {
   const [isAiming, setIsAiming] = useState(false);
   const [sunk, setSunk] = useState(false);
   const [waterNotice, setWaterNotice] = useState(false);
+  const [waterDropMenu, setWaterDropMenu] = useState(null); // null or { lastPos, entryPos, hazard }
+  const lastShotPosRef = useRef(null); // position before current shot (for stroke & distance)
   const [shotControlOpen, setShotControlOpen] = useState(false);
   const [spinOffset, setSpinOffset] = useState({ x: 0, y: 0 });
   const [powerPct, setPowerPct] = useState(0);
@@ -1134,6 +1136,7 @@ export default function App() {
     setSunk(false);
     setShowScorecard(false);
     setWaterNotice(false);
+    setWaterDropMenu(null);
     setStrokesCurrent(0);
     setScores((prev) => {
       const next = [...prev];
@@ -1231,6 +1234,47 @@ export default function App() {
     manualPanUntilRef.current = 0;
   };
 
+  // Water drop options
+  const handleWaterDrop = (dropPos) => {
+    setWaterDropMenu(null);
+    setWaterNotice(false);
+    velocityRef.current = { x: 0, y: 0 };
+    flightRef.current = { z: 0, vz: 0 };
+    setBallHeight(0);
+    setBall(dropPos);
+    ballRef.current = dropPos;
+    setGolferBallAnchor(dropPos);
+    setAimAngle(getAimAngleToCup(dropPos, currentHole.cup));
+    shotAimAngleRef.current = getAimAngleToCup(dropPos, currentHole.cup);
+    setIsAiming(false);
+    setShotControlOpen(false);
+    setSpinOffset({ x: 0, y: 0 });
+    setPuttingMode(false);
+    setPuttPreview(null);
+    setPuttAimPoint(null);
+    setPuttSimulated(false);
+    setPuttTargetPowerPct(null);
+    setPuttSwingFeedback('');
+    powerRef.current = 0;
+    setPowerPct(0);
+    shotCurveDegRef.current = 0;
+    setTempoLabel('Blue dot centered');
+    setCurrentLie(getSurfaceAtPoint(currentHole, dropPos));
+    const nc = clampCamera(dropPos);
+    setCamera(nc);
+    cameraRef.current = nc;
+    manualPanUntilRef.current = 0;
+    // Auto-select club for drop distance
+    const distYards = Math.hypot(currentHole.cup.x - dropPos.x, currentHole.cup.y - dropPos.y) * YARDS_PER_WORLD;
+    let bestIdx = CLUBS.length - 1;
+    let bestDiff = Infinity;
+    for (let i = 1; i < CLUBS.length; i++) {
+      const diff = Math.abs(CLUBS[i].carryYards - distYards);
+      if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+    }
+    setSelectedClubIndex(bestIdx);
+  };
+
   const backToMenu = () => {
     setGameScreen('menu');
     setMenuOpen(false);
@@ -1264,6 +1308,7 @@ export default function App() {
     setSunk(false);
     setShowScorecard(false);
     setWaterNotice(false);
+    setWaterDropMenu(null);
     setStrokesCurrent(0);
     velocityRef.current = { x: 0, y: 0 };
     flightRef.current = { z: 0, vz: 0 };
@@ -1390,9 +1435,34 @@ export default function App() {
             shotCarryRef.current = Math.hypot(next.x - shotStartPosRef.current.x, next.y - shotStartPosRef.current.y) * YARDS_PER_WORLD;
           }
 
-          const fellInWater = tickHole.hazards.some((h) => h.type === 'waterRect' && pointInRect(next, h));
-          if (fellInWater) {
-            resetBall({ penaltyStroke: true });
+          const waterHaz = tickHole.hazards.find((h) => h.type === 'waterRect' && pointInRect(next, h));
+          if (waterHaz) {
+            // Ball entered water — stop motion, hide ball, show drop menu
+            vel.x = 0;
+            vel.y = 0;
+            flight.z = 0;
+            flight.vz = 0;
+            // Find entry point: last position before water (use previous ball pos)
+            const entryPos = { ...ballRef.current };
+            const lastPos = lastShotPosRef.current || tickHole.ballStart;
+            // Find lateral drop point: edge of water nearest the entry, not closer to hole
+            const lateralX = clamp(entryPos.x, waterHaz.x - 8, waterHaz.x + waterHaz.w + 8);
+            const lateralY = clamp(entryPos.y, waterHaz.y - 8, waterHaz.y + waterHaz.h + 8);
+            // Move ball just outside the nearest edge
+            const edgeDists = [
+              { side: 'left', d: Math.abs(entryPos.x - waterHaz.x), pos: { x: waterHaz.x - 10, y: entryPos.y } },
+              { side: 'right', d: Math.abs(entryPos.x - (waterHaz.x + waterHaz.w)), pos: { x: waterHaz.x + waterHaz.w + 10, y: entryPos.y } },
+              { side: 'top', d: Math.abs(entryPos.y - waterHaz.y), pos: { x: entryPos.x, y: waterHaz.y - 10 } },
+              { side: 'bottom', d: Math.abs(entryPos.y - (waterHaz.y + waterHaz.h)), pos: { x: entryPos.x, y: waterHaz.y + waterHaz.h + 10 } }
+            ];
+            edgeDists.sort((a, b) => a.d - b.d);
+            const lateralDrop = edgeDists[0].pos;
+            setBall({ x: -100, y: -100 }); // hide ball off-screen
+            ballRef.current = { x: -100, y: -100 };
+            setBallHeight(0);
+            setWaterDropMenu({ lastPos, entryPos: lateralDrop, hazard: waterHaz });
+            setWaterNotice(true);
+            setStrokesCurrent((s) => s + 1);
           } else {
             ballRef.current = next;
             setBall(next);
@@ -1953,6 +2023,7 @@ export default function App() {
     }
 
     // Track shot stats
+    lastShotPosRef.current = { ...ballRef.current };
     shotStartPosRef.current = { ...ballRef.current };
     shotLandPosRef.current = null;
     shotPeakHeightRef.current = 0;
@@ -2846,7 +2917,7 @@ export default function App() {
           </Text>
           <Text style={styles.lastShotText}>{lastShotNote}</Text>
 
-          {waterNotice && !sunk ? <Text style={styles.warning}>Water hazard: +1 stroke, ball reset.</Text> : null}
+          {waterNotice && !sunk && !waterDropMenu ? <Text style={styles.warning}>Water hazard: +1 stroke penalty.</Text> : null}
         </View>
 
         {/* Ball Lie PiP */}
@@ -2858,6 +2929,30 @@ export default function App() {
             {((SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty[1]) < 1 ? (
               <Text style={styles.liePenalty}>{Math.round((SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty[0] * 100)}-{Math.round((SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty[1] * 100)}% power</Text>
             ) : null}
+          </View>
+        ) : null}
+
+        {/* Water Drop Menu */}
+        {waterDropMenu ? (
+          <View style={styles.scorecardOverlay}>
+            <View style={[styles.scorecardCard, { maxWidth: 320, gap: 12 }]}>
+              <Text style={styles.scorecardTitle}>💧 Penalty Area</Text>
+              <Text style={{ color: '#c8dfc4', fontSize: 14, textAlign: 'center', lineHeight: 20 }}>
+                Ball in water. +1 stroke penalty.{"\n"}Choose your relief option:
+              </Text>
+              <Pressable
+                style={[styles.nextHoleBtn, { backgroundColor: '#3a8a5a', paddingVertical: 12 }]}
+                onPress={() => handleWaterDrop(waterDropMenu.entryPos)}
+              >
+                <Text style={styles.nextHoleBtnText}>⛳ Lateral Drop (near water edge)</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.nextHoleBtn, { backgroundColor: '#5a7a3a', paddingVertical: 12 }]}
+                onPress={() => handleWaterDrop(waterDropMenu.lastPos)}
+              >
+                <Text style={styles.nextHoleBtnText}>🔄 Stroke & Distance (re-hit from last spot)</Text>
+              </Pressable>
+            </View>
           </View>
         ) : null}
 
