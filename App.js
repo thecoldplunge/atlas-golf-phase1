@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Dimensions,
   PanResponder,
   Pressable,
   SafeAreaView,
@@ -7,8 +8,7 @@ import {
   Text,
   View,
   ScrollView,
-  Platform,
-  useWindowDimensions
+  Platform
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
@@ -236,7 +236,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v0.4.1';
+const BUILD_VERSION = 'web v0.4.2';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -297,13 +297,32 @@ const estimateStraightDistance = (powerPct, club, strike = { launch: 1, spin: 1 
   return (club.carryYards / YARDS_PER_WORLD) * shotRatio * strike.launch;
 };
 
+function useScreenSize() {
+  const getSize = () => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      return { width: window.innerWidth || 375, height: window.innerHeight || 667 };
+    }
+    const d = Dimensions.get('window');
+    return { width: d.width || 375, height: d.height || 667 };
+  };
+  const [size, setSize] = useState(getSize);
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const handler = () => setSize({ width: window.innerWidth || 375, height: window.innerHeight || 667 });
+      window.addEventListener('resize', handler);
+      return () => window.removeEventListener('resize', handler);
+    }
+    const sub = Dimensions.addEventListener('change', ({ window: w }) => setSize({ width: w.width || 375, height: w.height || 667 }));
+    return () => sub?.remove?.();
+  }, []);
+  return size;
+}
+
 export default function App() {
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const viewWidth = Math.max(screenWidth || 0, 320);
-  const viewHeight = Math.max(screenHeight || 0, 568);
-  const safeWidth = Math.max(screenWidth || 320, 320);
-  const safeHeight = Math.max(screenHeight || 568, 568);
-  const basePixelsPerWorld = Math.max(safeWidth / WORLD.w, safeHeight / WORLD.h);
+  const { width: screenWidth, height: screenHeight } = useScreenSize();
+  const viewWidth = Math.max(screenWidth, 320);
+  const viewHeight = Math.max(screenHeight, 568);
+  const basePixelsPerWorld = Math.max(viewWidth / WORLD.w, viewHeight / WORLD.h);
   const pixelsPerWorld = basePixelsPerWorld * CAMERA_ZOOM;
   const halfVpW = (viewWidth / 2) / pixelsPerWorld;
   const halfVpH = (viewHeight / 2) / pixelsPerWorld;
