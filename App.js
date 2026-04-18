@@ -254,7 +254,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v0.7.4';
+const BUILD_VERSION = 'web v0.8.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -356,6 +356,7 @@ export default function App() {
   const [shotControlOpen, setShotControlOpen] = useState(false);
   const [spinOffset, setSpinOffset] = useState({ x: 0, y: 0 });
   const [powerPct, setPowerPct] = useState(100);
+  const powerRef = useRef(100);
   const [swingPhase, setSwingPhase] = useState('idle'); // idle | charging | releasing
   const [tempoPosition, setTempoPosition] = useState(0); // -1 to 1, 0 = center
   const tempoRef = useRef(0);
@@ -382,6 +383,8 @@ export default function App() {
   const frameRef = useRef(null);
   const courseRef = useRef(null);
   const courseFrameRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+  const sunkRef = useRef(false);
+  const holeIndexRef = useRef(0);
   const [draggingSpinDot, setDraggingSpinDot] = useState(false);
 
   const currentHole = HOLES[holeIndex];
@@ -426,7 +429,7 @@ export default function App() {
     setIsAiming(false);
     setShotControlOpen(false);
     setSpinOffset({ x: 0, y: 0 });
-    setPowerPct(100);
+    powerRef.current = 100; setPowerPct(100);
     setTempoLabel('Blue dot centered');
     const nc = clampCamera(currentHole.ballStart);
     setCamera(nc);
@@ -455,7 +458,7 @@ export default function App() {
     setIsAiming(false);
     setShotControlOpen(false);
     setSpinOffset({ x: 0, y: 0 });
-    setPowerPct(100);
+    powerRef.current = 100; setPowerPct(100);
     setTempoLabel('Blue dot centered');
     setLastShotNote('Tap Yards to shape the shot, then tap the big ball to strike it.');
     const nc = clampCamera(currentHole.ballStart);
@@ -464,13 +467,10 @@ export default function App() {
     manualPanUntilRef.current = 0;
   };
 
-  useEffect(() => {
-    ballRef.current = ball;
-  }, [ball]);
-
-  useEffect(() => {
-    cameraRef.current = camera;
-  }, [camera]);
+  useEffect(() => { ballRef.current = ball; }, [ball]);
+  useEffect(() => { cameraRef.current = camera; }, [camera]);
+  useEffect(() => { sunkRef.current = sunk; }, [sunk]);
+  useEffect(() => { holeIndexRef.current = holeIndex; }, [holeIndex]);
 
   useEffect(() => {
     if (ballMoving) {
@@ -498,7 +498,7 @@ export default function App() {
     setIsAiming(false);
     setShotControlOpen(false);
     setSpinOffset({ x: 0, y: 0 });
-    setPowerPct(100);
+    powerRef.current = 100; setPowerPct(100);
     setTempoLabel('Blue dot centered');
     setLastShotNote('Tap Yards to shape the shot, then tap the big ball to strike it.');
   }, [holeIndex, currentHole.ballStart, currentHole.cup]);
@@ -519,7 +519,9 @@ export default function App() {
         setTempoPosition(tempoRef.current);
       }
 
-      if (!sunk) {
+      const tickSunk = sunkRef.current;
+      const tickHole = HOLES[holeIndexRef.current];
+      if (!tickSunk) {
         const vel = velocityRef.current;
         const flight = flightRef.current;
         const speed = magnitude(vel);
@@ -531,7 +533,7 @@ export default function App() {
             y: ballRef.current.y + vel.y * dt
           };
 
-          const surfaceName = getSurfaceAtPoint(currentHole, next);
+          const surfaceName = getSurfaceAtPoint(tickHole, next);
           const surfacePhysics = SURFACE_PHYSICS[surfaceName] || SURFACE_PHYSICS.rough;
           const onGround = flight.z <= GROUND_EPSILON && Math.abs(flight.vz) < 0.3;
 
@@ -544,7 +546,7 @@ export default function App() {
             vel.x *= airDrag;
             vel.y *= airDrag;
             // Wind force while airborne
-            const wind = WIND_PRESETS[holeIndex % WIND_PRESETS.length];
+            const wind = WIND_PRESETS[holeIndexRef.current % WIND_PRESETS.length];
             const wDir = WIND_DIRS[wind.dir] || { x: 0, y: 0 };
             const wForce = wind.speed * WIND_FORCE_SCALE * dt;
             vel.x += wDir.x * wForce;
@@ -573,7 +575,7 @@ export default function App() {
           next.y = clamp(next.y, radiusWorld, WORLD.h - radiusWorld);
 
           if (flight.z <= 1.15) {
-            currentHole.obstacles.forEach((o) => {
+            tickHole.obstacles.forEach((o) => {
               if (o.type === 'rect') {
                 const nearestX = clamp(next.x, o.x, o.x + o.w);
                 const nearestY = clamp(next.y, o.y, o.y + o.h);
@@ -622,7 +624,7 @@ export default function App() {
             });
           }
 
-          const fellInWater = currentHole.hazards.some((h) => h.type === 'waterRect' && pointInRect(next, h));
+          const fellInWater = tickHole.hazards.some((h) => h.type === 'waterRect' && pointInRect(next, h));
           if (fellInWater) {
             resetBall({ penaltyStroke: true });
           } else {
@@ -672,7 +674,7 @@ export default function App() {
       }
       lastTsRef.current = null;
     };
-  }, [currentHole.hazards, currentHole.obstacles, sunk]);
+  }, []);
 
   useEffect(() => {
     if (sunk) {
@@ -860,15 +862,17 @@ export default function App() {
 
   const strikeBall = () => {
     if (sunk || ballMoving) {
+      console.log('[STRIKE] BLOCKED: sunk=', sunk, 'ballMoving=', ballMoving);
       return;
     }
 
-    const tempoAccuracy = 1 - Math.abs(tempoRef.current) * 0.35; // perfect=1, worst=0.65
+    const tempoAccuracy = 1 - Math.abs(tempoRef.current) * 0.35;
     const shotMetrics = getShotControlMetrics();
     const finalAngle = aimAngle + degToRad(shotMetrics.curveDeg);
     const direction = { x: Math.cos(finalAngle), y: Math.sin(finalAngle) };
-    const speed = speedFromPower(powerPct, selectedClub) * tempoAccuracy;
-    const launchRatio = clamp(powerPct / 125, 0, 1);
+    const effectivePower = powerRef.current;
+    const speed = speedFromPower(effectivePower, selectedClub) * tempoAccuracy;
+    const launchRatio = clamp(effectivePower / 125, 0, 1);
     const horizSpeed = speed * (0.62 - selectedClub.launch * 0.04 + (selectedClub.roll / shotMetrics.spinAdjust) * 0.05);
     const clubLaunchBoost = selectedClub.key === 'PT' ? 1 : 0.92 + selectedClub.launch * 0.42;
 
@@ -927,39 +931,6 @@ export default function App() {
     [ballMoving, draggingSpinDot, shotControlOpen, sunk, spinOffset.x, spinOffset.y]
   );
 
-  const handleSwingStart = (evt) => {
-    if (sunk || ballMoving || shotControlOpen) return;
-    const y = evt.nativeEvent?.pageY ?? evt.pageY ?? 0;
-    swingStartYRef.current = y;
-    setSwingPhase('charging');
-    tempoRef.current = 0;
-    tempoDirectionRef.current = 1;
-    setTempoPosition(0);
-    setPowerPct(0);
-  };
-  const handleSwingMove = (evt) => {
-    if (swingPhase !== 'charging') return;
-    const y = evt.nativeEvent?.pageY ?? evt.pageY ?? 0;
-    const dy = y - swingStartYRef.current;
-    const pct = clamp(Math.abs(dy) / 120 * 100, 0, 115);
-    setPowerPct(Math.round(pct));
-  };
-  const handleSwingEnd = () => {
-    if (swingPhase !== 'charging') {
-      // Simple tap = 100% power strike
-      if (!sunk && !ballMoving && !shotControlOpen) {
-        setPowerPct(100);
-        strikeBall();
-      }
-      return;
-    }
-    setSwingPhase('idle');
-    if (powerPct > 5) {
-      strikeBall();
-    } else {
-      setPowerPct(100);
-    }
-  };
 
   const screenBall = toScreen(ball);
   const screenCup = toScreen(currentHole.cup);
@@ -1419,8 +1390,9 @@ export default function App() {
                   accessibilityRole="button"
                   onPress={() => {
                     if (!sunk && !ballMoving && !shotControlOpen) {
-                      setPowerPct(100);
-                      setTimeout(() => strikeBall(), 10);
+                      powerRef.current = 100;
+                      powerRef.current = 100; setPowerPct(100);
+                      strikeBall();
                     }
                   }}
                 >
