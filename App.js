@@ -258,7 +258,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v1.0.4';
+const BUILD_VERSION = 'web v1.1.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -362,6 +362,8 @@ export default function App() {
   const swingLowestRef = useRef({ x: 0, y: 0 });
   const swingTrailRef = useRef([]); // [{x,y}] trail of forward swing path
   const fullSwingPathRef = useRef([]); // entire drag path for visualization
+  const peakPowerRef = useRef(0); // max power reached during backswing
+  const swingLockedRef = useRef(false); // true once forward swing starts
   const [lastShotStats, setLastShotStats] = useState(null);
   const [showShotStats, setShowShotStats] = useState(false);
   const shotStartPosRef = useRef(null);
@@ -1015,6 +1017,8 @@ export default function App() {
           fullSwingPathRef.current = [{ x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY, phase: 'start' }];
           setSwingPhase('backswing');
           powerRef.current = 0;
+          peakPowerRef.current = 0;
+          swingLockedRef.current = false;
           setPowerPct(0);
           setSwingDeviation(0);
         },
@@ -1023,22 +1027,30 @@ export default function App() {
           const currentX = evt.nativeEvent.pageX;
           const dy = currentY - swingStartRef.current.y;
 
-          fullSwingPathRef.current.push({ x: currentX, y: currentY, phase: dy > 0 ? 'back' : 'forward' });
+          fullSwingPathRef.current.push({ x: currentX, y: currentY, phase: swingLockedRef.current ? 'forward' : 'back' });
 
-          if (dy > 0) {
-            // Dragging DOWN = backswing, charging power
-            const pct = clamp(Math.round(dy / 0.45), 0, 120);
-            powerRef.current = pct;
-            setPowerPct(pct);
-            swingLowestRef.current = { x: currentX, y: currentY };
-            swingTrailRef.current = [];
-            setSwingPhase('backswing');
-          } else if (powerRef.current > 5) {
-            // Dragging back UP = forward swing
-            setSwingPhase('forward');
+          if (!swingLockedRef.current) {
+            // BACKSWING: dragging down charges power
+            const dyFromLowest = currentY - swingLowestRef.current.y;
+            if (dy > 0) {
+              // Still moving down or at lowest point
+              const pct = clamp(Math.round(dy / 0.8), 0, 120);
+              powerRef.current = pct;
+              peakPowerRef.current = Math.max(peakPowerRef.current, pct);
+              setPowerPct(pct);
+              swingLowestRef.current = { x: currentX, y: currentY };
+              swingTrailRef.current = [];
+            } else if (peakPowerRef.current > 5 && dyFromLowest < -8) {
+              // Finger reversed direction upward — LOCK power and start forward swing
+              swingLockedRef.current = true;
+              powerRef.current = peakPowerRef.current;
+              setPowerPct(peakPowerRef.current);
+              setSwingPhase('forward');
+            }
+          } else {
+            // FORWARD SWING: track deviation
             swingTrailRef.current.push({ x: currentX, y: currentY });
-            // Calculate horizontal deviation from the straight line (start.x to lowest.x)
-            const centerX = swingStartRef.current.x;
+            const centerX = swingLowestRef.current.x;
             const devPx = currentX - centerX;
             const devNorm = clamp(devPx / 60, -1, 1);
             setSwingDeviation(devNorm);
