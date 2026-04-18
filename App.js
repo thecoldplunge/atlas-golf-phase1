@@ -258,7 +258,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v1.0.2';
+const BUILD_VERSION = 'web v1.0.3';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -283,9 +283,12 @@ const pointInCircle = (p, c) => {
 
 const getAimAngleToCup = (ballPos, cup) => Math.atan2(cup.y - ballPos.y, cup.x - ballPos.x);
 const speedFromPower = (powerPct, club = CLUBS[0]) => {
+  // Distance-calibrated: target carry in world units, then scale for drag/hang time
   const normalized = clamp(powerPct / 100, 0, 1.2);
-  const base = 120 + normalized * 340;
-  return base * club.speed;
+  const targetWorldDist = (club.carryYards / YARDS_PER_WORLD) * normalized;
+  // Need to overshoot initial speed to account for air drag reducing distance
+  // At 0.14 drag coeff over ~1.2s, we lose about 8% to drag
+  return targetWorldDist * 1.15;
 };
 const expandRect = (rect, inset) => ({
   x: rect.x - inset,
@@ -897,18 +900,21 @@ export default function App() {
     const effectivePower = powerRef.current;
     const speed = speedFromPower(effectivePower, selectedClub);
     const launchRatio = clamp(effectivePower / 125, 0, 1);
-    const horizSpeed = speed * (0.62 - selectedClub.launch * 0.04 + (selectedClub.roll / shotMetrics.spinAdjust) * 0.05);
+    const horizSpeed = speed;
     const clubLaunchBoost = selectedClub.key === 'PT' ? 1 : 0.92 + selectedClub.launch * 0.42;
 
     velocityRef.current = {
       x: direction.x * horizSpeed,
       y: direction.y * horizSpeed
     };
+    // Hang time calibrated to match distance: higher lofted clubs hang longer proportionally
+    const targetHangTime = selectedClub.key === 'PT' ? 0.3 + launchRatio * 0.5 : 0.8 + selectedClub.launch * 0.6;
+    const launchVz = selectedClub.key === 'PT'
+      ? 0.8 + launchRatio * 2.4
+      : (GRAVITY * targetHangTime * 0.5) * launchRatio * shotMetrics.launchAdjust;
     flightRef.current = {
       z: 0.08,
-      vz: selectedClub.key === 'PT'
-        ? 0.8 + launchRatio * 2.4
-        : (14 + launchRatio * 38) * selectedClub.launch * shotMetrics.launchAdjust * clubLaunchBoost
+      vz: launchVz
     };
 
     // Track shot stats
@@ -2336,8 +2342,8 @@ const styles = StyleSheet.create({
   },
   liePip: {
     position: 'absolute',
-    top: 70,
-    right: 10,
+    top: 130,
+    left: 10,
     backgroundColor: 'rgba(20, 35, 20, 0.88)',
     borderRadius: 12,
     padding: 8,
