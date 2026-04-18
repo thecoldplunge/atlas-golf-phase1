@@ -1948,7 +1948,9 @@ export default function App() {
       overpowerMult = 1.0 + (Math.pow(1.06, overPct) - 1) * 1.2;
     }
     const baseSensitivity = 40; // up from 25 — more punishing baseline
-    const swingCurveDeg = deviation * baseSensitivity * lieSwingSens * overpowerMult;
+    const rawCurveDeg = deviation * baseSensitivity * lieSwingSens * overpowerMult;
+    // Cap curve at ±45° — no golf shot curves more than that
+    const swingCurveDeg = clamp(rawCurveDeg, -45, 45);
     const totalCurveDeg = shotMetrics.curveDeg + swingCurveDeg;
     const launchCurveDeg = totalCurveDeg * CURVE_LAUNCH_BLEND;
     const baseAimAngle = options.aimAngle ?? aimAngle;
@@ -2252,7 +2254,8 @@ export default function App() {
   const aimDir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
   const aimPerp = { x: -aimDir.y, y: aimDir.x };
   const previewOverpowerMult = powerPct > 100 ? 1.0 + (Math.pow(1.06, powerPct - 100) - 1) * 1.2 : 1.0;
-  const totalPreviewCurveDeg = shotMetrics.curveDeg + swingDeviation * 40 * previewOverpowerMult;
+  const rawPreviewCurveDeg = shotMetrics.curveDeg + swingDeviation * 40 * previewOverpowerMult;
+  const totalPreviewCurveDeg = clamp(rawPreviewCurveDeg, -45, 45);
   const distanceToCupWorld = Math.hypot(currentHole.cup.x - ball.x, currentHole.cup.y - ball.y);
   const yardsToCup = Math.max(0, Math.round(distanceToCupWorld * YARDS_PER_WORLD));
   const windData = roundWind[safeHoleIndex] || { speed: 0, dir: 'N' };
