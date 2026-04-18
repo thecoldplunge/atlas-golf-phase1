@@ -217,7 +217,21 @@ const GOLFER_SPRITE_ROWS = [
 const GOLFER_PIXELS = GOLFER_SPRITE_ROWS.flatMap((row, y) =>
   row.split('').flatMap((token, x) => (token === '.' ? [] : [{ x, y, color: GOLFER_PIXEL_KEY[token] }]))
 );
-const WIND_PRESETS = ['4 mph N', '7 mph NE', '6 mph W', '9 mph SW', '5 mph E'];
+const WIND_DIRS = {
+  N:  { x: 0, y: -1 },  S:  { x: 0, y: 1 },
+  E:  { x: 1, y: 0 },   W:  { x: -1, y: 0 },
+  NE: { x: 0.707, y: -0.707 }, NW: { x: -0.707, y: -0.707 },
+  SE: { x: 0.707, y: 0.707 },  SW: { x: -0.707, y: 0.707 }
+};
+const WIND_ARROWS = { N: '↑', S: '↓', E: '→', W: '←', NE: '↗', NW: '↖', SE: '↘', SW: '↙' };
+const WIND_PRESETS = [
+  { speed: 25, dir: 'N' },
+  { speed: 25, dir: 'NE' },
+  { speed: 25, dir: 'W' },
+  { speed: 25, dir: 'SW' },
+  { speed: 25, dir: 'E' }
+];
+const WIND_FORCE_SCALE = 0.35;
 const SHOT_SHAPE_HINTS = {
   PT: 'Low roll',
   LW: 'High soft',
@@ -236,7 +250,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v0.4.4';
+const BUILD_VERSION = 'web v0.5.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -512,6 +526,12 @@ export default function App() {
             const airDrag = Math.max(0, 1 - 0.14 * dt);
             vel.x *= airDrag;
             vel.y *= airDrag;
+            // Wind force while airborne
+            const wind = WIND_PRESETS[holeIndex % WIND_PRESETS.length];
+            const wDir = WIND_DIRS[wind.dir] || { x: 0, y: 0 };
+            const wForce = wind.speed * WIND_FORCE_SCALE * dt;
+            vel.x += wDir.x * wForce;
+            vel.y += wDir.y * wForce;
           }
 
           flight.vz -= GRAVITY * dt;
@@ -908,7 +928,10 @@ export default function App() {
   const aimPerp = { x: -aimDir.y, y: aimDir.x };
   const distanceToCupWorld = Math.hypot(currentHole.cup.x - ball.x, currentHole.cup.y - ball.y);
   const yardsToCup = Math.max(0, Math.round(distanceToCupWorld * YARDS_PER_WORLD));
-  const windLabel = WIND_PRESETS[holeIndex % WIND_PRESETS.length];
+  const windData = WIND_PRESETS[holeIndex % WIND_PRESETS.length];
+  const windLabel = `${windData.speed} mph`;
+  const windArrow = WIND_ARROWS[windData.dir] || '•';
+  const windDirLabel = windData.dir;
   const stockClubYards = Math.round(estimateStraightDistance(100, selectedClub, neutralStrike) * YARDS_PER_WORLD);
   const previewPower = powerPct;
   const previewYards = Math.round(estimateStraightDistance(previewPower, selectedClub, { launch: shotMetrics.launchAdjust, spin: shotMetrics.spinAdjust }) * YARDS_PER_WORLD);
@@ -1283,6 +1306,10 @@ export default function App() {
                 <Text style={styles.hudLabel}>Wind</Text>
                 <Text style={styles.hudValue}>{windLabel}</Text>
               </View>
+              <View style={styles.hudItemWind}>
+                <Text style={styles.windArrow}>{windArrow}</Text>
+                <Text style={styles.windDirText}>{windDirLabel}</Text>
+              </View>
             </View>
           </View>
         </View>
@@ -1642,6 +1669,27 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.05)'
+  },
+  hudItemWind: {
+    minWidth: 42,
+    paddingHorizontal: 5,
+    paddingVertical: 5,
+    borderRadius: 10,
+    backgroundColor: 'rgba(80, 140, 220, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(111, 174, 255, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  windArrow: {
+    color: '#78b7ff',
+    fontSize: 18,
+    fontWeight: '800'
+  },
+  windDirText: {
+    color: '#9fc8ff',
+    fontSize: 9,
+    fontWeight: '700'
   },
   hudItemPressable: {
     borderWidth: 1,
