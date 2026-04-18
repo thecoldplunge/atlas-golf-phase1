@@ -171,7 +171,7 @@ const CAMERA_ZOOM = 3.2;
 const IS_WEB = Platform.OS === 'web';
 const MANUAL_PAN_GRACE_MS = 2200;
 const BALL_RADIUS_WORLD = 2.4;
-const CUP_RADIUS_WORLD = 4.0;
+const CUP_RADIUS_WORLD = 2.0;
 const SHOT_PAD_SIZE = 184;
 const PAD_CENTER = SHOT_PAD_SIZE / 2;
 const SHOT_PAD_RADIUS = 78;
@@ -287,7 +287,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v2.2.2';
+const BUILD_VERSION = 'web v2.2.3';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -792,7 +792,7 @@ export default function App() {
     const dx = ball.x - currentHole.cup.x;
     const dy = ball.y - currentHole.cup.y;
     const dist = Math.hypot(dx, dy);
-    const captureRadius = CUP_RADIUS_WORLD + BALL_RADIUS_WORLD * 1.05;
+    const captureRadius = CUP_RADIUS_WORLD;
     const slowEnough = speed < 14;
     if (dist < captureRadius && slowEnough) {
       setSunk(true);
