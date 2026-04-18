@@ -166,6 +166,553 @@ const HOLES = [
   }
 ];
 
+// Michael's Custom Course - imported from Course Designer
+const MICHAELS_COURSE_HOLES = [
+  {
+    "id": 1,
+    "name": "Hole 1",
+    "par": 4,
+    "ballStart": {
+      "x": 80.41176470588235,
+      "y": 139.2941176470588
+    },
+    "cup": {
+      "x": 322.63114499879214,
+      "y": 123.32402645560549
+    },
+    "terrain": {
+      "tee": {
+        "x": 70.41176470588235,
+        "y": 132.2941176470588,
+        "w": 20,
+        "h": 14,
+        "r": 3
+      },
+      "fairway": [
+        {
+          "x": 106.04290970467453,
+          "y": 119.26520292619372,
+          "w": 88.82352941176471,
+          "h": 32.64705882352939,
+          "r": 13.058823529411757
+        }
+      ],
+      "green": {
+        "x": 302.925262645851,
+        "y": 104.50049704384077,
+        "w": 40,
+        "h": 40,
+        "r": 10
+      }
+    },
+    "slopes": [],
+    "obstacles": [
+      {
+        "type": "rect",
+        "x": 118.1017332340863,
+        "y": 152.50049704384077,
+        "w": 19.117647058823522,
+        "h": 13.235294117647044
+      },
+      {
+        "type": "rect",
+        "x": 104.27820382232159,
+        "y": 115.44167351442901,
+        "w": 17.352941176470594,
+        "h": 14.411764705882362
+      },
+      {
+        "type": "circle",
+        "x": 145.4546744105569,
+        "y": 159.2652029261937,
+        "r": 14,
+        "look": "pine"
+      },
+      {
+        "type": "circle",
+        "x": 197.51349793996866,
+        "y": 126.91226174972313,
+        "r": 16,
+        "look": "oak"
+      },
+      {
+        "type": "circle",
+        "x": 174.5723214693804,
+        "y": 107.79461469089959,
+        "r": 13,
+        "look": "palm"
+      },
+      {
+        "type": "circle",
+        "x": 107.51349793996864,
+        "y": 156.91226174972311,
+        "r": 13,
+        "look": "palm"
+      },
+      {
+        "type": "circle",
+        "x": 190.4546744105569,
+        "y": 164.85343822031135,
+        "r": 13,
+        "look": "palm"
+      },
+      {
+        "type": "circle",
+        "x": 183.39585088114512,
+        "y": 171.32402645560546,
+        "r": 10,
+        "look": "birch"
+      },
+      {
+        "type": "circle",
+        "x": 129.5723214693804,
+        "y": 177.20637939678193,
+        "r": 12,
+        "look": "cypress"
+      },
+      {
+        "type": "circle",
+        "x": 102.21938029290982,
+        "y": 177.79461469089958,
+        "r": 12,
+        "look": "cypress"
+      },
+      {
+        "type": "circle",
+        "x": 95.7487920576157,
+        "y": 153.38284998501723,
+        "r": 12,
+        "look": "cypress"
+      },
+      {
+        "type": "circle",
+        "x": 132.21938029290982,
+        "y": 110.73579116148784,
+        "r": 12,
+        "look": "cypress"
+      },
+      {
+        "type": "circle",
+        "x": 148.68996852820393,
+        "y": 108.67696763207607,
+        "r": 12,
+        "look": "cypress"
+      },
+      {
+        "type": "circle",
+        "x": 169.86643911643924,
+        "y": 108.67696763207607,
+        "r": 12,
+        "look": "cypress"
+      },
+      {
+        "type": "circle",
+        "x": 240,
+        "y": 185,
+        "r": 12,
+        "look": "cypress"
+      },
+      {
+        "type": "circle",
+        "x": 220,
+        "y": 185,
+        "r": 12,
+        "look": "cypress"
+      },
+      {
+        "type": "circle",
+        "x": 220,
+        "y": 205,
+        "r": 12,
+        "look": "cypress"
+      },
+      {
+        "type": "circle",
+        "x": 205,
+        "y": 205,
+        "r": 12,
+        "look": "cypress"
+      },
+      {
+        "type": "circle",
+        "x": 205,
+        "y": 195,
+        "r": 12,
+        "look": "cypress"
+      },
+      {
+        "type": "circle",
+        "x": 210,
+        "y": 180,
+        "r": 12,
+        "look": "cypress"
+      },
+      {
+        "type": "circle",
+        "x": 365,
+        "y": 190,
+        "r": 12,
+        "look": "cypress"
+      },
+      {
+        "type": "circle",
+        "x": 510,
+        "y": 0,
+        "r": 12,
+        "look": "cypress"
+      },
+      {
+        "type": "circle",
+        "x": 475,
+        "y": 50,
+        "r": 12,
+        "look": "cypress"
+      },
+      {
+        "type": "circle",
+        "x": 412.3499807666048,
+        "y": 45.10871555167529,
+        "r": 12,
+        "look": "cypress"
+      }
+    ],
+    "hazards": [
+      {
+        "type": "sandRect",
+        "x": 152.73576587850377,
+        "y": 142.13452968825825,
+        "w": 28.967228828812093,
+        "h": 28.967228828812093
+      },
+      {
+        "type": "waterRect",
+        "x": 113.68996852820393,
+        "y": 115.73579116148784,
+        "w": 92.64705882352942,
+        "h": 6.17647058823529
+      },
+      {
+        "type": "waterRect",
+        "x": 206.33702735173335,
+        "y": 103.08873233795842,
+        "w": 7.941176470588232,
+        "h": 60.588235294117624
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "Hole 2",
+    "par": 5,
+    "ballStart": {
+      "x": 280,
+      "y": 487
+    },
+    "cup": {
+      "x": 319.96386682583443,
+      "y": 124.01738941329063
+    },
+    "terrain": {
+      "tee": {
+        "x": 270,
+        "y": 480,
+        "w": 20,
+        "h": 14,
+        "r": 3
+      },
+      "fairway": [],
+      "green": {
+        "x": 302,
+        "y": 103,
+        "w": 40,
+        "h": 40,
+        "r": 10
+      }
+    },
+    "slopes": [
+      {
+        "cx": 0.6986064745674397,
+        "cy": 0.6923465000381519,
+        "strength": 0.35,
+        "dir": "N"
+      },
+      {
+        "cx": 0.20534667064586073,
+        "cy": 0.6629347353322658,
+        "strength": 0.35,
+        "dir": "N"
+      }
+    ],
+    "obstacles": [],
+    "hazards": []
+  },
+  {
+    "id": 3,
+    "name": "Hole 3",
+    "par": 3,
+    "ballStart": {
+      "x": 320.21386682583443,
+      "y": 159.51738941329063
+    },
+    "cup": {
+      "x": 359.96386682583443,
+      "y": 383.01738941329063
+    },
+    "terrain": {
+      "tee": {
+        "x": 310.21386682583443,
+        "y": 152.51738941329063,
+        "w": 20,
+        "h": 14,
+        "r": 3
+      },
+      "fairway": [
+        {
+          "x": 218.21386682583443,
+          "y": 249.51738941329063,
+          "w": 158,
+          "h": 21,
+          "r": 8.4
+        },
+        {
+          "x": 307.21386682583443,
+          "y": 200.51738941329063,
+          "w": 28,
+          "h": 90,
+          "r": 11.200000000000001
+        },
+        {
+          "x": 301.21386682583443,
+          "y": 234.51738941329063,
+          "w": 73,
+          "h": 70,
+          "r": 28
+        },
+        {
+          "x": 345.21386682583443,
+          "y": 213.51738941329063,
+          "w": 29,
+          "h": 54,
+          "r": 11.600000000000001
+        },
+        {
+          "x": 362.21386682583443,
+          "y": 295.51738941329063,
+          "w": 6,
+          "h": 42,
+          "r": 2.4000000000000004
+        },
+        {
+          "x": 303.21386682583443,
+          "y": 278.51738941329063,
+          "w": 37,
+          "h": 61,
+          "r": 14.8
+        }
+      ],
+      "green": {
+        "x": 340.21386682583443,
+        "y": 359.51738941329063,
+        "w": 40,
+        "h": 40,
+        "r": 10
+      }
+    },
+    "slopes": [
+      {
+        "cx": 0.85,
+        "cy": 0.575,
+        "strength": 0.98,
+        "dir": "E"
+      }
+    ],
+    "obstacles": [
+      {
+        "type": "rect",
+        "x": 274.21386682583443,
+        "y": 354.51738941329063,
+        "w": 32,
+        "h": 70
+      },
+      {
+        "type": "rect",
+        "x": 157.21386682583443,
+        "y": 351.51738941329063,
+        "w": 92,
+        "h": 79
+      },
+      {
+        "type": "circle",
+        "x": 256.21386682583443,
+        "y": 440.51738941329063,
+        "r": 10,
+        "look": "birch"
+      },
+      {
+        "type": "circle",
+        "x": 332.21386682583443,
+        "y": 435.51738941329063,
+        "r": 10,
+        "look": "birch"
+      },
+      {
+        "type": "circle",
+        "x": 388.21386682583443,
+        "y": 423.51738941329063,
+        "r": 10,
+        "look": "birch"
+      },
+      {
+        "type": "circle",
+        "x": 415.21386682583443,
+        "y": 396.51738941329063,
+        "r": 10,
+        "look": "birch"
+      },
+      {
+        "type": "circle",
+        "x": 444.21386682583443,
+        "y": 324.51738941329063,
+        "r": 10,
+        "look": "birch"
+      },
+      {
+        "type": "circle",
+        "x": 433.21386682583443,
+        "y": 278.51738941329063,
+        "r": 10,
+        "look": "birch"
+      },
+      {
+        "type": "circle",
+        "x": 421.21386682583443,
+        "y": 244.51738941329063,
+        "r": 10,
+        "look": "birch"
+      },
+      {
+        "type": "circle",
+        "x": 350.21386682583443,
+        "y": 279.51738941329063,
+        "r": 10,
+        "look": "birch"
+      },
+      {
+        "type": "circle",
+        "x": 233.21386682583443,
+        "y": 282.51738941329063,
+        "r": 10,
+        "look": "birch"
+      },
+      {
+        "type": "circle",
+        "x": 197.21386682583443,
+        "y": 327.51738941329063,
+        "r": 10,
+        "look": "birch"
+      },
+      {
+        "type": "circle",
+        "x": 242.21386682583443,
+        "y": 330.51738941329063,
+        "r": 10,
+        "look": "birch"
+      }
+    ],
+    "hazards": [
+      {
+        "type": "sandRect",
+        "x": 238.16261844630117,
+        "y": 256.46614103375737,
+        "w": 78.10249675906655,
+        "h": 78.10249675906655
+      },
+      {
+        "type": "sandRect",
+        "x": 372.86863176597694,
+        "y": 284.17215435343314,
+        "w": 46.690470119715,
+        "h": 46.690470119715
+      },
+      {
+        "type": "sandRect",
+        "x": 361.5805591730505,
+        "y": 224.8840817605067,
+        "w": 43.266615305567875,
+        "h": 43.266615305567875
+      },
+      {
+        "type": "sandRect",
+        "x": 296.627638377567,
+        "y": 175.9311609650232,
+        "w": 55.17245689653488,
+        "h": 55.17245689653488
+      },
+      {
+        "type": "sandRect",
+        "x": 231.96505732902105,
+        "y": 205.26857991647725,
+        "w": 52.49761899362675,
+        "h": 52.49761899362675
+      },
+      {
+        "type": "sandRect",
+        "x": 257.19871878739605,
+        "y": 300.50224137485225,
+        "w": 66.03029607687671,
+        "h": 66.03029607687671
+      },
+      {
+        "type": "sandRect",
+        "x": 294.21386682583443,
+        "y": 345.51738941329063,
+        "w": 30,
+        "h": 30
+      },
+      {
+        "type": "waterRect",
+        "x": 307.21386682583443,
+        "y": 332.51738941329063,
+        "w": 29,
+        "h": 81
+      },
+      {
+        "type": "waterRect",
+        "x": 340.21386682583443,
+        "y": 328.51738941329063,
+        "w": 79,
+        "h": 24
+      },
+      {
+        "type": "waterRect",
+        "x": 318.21386682583443,
+        "y": 327.51738941329063,
+        "w": 111,
+        "h": 28
+      }
+    ]
+  }
+];
+
+const COURSES = [
+  {
+    id: 'pine-valley',
+    name: 'Pine Valley',
+    designer: 'Atlas',
+    holes: HOLES,
+    description: '5 holes • Par 20',
+    difficulty: 'Medium'
+  },
+  {
+    id: 'michaels-course',
+    name: "Michael's Course",
+    designer: 'Michael',
+    holes: MICHAELS_COURSE_HOLES,
+    description: '3 holes • Par 12',
+    difficulty: 'Hard'
+  }
+];
+
 const WORLD = { w: 1040, h: 1100 };
 const CAMERA_ZOOM = 3.2;
 const IS_WEB = Platform.OS === 'web';
@@ -294,10 +841,10 @@ const WIND_DIRS = {
 };
 const WIND_ARROWS = { N: '↑', S: '↓', E: '→', W: '←', NE: '↗', NW: '↖', SE: '↘', SW: '↙' };
 const WIND_DIR_KEYS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-const generateWind = () => {
+const generateWind = (holes = HOLES) => {
   // One random speed for the whole round (1-25 mph), direction shifts per hole
   const roundSpeed = Math.max(1, Math.round(Math.random() * 25));
-  return HOLES.map(() => {
+  return holes.map(() => {
     const dir = WIND_DIR_KEYS[Math.floor(Math.random() * WIND_DIR_KEYS.length)];
     return { speed: roundSpeed, dir };
   });
@@ -321,7 +868,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v2.7.0';
+const BUILD_VERSION = 'web v2.8.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -442,6 +989,9 @@ export default function App() {
   const { width: screenWidth, height: screenHeight } = useScreenSize();
   const viewWidth = Math.max(screenWidth, 320);
   const viewHeight = Math.max(screenHeight, 568);
+  const [gameScreen, setGameScreen] = useState('menu'); // 'menu' or 'playing'
+  const [activeCourseIndex, setActiveCourseIndex] = useState(0);
+  const ACTIVE_HOLES = COURSES[activeCourseIndex]?.holes || HOLES;
   const [puttingMode, setPuttingMode] = useState(false);
   const [puttPreview, setPuttPreview] = useState(null);
   const [puttAimPoint, setPuttAimPoint] = useState(null);
@@ -456,12 +1006,12 @@ export default function App() {
 
   const [holeIndex, setHoleIndex] = useState(0);
   const [strokesCurrent, setStrokesCurrent] = useState(0);
-  const [scores, setScores] = useState(Array(HOLES.length).fill(null));
+  const [scores, setScores] = useState(Array(ACTIVE_HOLES.length).fill(null));
   const [holeScores, setHoleScores] = useState([]); // array of {hole: number, par: number, strokes: number, name: string}
   const [showScorecard, setShowScorecard] = useState(false);
-  const [roundWind, setRoundWind] = useState(() => generateWind());
-  const [ball, setBall] = useState(HOLES[0].ballStart);
-  const [aimAngle, setAimAngle] = useState(getAimAngleToCup(HOLES[0].ballStart, HOLES[0].cup));
+  const [roundWind, setRoundWind] = useState(() => generateWind(ACTIVE_HOLES));
+  const [ball, setBall] = useState(ACTIVE_HOLES[0].ballStart);
+  const [aimAngle, setAimAngle] = useState(getAimAngleToCup(ACTIVE_HOLES[0].ballStart, ACTIVE_HOLES[0].cup));
   const [isAiming, setIsAiming] = useState(false);
   const [sunk, setSunk] = useState(false);
   const [waterNotice, setWaterNotice] = useState(false);
@@ -486,17 +1036,17 @@ export default function App() {
   const shotCarryRef = useRef(0);
   const shotRollRef = useRef(0);
   const shotCurveDegRef = useRef(0);
-  const shotAimAngleRef = useRef(getAimAngleToCup(HOLES[0].ballStart, HOLES[0].cup));
+  const shotAimAngleRef = useRef(getAimAngleToCup(ACTIVE_HOLES[0].ballStart, ACTIVE_HOLES[0].cup));
   const [currentLie, setCurrentLie] = useState('tee');
   const [selectedClubIndex, setSelectedClubIndex] = useState(15);
   const [menuOpen, setMenuOpen] = useState(false);
   const [clubPickerOpen, setClubPickerOpen] = useState(false);
   const [lastShotNote, setLastShotNote] = useState('Tap Yards to shape the shot, then tap the big ball to strike it.');
   const [tempoLabel, setTempoLabel] = useState('Blue dot centered');
-  const [golferBallAnchor, setGolferBallAnchor] = useState(HOLES[0].ballStart);
+  const [golferBallAnchor, setGolferBallAnchor] = useState(ACTIVE_HOLES[0].ballStart);
   const [ballHeight, setBallHeight] = useState(0);
-  const [camera, setCamera] = useState({ x: HOLES[0].ballStart.x, y: HOLES[0].ballStart.y });
-  const cameraRef = useRef({ x: HOLES[0].ballStart.x, y: HOLES[0].ballStart.y });
+  const [camera, setCamera] = useState({ x: ACTIVE_HOLES[0].ballStart.x, y: ACTIVE_HOLES[0].ballStart.y });
+  const cameraRef = useRef({ x: ACTIVE_HOLES[0].ballStart.x, y: ACTIVE_HOLES[0].ballStart.y });
   const clampCameraRef = useRef((c) => c);
   const manualPanUntilRef = useRef(0);
   const panCentroidRef = useRef(null);
@@ -515,7 +1065,8 @@ export default function App() {
   const roundWindRef = useRef(roundWind);
   const [draggingSpinDot, setDraggingSpinDot] = useState(false);
 
-  const currentHole = HOLES[holeIndex];
+  const safeHoleIndex = clamp(holeIndex, 0, Math.max(0, ACTIVE_HOLES.length - 1));
+  const currentHole = ACTIVE_HOLES[safeHoleIndex] || ACTIVE_HOLES[0];
   const selectedClub = CLUBS[selectedClubIndex];
   const scaleX = pixelsPerWorld;
   const scaleY = pixelsPerWorld;
@@ -625,15 +1176,73 @@ export default function App() {
   const startNewRound = () => {
     setShowScorecard(false);
     setHoleScores([]);
-    setScores(Array(HOLES.length).fill(null));
-    setRoundWind(generateWind());
+    setScores(Array(ACTIVE_HOLES.length).fill(null));
+    setRoundWind(generateWind(ACTIVE_HOLES));
     setHoleIndex(0);
+  };
+
+  const startCourse = (courseIndex) => {
+    const holes = COURSES[courseIndex]?.holes || HOLES;
+    const firstHole = holes[0];
+    const firstBall = firstHole?.ballStart || { x: WORLD.w / 2, y: WORLD.h / 2 };
+    const firstCup = firstHole?.cup || firstBall;
+    const startCamera = {
+      x: clamp(firstBall.x, halfVpW, WORLD.w - halfVpW),
+      y: clamp(firstBall.y, halfVpH, WORLD.h - halfVpH)
+    };
+
+    setActiveCourseIndex(courseIndex);
+    setGameScreen('playing');
+    setMenuOpen(false);
+    setClubPickerOpen(false);
+    setHoleIndex(0);
+    setStrokesCurrent(0);
+    setScores(Array(holes.length).fill(null));
+    setHoleScores([]);
+    setShowScorecard(false);
+    setRoundWind(generateWind(holes));
+    setSunk(false);
+    setWaterNotice(false);
+    setShotControlOpen(false);
+    setSpinOffset({ x: 0, y: 0 });
+    setPuttingMode(false);
+    setPuttPreview(null);
+    setPuttAimPoint(null);
+    setPuttSimulated(false);
+    setPuttTargetPowerPct(null);
+    setPuttSwingFeedback('');
+    powerRef.current = 0;
+    setPowerPct(0);
+    shotCurveDegRef.current = 0;
+    shotAimAngleRef.current = getAimAngleToCup(firstBall, firstCup);
+    setAimAngle(getAimAngleToCup(firstBall, firstCup));
+    setBall(firstBall);
+    ballRef.current = firstBall;
+    setGolferBallAnchor(firstBall);
+    velocityRef.current = { x: 0, y: 0 };
+    flightRef.current = { z: 0, vz: 0 };
+    setBallHeight(0);
+    setCurrentLie('tee');
+    setTempoLabel('Blue dot centered');
+    setLastShotNote('Tap Yards to shape the shot, then tap the big ball to strike it.');
+    setCamera(startCamera);
+    cameraRef.current = startCamera;
+    manualPanUntilRef.current = 0;
+  };
+
+  const backToMenu = () => {
+    setGameScreen('menu');
+    setMenuOpen(false);
+    setShowScorecard(false);
+    setHoleIndex(0);
+    setScores(Array(ACTIVE_HOLES.length).fill(null));
+    setHoleScores([]);
   };
 
   useEffect(() => { ballRef.current = ball; }, [ball]);
   useEffect(() => { cameraRef.current = camera; }, [camera]);
   useEffect(() => { sunkRef.current = sunk; }, [sunk]);
-  useEffect(() => { holeIndexRef.current = holeIndex; }, [holeIndex]);
+  useEffect(() => { holeIndexRef.current = safeHoleIndex; }, [safeHoleIndex]);
   useEffect(() => { roundWindRef.current = roundWind; }, [roundWind]);
 
   useEffect(() => {
@@ -700,7 +1309,7 @@ export default function App() {
 
 
       const tickSunk = sunkRef.current;
-      const tickHole = HOLES[holeIndexRef.current];
+      const tickHole = ACTIVE_HOLES[holeIndexRef.current] || ACTIVE_HOLES[0];
       if (!tickSunk) {
         const vel = velocityRef.current;
         const flight = flightRef.current;
@@ -948,12 +1557,12 @@ export default function App() {
   }, [puttingMode, shotControlOpen]);
 
   // Build full scorecard rows for ALL holes (played + unplayed)
-  const scorecardRows = HOLES.map((hole, idx) => {
+  const scorecardRows = ACTIVE_HOLES.map((hole, idx) => {
     const played = holeScores.find((s) => s.hole === idx + 1);
     return { hole: idx + 1, name: hole.name, par: hole.par, strokes: played ? played.strokes : null };
   });
-  const frontNine = scorecardRows.slice(0, Math.min(9, HOLES.length));
-  const backNine = HOLES.length > 9 ? scorecardRows.slice(9) : null;
+  const frontNine = scorecardRows.slice(0, Math.min(9, ACTIVE_HOLES.length));
+  const backNine = ACTIVE_HOLES.length > 9 ? scorecardRows.slice(9) : null;
   const sumStrokes = (rows) => rows.reduce((s, r) => s + (r.strokes || 0), 0);
   const sumPar = (rows) => rows.reduce((s, r) => s + r.par, 0);
   const playedRows = scorecardRows.filter((r) => r.strokes !== null);
@@ -1513,7 +2122,7 @@ export default function App() {
   const worldOffsetX = viewWidth / 2 - camera.x * pixelsPerWorld;
   const worldOffsetY = viewHeight / 2 - camera.y * pixelsPerWorld;
 
-  const isLastHole = holeIndex === HOLES.length - 1;
+  const isLastHole = safeHoleIndex === ACTIVE_HOLES.length - 1;
   const shotMetrics = getShotControlMetrics();
   const overSwing = powerPct > 100;
   const neutralStrike = { launch: 1, spin: 1 };
@@ -1523,7 +2132,7 @@ export default function App() {
   const totalPreviewCurveDeg = shotMetrics.curveDeg + swingDeviation * 25;
   const distanceToCupWorld = Math.hypot(currentHole.cup.x - ball.x, currentHole.cup.y - ball.y);
   const yardsToCup = Math.max(0, Math.round(distanceToCupWorld * YARDS_PER_WORLD));
-  const windData = roundWind[holeIndex] || { speed: 0, dir: 'N' };
+  const windData = roundWind[safeHoleIndex] || { speed: 0, dir: 'N' };
   const windLabel = `${windData.speed} mph`;
   const windArrow = WIND_ARROWS[windData.dir] || '•';
   const windDirLabel = windData.dir;
@@ -1632,6 +2241,35 @@ export default function App() {
   const golferWidth = GOLFER_SPRITE_ROWS[0].length * golferPixelSize;
   const golferHeight = GOLFER_SPRITE_ROWS.length * golferPixelSize;
   const golferAngle = (aimAngle * 180) / Math.PI + 90;
+
+  if (gameScreen === 'menu') {
+    return (
+      <SafeAreaView style={styles.root}>
+        <StatusBar style="light" />
+        <View style={styles.courseMenuScreen}>
+          <Text style={styles.courseMenuTitle}>Atlas Golf</Text>
+          <Text style={styles.courseMenuSubtitle}>Select a Course</Text>
+          <ScrollView style={styles.courseMenuList} contentContainerStyle={styles.courseMenuListContent}>
+            {COURSES.map((course, index) => (
+              <View key={course.id} style={styles.courseMenuCard}>
+                <Text style={styles.courseMenuCardTitle}>{course.name}</Text>
+                <Text style={styles.courseMenuDesigner}>Designer: {course.designer}</Text>
+                <Text style={styles.courseMenuDescription}>{course.description}</Text>
+                <View style={styles.courseMenuMetaRow}>
+                  <View style={styles.courseMenuDifficultyBadge}>
+                    <Text style={styles.courseMenuDifficultyText}>{course.difficulty}</Text>
+                  </View>
+                  <Pressable style={styles.courseMenuPlayButton} onPress={() => startCourse(index)}>
+                    <Text style={styles.courseMenuPlayText}>Play</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.root}>
@@ -1979,6 +2617,12 @@ export default function App() {
                   >
                     <Text style={styles.menuItemText}>{isLastHole ? 'Round Done' : 'Next Hole'}</Text>
                   </Pressable>
+                  <Pressable
+                    style={[styles.menuItem, styles.menuItemDanger]}
+                    onPress={backToMenu}
+                  >
+                    <Text style={styles.menuItemText}>Back to Menu</Text>
+                  </Pressable>
                 </View>
               ) : null}
             </View>
@@ -1986,7 +2630,7 @@ export default function App() {
             <View style={styles.hudStrip}>
               <View style={styles.hudItem}>
                 <Text style={styles.hudLabel}>Hole</Text>
-                <Text style={styles.hudValue}>{holeIndex + 1} / {HOLES.length}</Text>
+                <Text style={styles.hudValue}>{safeHoleIndex + 1} / {ACTIVE_HOLES.length}</Text>
               </View>
               <View style={styles.hudItem}>
                 <Text style={styles.hudLabel}>Par</Text>
@@ -2215,7 +2859,7 @@ export default function App() {
                         <Text style={styles.scorecardDataText}>{row.hole}</Text>
                       </View>
                     ))}
-                    {HOLES.length >= 9 && <View style={styles.scorecardTotalCell}><Text style={styles.scorecardTotalCellText}>OUT</Text></View>}
+                    {ACTIVE_HOLES.length >= 9 && <View style={styles.scorecardTotalCell}><Text style={styles.scorecardTotalCellText}>OUT</Text></View>}
                     {backNine && backNine.map((row) => (
                       <View key={`h-${row.hole}`} style={[styles.scorecardDataCell, row.hole === holeIndex + 1 && styles.scorecardDataCellActive]}>
                         <Text style={styles.scorecardDataText}>{row.hole}</Text>
@@ -2230,7 +2874,7 @@ export default function App() {
                     {frontNine.map((row) => (
                       <View key={`p-${row.hole}`} style={styles.scorecardDataCell}><Text style={styles.scorecardDataText}>{row.par}</Text></View>
                     ))}
-                    {HOLES.length >= 9 && <View style={styles.scorecardTotalCell}><Text style={styles.scorecardTotalCellText}>{sumPar(frontNine)}</Text></View>}
+                    {ACTIVE_HOLES.length >= 9 && <View style={styles.scorecardTotalCell}><Text style={styles.scorecardTotalCellText}>{sumPar(frontNine)}</Text></View>}
                     {backNine && backNine.map((row) => (
                       <View key={`p-${row.hole}`} style={styles.scorecardDataCell}><Text style={styles.scorecardDataText}>{row.par}</Text></View>
                     ))}
@@ -2255,7 +2899,7 @@ export default function App() {
                         </View>
                       );
                     })}
-                    {HOLES.length >= 9 && <View style={styles.scorecardTotalCell}><Text style={styles.scorecardTotalCellText}>{sumStrokes(frontNine.filter(r => r.strokes !== null)) || '—'}</Text></View>}
+                    {ACTIVE_HOLES.length >= 9 && <View style={styles.scorecardTotalCell}><Text style={styles.scorecardTotalCellText}>{sumStrokes(frontNine.filter(r => r.strokes !== null)) || '—'}</Text></View>}
                     {backNine && backNine.map((row) => {
                       const played = row.strokes !== null;
                       const shape = played ? getScoreShape(row.strokes, row.par) : null;
@@ -2278,7 +2922,7 @@ export default function App() {
               </ScrollView>
               <View style={styles.scorecardTotals}>
                 <View style={styles.scorecardTotalRow}>
-                  <Text style={styles.scorecardTotalLabel}>{playedRows.length}/{HOLES.length} played</Text>
+                  <Text style={styles.scorecardTotalLabel}>{playedRows.length}/{ACTIVE_HOLES.length} played</Text>
                   <Text style={styles.scorecardTotalValue}>{scorecardTotalStrokes || '—'} strokes (par {scorecardTotalPar})</Text>
                   <Text style={[styles.scorecardTotalValue, scorecardDiffStyle, { fontSize: 18 }]}>{scorecardTotalStrokes ? scorecardDiffText : '—'}</Text>
                 </View>
@@ -2288,9 +2932,14 @@ export default function App() {
                   <Text style={styles.nextHoleBtnText}>Next Hole →</Text>
                 </Pressable>
               ) : (
-                <Pressable style={styles.nextHoleBtn} onPress={startNewRound}>
-                  <Text style={styles.nextHoleBtnText}>New Round</Text>
-                </Pressable>
+                <>
+                  <Pressable style={styles.nextHoleBtn} onPress={startNewRound}>
+                    <Text style={styles.nextHoleBtnText}>New Round</Text>
+                  </Pressable>
+                  <Pressable style={styles.chooseCourseBtn} onPress={backToMenu}>
+                    <Text style={styles.nextHoleBtnText}>Choose Course</Text>
+                  </Pressable>
+                </>
               )}
             </View>
           </View>
@@ -2672,6 +3321,12 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.06)'
+  },
+  menuItemDanger: {
+    marginTop: 4,
+    backgroundColor: 'rgba(188, 74, 74, 0.28)',
+    borderWidth: 1,
+    borderColor: 'rgba(225, 133, 133, 0.45)'
   },
   menuItemText: {
     color: '#f2f9ec',
@@ -3098,10 +3753,98 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 8
   },
+  chooseCourseBtn: {
+    backgroundColor: '#327a96',
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 8
+  },
   nextHoleBtnText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '700'
+  },
+  courseMenuScreen: {
+    flex: 1,
+    backgroundColor: '#1f3d26',
+    paddingHorizontal: 18,
+    paddingTop: 28,
+    paddingBottom: 20
+  },
+  courseMenuTitle: {
+    color: '#f5fbef',
+    fontSize: 44,
+    fontWeight: '800',
+    textAlign: 'center'
+  },
+  courseMenuSubtitle: {
+    color: '#c9e0bf',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 16
+  },
+  courseMenuList: {
+    flex: 1
+  },
+  courseMenuListContent: {
+    gap: 12,
+    paddingBottom: 16
+  },
+  courseMenuCard: {
+    borderRadius: 16,
+    backgroundColor: 'rgba(8, 12, 10, 0.68)',
+    borderWidth: 1,
+    borderColor: 'rgba(184, 220, 166, 0.24)',
+    padding: 14,
+    gap: 6
+  },
+  courseMenuCardTitle: {
+    color: '#f5fbef',
+    fontSize: 24,
+    fontWeight: '800'
+  },
+  courseMenuDesigner: {
+    color: '#b4d1a8',
+    fontSize: 13,
+    fontWeight: '600'
+  },
+  courseMenuDescription: {
+    color: '#d5e7cd',
+    fontSize: 14,
+    fontWeight: '600'
+  },
+  courseMenuMetaRow: {
+    marginTop: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  courseMenuDifficultyBadge: {
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  courseMenuDifficultyText: {
+    color: '#f5fbef',
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  courseMenuPlayButton: {
+    borderRadius: 10,
+    backgroundColor: '#4a9e3f',
+    paddingHorizontal: 16,
+    paddingVertical: 8
+  },
+  courseMenuPlayText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800'
   },
   scorecardOverlay: {
     position: 'absolute',
