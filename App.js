@@ -674,15 +674,18 @@ export default function App() {
     const speed = speedFromPower(shotPower, selectedClub, tempo);
     const launchRatio = clamp(shotPower / 125, 0, 1);
     const horizSpeed = speed * (0.84 - selectedClub.launch * 0.06 + selectedClub.roll * 0.08);
+    const clubLaunchBoost = selectedClub.key === 'PT'
+      ? 1
+      : 1.35 + selectedClub.launch * 0.95;
     velocityRef.current = {
       x: direction.x * horizSpeed,
       y: direction.y * horizSpeed
     };
     flightRef.current = {
-      z: 0.02,
+      z: 0.08,
       vz: selectedClub.key === 'PT'
-        ? 0.45 + launchRatio * 1.8
-        : (5 + launchRatio * 24 + overswingRatio * 4.8) * selectedClub.launch * tempo.launch
+        ? 0.35 + launchRatio * 1.25
+        : (8.5 + launchRatio * 34 + overswingRatio * 6.5) * selectedClub.launch * tempo.launch * clubLaunchBoost
     };
     setBallHeight(flightRef.current.z);
     setTempoLabel(tempo.note);
@@ -829,11 +832,11 @@ export default function App() {
 
   const screenBall = toScreen(ball);
   const screenCup = toScreen(currentHole.cup);
-  const liftPx = clamp(ballHeight * scaleY * 0.58, 0, 24);
-  const airborneRatio = clamp(ballHeight / 10, 0, 1);
-  const ballVisualScale = 1 - airborneRatio * 0.18;
-  const shadowScale = 1 + airborneRatio * 0.32;
-  const shadowOpacity = 0.3 - airborneRatio * 0.2;
+  const liftPx = clamp(ballHeight * scaleY * 1.55, 0, 54);
+  const airborneRatio = clamp(ballHeight / 18, 0, 1);
+  const ballVisualScale = 1 - airborneRatio * 0.12;
+  const shadowScale = 1 + airborneRatio * 0.5;
+  const shadowOpacity = 0.28 - airborneRatio * 0.18;
 
   const finishedAll = scores.every((s) => typeof s === 'number');
   const isLastHole = holeIndex === HOLES.length - 1;
