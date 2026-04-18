@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Dimensions,
   PanResponder,
   Pressable,
   SafeAreaView,
@@ -145,6 +144,7 @@ const HOLES = [
 
 const WORLD = { w: 260, h: 420 };
 const CAMERA_ZOOM = 3.2;
+const IS_WEB = Platform.OS === 'web';
 const MANUAL_PAN_GRACE_MS = 2200;
 const BALL_RADIUS_WORLD = 1.2;
 const CUP_RADIUS_WORLD = 2.0;
@@ -236,7 +236,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v0.4.0';
+const BUILD_VERSION = 'web v0.4.1';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -301,7 +301,9 @@ export default function App() {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const viewWidth = Math.max(screenWidth || 0, 320);
   const viewHeight = Math.max(screenHeight || 0, 568);
-  const basePixelsPerWorld = Math.max(screenWidth / WORLD.w, screenHeight / WORLD.h);
+  const safeWidth = Math.max(screenWidth || 320, 320);
+  const safeHeight = Math.max(screenHeight || 568, 568);
+  const basePixelsPerWorld = Math.max(safeWidth / WORLD.w, safeHeight / WORLD.h);
   const pixelsPerWorld = basePixelsPerWorld * CAMERA_ZOOM;
   const halfVpW = (viewWidth / 2) / pixelsPerWorld;
   const halfVpH = (viewHeight / 2) / pixelsPerWorld;
@@ -833,8 +835,8 @@ export default function App() {
   const shotControlResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => !sunk && !ballMoving,
-        onStartShouldSetPanResponderCapture: () => !sunk && !ballMoving,
+        onStartShouldSetPanResponder: () => shotControlOpen && !sunk && !ballMoving,
+        onStartShouldSetPanResponderCapture: () => shotControlOpen && !sunk && !ballMoving,
         onPanResponderGrant: (evt) => {
           if (!shotControlOpen) {
             return;
