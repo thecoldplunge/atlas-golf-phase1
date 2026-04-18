@@ -112,6 +112,18 @@ const MAX_PULL_DISTANCE = 92;
 const PREVIEW_POWERS = [25, 50, 75, 100];
 const PREVIEW_FRICTION = 2.1;
 const STOP_SPEED = 6;
+const GRAVITY = 74;
+const GROUND_EPSILON = 0.05;
+const FRINGE_BUFFER = 4;
+const MIN_BOUNCE_VZ = 5.2;
+
+const SURFACE_PHYSICS = {
+  rough: { rollFriction: 2.7, bounce: 0.26, landingDamping: 0.82, wallRestitution: 0.66 },
+  fairway: { rollFriction: 2.0, bounce: 0.34, landingDamping: 0.9, wallRestitution: 0.7 },
+  fringe: { rollFriction: 2.35, bounce: 0.28, landingDamping: 0.85, wallRestitution: 0.68 },
+  sand: { rollFriction: 4.9, bounce: 0.14, landingDamping: 0.62, wallRestitution: 0.58 },
+  green: { rollFriction: 1.35, bounce: 0.24, landingDamping: 0.94, wallRestitution: 0.74 }
+};
 
 const GOLFER_PIXEL_KEY = {
   h: '#c94f3a',
@@ -163,12 +175,42 @@ const pointInCircle = (p, c) => {
 
 const getAimAngleToCup = (ballPos, cup) => Math.atan2(cup.y - ballPos.y, cup.x - ballPos.x);
 const speedFromPower = (powerPct) => 95 + (powerPct / 125) * 290;
+const expandRect = (rect, inset) => ({
+  x: rect.x - inset,
+  y: rect.y - inset,
+  w: rect.w + inset * 2,
+  h: rect.h + inset * 2
+});
+const getSurfaceAtPoint = (hole, point) => {
+  const inSand = hole.hazards?.some((h) => h.type === 'sandRect' && pointInRect(point, h));
+  if (inSand) {
+    return 'sand';
+  }
+
+  const terrain = hole.terrain;
+  if (terrain?.green && pointInRect(point, terrain.green)) {
+    return 'green';
+  }
+  if (terrain?.green && pointInRect(point, expandRect(terrain.green, FRINGE_BUFFER))) {
+    return 'fringe';
+  }
+  if (terrain?.fairway?.some((f) => pointInRect(point, f))) {
+    return 'fairway';
+  }
+  if (terrain?.tee && pointInRect(point, terrain.tee)) {
+    return 'fairway';
+  }
+  return 'rough';
+};
 const estimateStraightDistance = (powerPct) => {
   const startSpeed = speedFromPower(powerPct);
   if (startSpeed <= STOP_SPEED) {
     return 0;
   }
-  return (startSpeed - STOP_SPEED) / PREVIEW_FRICTION;
+  const launchRatio = clamp(powerPct / 125, 0, 1);
+  const carry = 6 + launchRatio * launchRatio * 26;
+  const rollSpeed = startSpeed * (0.91 - launchRatio * 0.16);
+  return carry + Math.max(0, (rollSpeed - STOP_SPEED) / PREVIEW_FRICTION);
 };
 
 export default function App() {
@@ -189,9 +231,11 @@ export default function App() {
   const [powerPct, setPowerPct] = useState(0);
   const [lastShotNote, setLastShotNote] = useState('Pull down, then flick up through center.');
   const [golferBallAnchor, setGolferBallAnchor] = useState(HOLES[0].ballStart);
+  const [ballHeight, setBallHeight] = useState(0);
 
   const ballRef = useRef(ball);
   const velocityRef = useRef({ x: 0, y: 0 });
+  const flightRef = useRef({ z: 0, vz: 0 });
   const lastTsRef = useRef(null);
   const frameRef = useRef(null);
   const courseRef = useRef(null);
@@ -211,7 +255,10 @@ export default function App() {
   const scaleY = courseHeight / WORLD.h;
   const ballRadius = 1.8 * scaleX;
   const cupRadius = 3.0 * scaleX;
-  const ballMoving = magnitude(velocityRef.current) > 0.3;
+  const ballMoving =
+    magnitude(velocityRef.current) > 0.3 ||
+    flightRef.current.z > 0.04 ||
+    Math.abs(flightRef.current.vz) > 0.35;
 
   const syncCourseFrame = () => {
     if (!courseRef.current || typeof courseRef.current.measureInWindow !== 'function') {
@@ -227,6 +274,8 @@ export default function App() {
 
   const resetBall = ({ penaltyStroke = false } = {}) => {
     velocityRef.current = { x: 0, y: 0 };
+    flightRef.current = { z: 0, vz: 0 };
+    setBallHeight(0);
     setBall(currentHole.ballStart);
     setAimAngle(getAimAngleToCup(currentHole.ballStart, currentHole.cup));
     setIsAiming(false);
@@ -249,6 +298,8 @@ export default function App() {
       return next;
     });
     velocityRef.current = { x: 0, y: 0 };
+    flightRef.current = { z: 0, vz: 0 };
+    setBallHeight(0);
     setBall(currentHole.ballStart);
     setAimAngle(getAimAngleToCup(currentHole.ballStart, currentHole.cup));
     setIsAiming(false);
@@ -281,6 +332,8 @@ export default function App() {
     setWaterNotice(false);
     setStrokesCurrent(0);
     velocityRef.current = { x: 0, y: 0 };
+    flightRef.current = { z: 0, vz: 0 };
+    setBallHeight(0);
     setBall(currentHole.ballStart);
     setAimAngle(getAimAngleToCup(currentHole.ballStart, currentHole.cup));
     setIsAiming(false);
@@ -300,28 +353,46 @@ export default function App() {
 
       if (!sunk) {
         const vel = velocityRef.current;
+        const flight = flightRef.current;
         const speed = magnitude(vel);
+        const movingVertically = flight.z > 0.01 || Math.abs(flight.vz) > 0.15;
 
-        if (speed > 0.3) {
+        if (speed > 0.3 || movingVertically) {
           let next = {
             x: ballRef.current.x + vel.x * dt,
             y: ballRef.current.y + vel.y * dt
           };
 
-          const onSand = currentHole.hazards.some((h) => {
-            if (h.type === 'sandRect') {
-              return pointInRect(next, h);
-            }
-            return false;
-          });
+          const surfaceName = getSurfaceAtPoint(currentHole, next);
+          const surfacePhysics = SURFACE_PHYSICS[surfaceName] || SURFACE_PHYSICS.rough;
+          const onGround = flight.z <= GROUND_EPSILON && Math.abs(flight.vz) < 0.3;
 
-          const friction = onSand ? 4.4 : 2.1;
-          const dragFactor = Math.max(0, 1 - friction * dt);
-          vel.x *= dragFactor;
-          vel.y *= dragFactor;
+          if (onGround) {
+            const dragFactor = Math.max(0, 1 - surfacePhysics.rollFriction * dt);
+            vel.x *= dragFactor;
+            vel.y *= dragFactor;
+          } else {
+            const airDrag = Math.max(0, 1 - 0.14 * dt);
+            vel.x *= airDrag;
+            vel.y *= airDrag;
+          }
+
+          flight.vz -= GRAVITY * dt;
+          flight.z += flight.vz * dt;
+          if (flight.z <= 0) {
+            const impactVz = Math.abs(flight.vz);
+            flight.z = 0;
+            if (impactVz > MIN_BOUNCE_VZ) {
+              flight.vz = impactVz * surfacePhysics.bounce;
+              vel.x *= surfacePhysics.landingDamping;
+              vel.y *= surfacePhysics.landingDamping;
+            } else {
+              flight.vz = 0;
+            }
+          }
 
           const radiusWorld = ballRadius / scaleX;
-          const restitution = 0.72;
+          const restitution = surfacePhysics.wallRestitution;
 
           if (next.x < radiusWorld) {
             next.x = radiusWorld;
@@ -340,53 +411,55 @@ export default function App() {
             vel.y = -Math.abs(vel.y) * restitution;
           }
 
-          currentHole.obstacles.forEach((o) => {
-            if (o.type === 'rect') {
-              const nearestX = clamp(next.x, o.x, o.x + o.w);
-              const nearestY = clamp(next.y, o.y, o.y + o.h);
-              const dx = next.x - nearestX;
-              const dy = next.y - nearestY;
-              const overlap = radiusWorld * radiusWorld - (dx * dx + dy * dy);
-              if (overlap > 0) {
-                let normal = normalize({ x: dx, y: dy });
-                if (Math.abs(normal.x) < 0.01 && Math.abs(normal.y) < 0.01) {
-                  const center = { x: o.x + o.w / 2, y: o.y + o.h / 2 };
-                  normal = normalize({ x: next.x - center.x, y: next.y - center.y });
+          if (flight.z <= 1.15) {
+            currentHole.obstacles.forEach((o) => {
+              if (o.type === 'rect') {
+                const nearestX = clamp(next.x, o.x, o.x + o.w);
+                const nearestY = clamp(next.y, o.y, o.y + o.h);
+                const dx = next.x - nearestX;
+                const dy = next.y - nearestY;
+                const overlap = radiusWorld * radiusWorld - (dx * dx + dy * dy);
+                if (overlap > 0) {
+                  let normal = normalize({ x: dx, y: dy });
                   if (Math.abs(normal.x) < 0.01 && Math.abs(normal.y) < 0.01) {
-                    normal = { x: 0, y: -1 };
+                    const center = { x: o.x + o.w / 2, y: o.y + o.h / 2 };
+                    normal = normalize({ x: next.x - center.x, y: next.y - center.y });
+                    if (Math.abs(normal.x) < 0.01 && Math.abs(normal.y) < 0.01) {
+                      normal = { x: 0, y: -1 };
+                    }
+                  }
+                  next = {
+                    x: nearestX + normal.x * (radiusWorld + 0.1),
+                    y: nearestY + normal.y * (radiusWorld + 0.1)
+                  };
+                  const vn = vel.x * normal.x + vel.y * normal.y;
+                  if (vn < 0) {
+                    vel.x -= (1 + restitution) * vn * normal.x;
+                    vel.y -= (1 + restitution) * vn * normal.y;
                   }
                 }
-                next = {
-                  x: nearestX + normal.x * (radiusWorld + 0.1),
-                  y: nearestY + normal.y * (radiusWorld + 0.1)
-                };
-                const vn = vel.x * normal.x + vel.y * normal.y;
-                if (vn < 0) {
-                  vel.x -= (1 + restitution) * vn * normal.x;
-                  vel.y -= (1 + restitution) * vn * normal.y;
-                }
               }
-            }
 
-            if (o.type === 'circle') {
-              const dx = next.x - o.x;
-              const dy = next.y - o.y;
-              const dist = Math.hypot(dx, dy);
-              const minDist = o.r + radiusWorld;
-              if (dist < minDist) {
-                const normal = dist < 0.001 ? { x: 1, y: 0 } : { x: dx / dist, y: dy / dist };
-                next = {
-                  x: o.x + normal.x * (minDist + 0.1),
-                  y: o.y + normal.y * (minDist + 0.1)
-                };
-                const vn = vel.x * normal.x + vel.y * normal.y;
-                if (vn < 0) {
-                  vel.x -= (1 + restitution) * vn * normal.x;
-                  vel.y -= (1 + restitution) * vn * normal.y;
+              if (o.type === 'circle') {
+                const dx = next.x - o.x;
+                const dy = next.y - o.y;
+                const dist = Math.hypot(dx, dy);
+                const minDist = o.r + radiusWorld;
+                if (dist < minDist) {
+                  const normal = dist < 0.001 ? { x: 1, y: 0 } : { x: dx / dist, y: dy / dist };
+                  next = {
+                    x: o.x + normal.x * (minDist + 0.1),
+                    y: o.y + normal.y * (minDist + 0.1)
+                  };
+                  const vn = vel.x * normal.x + vel.y * normal.y;
+                  if (vn < 0) {
+                    vel.x -= (1 + restitution) * vn * normal.x;
+                    vel.y -= (1 + restitution) * vn * normal.y;
+                  }
                 }
               }
-            }
-          });
+            });
+          }
 
           const fellInWater = currentHole.hazards.some((h) => h.type === 'waterRect' && pointInRect(next, h));
           if (fellInWater) {
@@ -394,11 +467,16 @@ export default function App() {
           } else {
             ballRef.current = next;
             setBall(next);
+            setBallHeight(flight.z);
           }
 
-          if (magnitude(vel) < 6) {
+          if (magnitude(vel) < 6 && flight.z <= GROUND_EPSILON && Math.abs(flight.vz) < 0.35) {
             vel.x = 0;
             vel.y = 0;
+          }
+          if (flight.z <= GROUND_EPSILON && Math.abs(flight.vz) < 0.35) {
+            flight.z = 0;
+            flight.vz = 0;
           }
         }
       }
@@ -419,6 +497,9 @@ export default function App() {
     if (sunk) {
       return;
     }
+    if (ballHeight > 0.2 || Math.abs(flightRef.current.vz) > 0.35) {
+      return;
+    }
     const vel = velocityRef.current;
     const ballStopped = magnitude(vel) < 0.25;
     if (!ballStopped) {
@@ -436,7 +517,7 @@ export default function App() {
         return next;
       });
     }
-  }, [ball, cupRadius, currentHole.cup.x, currentHole.cup.y, holeIndex, scaleX, strokesCurrent, sunk]);
+  }, [ball, ballHeight, cupRadius, currentHole.cup.x, currentHole.cup.y, holeIndex, scaleX, strokesCurrent, sunk]);
 
   const totalScore = scores.reduce((sum, s) => (typeof s === 'number' ? sum + s : sum), 0);
   const completed = scores.filter((s) => s != null).length;
@@ -523,11 +604,18 @@ export default function App() {
     const finalAngle = aimAngle + degToRad(errorDeg * rawSign);
 
     const direction = { x: Math.cos(finalAngle), y: Math.sin(finalAngle) };
-    const speed = 95 + (shotPower / 125) * 290;
+    const speed = speedFromPower(shotPower);
+    const launchRatio = clamp(shotPower / 125, 0, 1);
+    const horizSpeed = speed * (0.9 - launchRatio * 0.14);
     velocityRef.current = {
-      x: direction.x * speed,
-      y: direction.y * speed
+      x: direction.x * horizSpeed,
+      y: direction.y * horizSpeed
     };
+    flightRef.current = {
+      z: 0.02,
+      vz: 6 + launchRatio * 32 + overswingRatio * 4.8
+    };
+    setBallHeight(flightRef.current.z);
     setStrokesCurrent((s) => s + 1);
 
     if (errorDeg > 9) {
@@ -653,6 +741,11 @@ export default function App() {
 
   const screenBall = toScreen(ball);
   const screenCup = toScreen(currentHole.cup);
+  const liftPx = clamp(ballHeight * scaleY * 0.58, 0, 24);
+  const airborneRatio = clamp(ballHeight / 10, 0, 1);
+  const ballVisualScale = 1 - airborneRatio * 0.18;
+  const shadowScale = 1 + airborneRatio * 0.32;
+  const shadowOpacity = 0.3 - airborneRatio * 0.2;
 
   const finishedAll = scores.every((s) => typeof s === 'number');
   const isLastHole = holeIndex === HOLES.length - 1;
@@ -713,18 +806,32 @@ export default function App() {
         ))}
 
         {currentHole.terrain?.green ? (
-          <View
-            style={[
-              styles.green,
-              {
-                left: currentHole.terrain.green.x * scaleX,
-                top: currentHole.terrain.green.y * scaleY,
-                width: currentHole.terrain.green.w * scaleX,
-                height: currentHole.terrain.green.h * scaleY,
-                borderRadius: currentHole.terrain.green.r * scaleX
-              }
-            ]}
-          />
+          <>
+            <View
+              style={[
+                styles.fringe,
+                {
+                  left: (currentHole.terrain.green.x - FRINGE_BUFFER) * scaleX,
+                  top: (currentHole.terrain.green.y - FRINGE_BUFFER) * scaleY,
+                  width: (currentHole.terrain.green.w + FRINGE_BUFFER * 2) * scaleX,
+                  height: (currentHole.terrain.green.h + FRINGE_BUFFER * 2) * scaleY,
+                  borderRadius: (currentHole.terrain.green.r + FRINGE_BUFFER) * scaleX
+                }
+              ]}
+            />
+            <View
+              style={[
+                styles.green,
+                {
+                  left: currentHole.terrain.green.x * scaleX,
+                  top: currentHole.terrain.green.y * scaleY,
+                  width: currentHole.terrain.green.w * scaleX,
+                  height: currentHole.terrain.green.h * scaleY,
+                  borderRadius: currentHole.terrain.green.r * scaleX
+                }
+              ]}
+            />
+          </>
         ) : null}
 
         {currentHole.terrain?.tee ? (
@@ -888,13 +995,29 @@ export default function App() {
 
         <View
           style={[
+            styles.ballShadow,
+            {
+              width: ballRadius * 2.05,
+              height: ballRadius * 1.15,
+              borderRadius: ballRadius,
+              left: screenBall.x - ballRadius * 1.02,
+              top: screenBall.y - ballRadius * 0.46,
+              opacity: Math.max(0.08, shadowOpacity),
+              transform: [{ scaleX: shadowScale }, { scaleY: shadowScale * 0.96 }]
+            }
+          ]}
+        />
+
+        <View
+          style={[
             styles.ball,
             {
               width: ballRadius * 2,
               height: ballRadius * 2,
               borderRadius: ballRadius,
               left: screenBall.x - ballRadius,
-              top: screenBall.y - ballRadius
+              top: screenBall.y - ballRadius - liftPx,
+              transform: [{ scale: ballVisualScale }]
             }
           ]}
         />
@@ -1032,6 +1155,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#6f9c53'
   },
+  fringe: {
+    position: 'absolute',
+    backgroundColor: '#8ebe71'
+  },
   wall: {
     position: 'absolute',
     backgroundColor: '#4f3f2f',
@@ -1089,6 +1216,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#f7f7f4',
     borderWidth: 1,
     borderColor: '#cfd5ca'
+  },
+  ballShadow: {
+    position: 'absolute',
+    backgroundColor: '#1d2e1a'
   },
   previewDot: {
     position: 'absolute',
