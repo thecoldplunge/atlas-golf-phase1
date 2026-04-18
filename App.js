@@ -21,6 +21,7 @@ const HOLES = [
     id: 1,
     name: 'Pine Meadow',
     par: 4,
+    windFactor: 0.6,
     ballStart: { x: H_OFF_X + 100, y: H_OFF_Y + 296 },
     cup: { x: H_OFF_X + 156, y: H_OFF_Y + 36 },
     terrain: {
@@ -46,6 +47,7 @@ const HOLES = [
     id: 2,
     name: 'Split Gate',
     par: 3,
+    windFactor: 0.4,
     ballStart: { x: H_OFF_X + 100, y: H_OFF_Y + 300 },
     cup: { x: H_OFF_X + 164, y: H_OFF_Y + 36 },
     terrain: {
@@ -66,6 +68,7 @@ const HOLES = [
     id: 3,
     name: 'Dogleg Drift',
     par: 4,
+    windFactor: 0.8,
     ballStart: { x: H_OFF_X + 32, y: H_OFF_Y + 296 },
     cup: { x: H_OFF_X + 168, y: H_OFF_Y + 44 },
     terrain: {
@@ -91,6 +94,7 @@ const HOLES = [
     id: 4,
     name: 'Bumper Tunnel',
     par: 4,
+    windFactor: 1.0,
     ballStart: { x: H_OFF_X + 24, y: H_OFF_Y + 300 },
     cup: { x: H_OFF_X + 176, y: H_OFF_Y + 28 },
     terrain: {
@@ -117,6 +121,7 @@ const HOLES = [
     id: 5,
     name: 'Mini Maze',
     par: 5,
+    windFactor: 0.7,
     ballStart: { x: H_OFF_X + 16, y: H_OFF_Y + 296 },
     cup: { x: H_OFF_X + 184, y: H_OFF_Y + 20 },
     terrain: {
@@ -234,13 +239,13 @@ const WIND_DIRS = {
   SE: { x: 0.707, y: 0.707 },  SW: { x: -0.707, y: 0.707 }
 };
 const WIND_ARROWS = { N: '↑', S: '↓', E: '→', W: '←', NE: '↗', NW: '↖', SE: '↘', SW: '↙' };
-const WIND_PRESETS = [
-  { speed: 25, dir: 'N' },
-  { speed: 25, dir: 'NE' },
-  { speed: 25, dir: 'W' },
-  { speed: 25, dir: 'SW' },
-  { speed: 25, dir: 'E' }
-];
+const WIND_DIR_KEYS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+const generateWind = () => HOLES.map((hole) => {
+  const dir = WIND_DIR_KEYS[Math.floor(Math.random() * WIND_DIR_KEYS.length)];
+  const maxSpeed = Math.round(25 * (hole.windFactor || 1.0));
+  const speed = Math.max(1, Math.round(Math.random() * maxSpeed));
+  return { speed, dir };
+});
 const WIND_FORCE_SCALE = 0.18;
 const SHOT_SHAPE_HINTS = {
   PT: 'Low roll',
@@ -260,7 +265,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v1.4.3';
+const BUILD_VERSION = 'web v1.5.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -350,6 +355,7 @@ export default function App() {
   const [holeIndex, setHoleIndex] = useState(0);
   const [strokesCurrent, setStrokesCurrent] = useState(0);
   const [scores, setScores] = useState(Array(HOLES.length).fill(null));
+  const [roundWind, setRoundWind] = useState(() => generateWind());
   const [ball, setBall] = useState(HOLES[0].ballStart);
   const [aimAngle, setAimAngle] = useState(getAimAngleToCup(HOLES[0].ballStart, HOLES[0].cup));
   const [isAiming, setIsAiming] = useState(false);
@@ -400,6 +406,7 @@ export default function App() {
   const courseFrameRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
   const sunkRef = useRef(false);
   const holeIndexRef = useRef(0);
+  const roundWindRef = useRef(roundWind);
   const [draggingSpinDot, setDraggingSpinDot] = useState(false);
 
   const currentHole = HOLES[holeIndex];
@@ -490,6 +497,7 @@ export default function App() {
   useEffect(() => { cameraRef.current = camera; }, [camera]);
   useEffect(() => { sunkRef.current = sunk; }, [sunk]);
   useEffect(() => { holeIndexRef.current = holeIndex; }, [holeIndex]);
+  useEffect(() => { roundWindRef.current = roundWind; }, [roundWind]);
 
   useEffect(() => {
     if (ballMoving) {
@@ -556,7 +564,7 @@ export default function App() {
             vel.x *= airDrag;
             vel.y *= airDrag;
             // Wind force while airborne
-            const wind = WIND_PRESETS[holeIndexRef.current % WIND_PRESETS.length];
+            const wind = roundWindRef.current[holeIndexRef.current] || { speed: 0, dir: 'N' };
             const wDir = WIND_DIRS[wind.dir] || { x: 0, y: 0 };
             const wForce = wind.speed * WIND_FORCE_SCALE * dt;
             vel.x += wDir.x * wForce;
@@ -1131,7 +1139,7 @@ export default function App() {
   const totalPreviewCurveDeg = shotMetrics.curveDeg + swingDeviation * 25;
   const distanceToCupWorld = Math.hypot(currentHole.cup.x - ball.x, currentHole.cup.y - ball.y);
   const yardsToCup = Math.max(0, Math.round(distanceToCupWorld * YARDS_PER_WORLD));
-  const windData = WIND_PRESETS[holeIndex % WIND_PRESETS.length];
+  const windData = roundWind[holeIndex] || { speed: 0, dir: 'N' };
   const windLabel = `${windData.speed} mph`;
   const windArrow = WIND_ARROWS[windData.dir] || '•';
   const windDirLabel = windData.dir;
