@@ -32,8 +32,8 @@ function simulateShot(club, powerPct) {
   const powerFrac = clamp(powerPct / 100, 0, 1.2);
   const targetCarryWorld = (club.carryYards / YARDS_PER_WORLD) * powerFrac;
 
-  // Hang time based on club loft: higher loft = longer hang
-  const hangTime = (0.6 + club.launch * 0.9) * powerFrac;
+  // Real golf: all clubs peak ~90-105ft (Trackman PGA data)
+  const hangTime = (2.5 + club.launch * 0.6) * powerFrac;
 
   // Analytically compute horizSpeed so ball carries exactly targetCarryWorld
   // carryDist = vx * (1 - e^(-drag*hangTime)) / drag
@@ -44,7 +44,7 @@ function simulateShot(club, powerPct) {
   const launchVz = (GRAVITY * hangTime) / 2;
 
   let velx = vx, x = 0, z = 0.08, vz = launchVz;
-  let carryX = 0, hasLanded = false;
+  let carryX = 0, hasLanded = false, peakZ = 0;
 
   for (let tick = 0; tick < 6000; tick++) {
     if (z > GROUND_EPSILON || vz > 0.3) {
@@ -62,6 +62,7 @@ function simulateShot(club, powerPct) {
     }
     x += velx * DT;
     z = Math.max(0, z + vz * DT);
+    if (z > peakZ) peakZ = z;
     if (hasLanded && Math.abs(velx) < 0.3) break;
   }
   if (!hasLanded) carryX = x;
@@ -70,7 +71,8 @@ function simulateShot(club, powerPct) {
     total: Math.round(x * YARDS_PER_WORLD),
     vx: Math.round(vx),
     launchVz: Math.round(launchVz * 10) / 10,
-    hangTime: Math.round(hangTime * 100) / 100
+    hangTime: Math.round(hangTime * 100) / 100,
+    peakFt: Math.round(peakZ * 3)
   };
 }
 
@@ -80,5 +82,5 @@ for (const club of CLUBS) {
   const r = [25, 50, 75, 100].map(p => simulateShot(club, p));
   const err = Math.round(Math.abs(r[3].carry - club.carryYards) / club.carryYards * 100);
   const mark = err <= 10 ? '✅' : err <= 20 ? '⚠️' : '❌';
-  console.log(`${club.name.padEnd(18)}| ${(club.carryYards+'y').padStart(6)} | ${r.map(x=>(x.carry+'y').padStart(6)).join(' | ')} | ${(r[3].vx).toString().padStart(7)} | ${r[3].hangTime}s  ${mark}${err}%`);
+  console.log(`${club.name.padEnd(18)}| ${(club.carryYards+'y').padStart(6)} | ${r.map(x=>(x.carry+'y').padStart(6)).join(' | ')} | ${(r[3].peakFt+'ft').padStart(6)} | ${r[3].hangTime}s  ${mark}${err}%`);
 }

@@ -239,7 +239,7 @@ const WIND_PRESETS = [
   { speed: 25, dir: 'SW' },
   { speed: 25, dir: 'E' }
 ];
-const WIND_FORCE_SCALE = 0.35;
+const WIND_FORCE_SCALE = 1.2;
 const SHOT_SHAPE_HINTS = {
   PT: 'Low roll',
   LW: 'High soft',
@@ -258,7 +258,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v1.2.0';
+const BUILD_VERSION = 'web v1.3.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -918,8 +918,9 @@ export default function App() {
       };
       flightRef.current = { z: 0, vz: 0 };
     } else {
-      // Hang time scales with power so distance is proportional
-      const targetHangTime = (0.6 + selectedClub.launch * 0.9) * launchRatio;
+      // Real golf: all clubs peak ~90-105ft (Trackman PGA data)
+      // Driver: long gradual arc. Wedge: steep short arc. Same peak height.
+      const targetHangTime = (2.5 + selectedClub.launch * 0.6) * launchRatio;
       const launchVz = (GRAVITY * targetHangTime * 0.5) * shotMetrics.launchAdjust;
       flightRef.current = {
         z: 0.08,
