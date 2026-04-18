@@ -66,9 +66,12 @@ Expo will boot the app in the iOS Simulator.
 
 ## Gameplay controls
 
-- Touch near the ball with one finger
-- Drag to set direction and power
-- Release to shoot
+- Set aim first by dragging near the ball, or use `Aim Left` / `Aim Right`
+- Swing uses a fixed bottom-center control pad (Golden Tee style):
+- Start thumb in the center ring
+- Pull straight down to load power (0% to 125%)
+- Flick straight up through center to strike
+- Over 100% power is possible but punishes crooked follow-through
 - `Retry Hole`: restart current hole from stroke 0
 - `Quick Reset`: reset ball to tee with +1 stroke penalty
 - `Next Hole`: enabled after sinking current hole

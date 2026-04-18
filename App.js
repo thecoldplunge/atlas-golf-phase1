@@ -13,13 +13,27 @@ import { StatusBar } from 'expo-status-bar';
 const HOLES = [
   {
     id: 1,
-    name: 'Warm Up Lane',
-    par: 2,
+    name: 'Pine Meadow',
+    par: 4,
     ballStart: { x: 50, y: 148 },
-    cup: { x: 50, y: 15 },
-    obstacles: [],
+    cup: { x: 78, y: 18 },
+    terrain: {
+      tee: { x: 43, y: 144, w: 14, h: 10, r: 4 },
+      fairway: [
+        { x: 39, y: 102, w: 22, h: 50, r: 12 },
+        { x: 43, y: 62, w: 30, h: 52, r: 14 },
+        { x: 58, y: 28, w: 24, h: 42, r: 12 }
+      ],
+      green: { x: 67, y: 7, w: 24, h: 26, r: 13 }
+    },
+    obstacles: [
+      { type: 'circle', x: 27, y: 108, r: 5, look: 'tree' },
+      { type: 'circle', x: 72, y: 95, r: 5, look: 'tree' },
+      { type: 'circle', x: 30, y: 65, r: 6, look: 'tree' }
+    ],
     hazards: [
-      { type: 'sandRect', x: 33, y: 72, w: 34, h: 16 }
+      { type: 'sandRect', x: 61, y: 17, w: 10, h: 8 },
+      { type: 'sandRect', x: 84, y: 20, w: 10, h: 8 }
     ]
   },
   {
@@ -32,9 +46,7 @@ const HOLES = [
       { type: 'rect', x: 20, y: 92, w: 60, h: 8 },
       { type: 'rect', x: 0, y: 56, w: 58, h: 8 }
     ],
-    hazards: [
-      { type: 'sandRect', x: 62, y: 52, w: 30, h: 18 }
-    ]
+    hazards: [{ type: 'sandRect', x: 62, y: 52, w: 30, h: 18 }]
   },
   {
     id: 3,
@@ -92,8 +104,14 @@ const HOLES = [
 ];
 
 const WORLD = { w: 100, h: 160 };
+const SWING_PAD_SIZE = 148;
+const PAD_CENTER = SWING_PAD_SIZE / 2;
+const SWING_START_RADIUS = 34;
+const MIN_PULL_TO_ARM = 12;
+const MAX_PULL_DISTANCE = 92;
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+const degToRad = (deg) => (deg * Math.PI) / 180;
 
 const magnitude = (v) => Math.hypot(v.x, v.y);
 
@@ -113,24 +131,39 @@ const pointInCircle = (p, c) => {
   return dx * dx + dy * dy <= c.r * c.r;
 };
 
+const getAimAngleToCup = (ballPos, cup) => Math.atan2(cup.y - ballPos.y, cup.x - ballPos.x);
+
 export default function App() {
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
   const courseWidth = clamp(screenWidth - 24, 280, 430);
-  const courseHeight = Math.min(screenHeight * 0.68, courseWidth * 1.6);
+  const courseHeight = Math.min(screenHeight * 0.62, courseWidth * 1.6);
 
   const [holeIndex, setHoleIndex] = useState(0);
   const [strokesCurrent, setStrokesCurrent] = useState(0);
   const [scores, setScores] = useState(Array(HOLES.length).fill(null));
   const [ball, setBall] = useState(HOLES[0].ballStart);
-  const [aimPoint, setAimPoint] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const [aimAngle, setAimAngle] = useState(getAimAngleToCup(HOLES[0].ballStart, HOLES[0].cup));
+  const [isAiming, setIsAiming] = useState(false);
   const [sunk, setSunk] = useState(false);
   const [waterNotice, setWaterNotice] = useState(false);
+  const [swingActive, setSwingActive] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [powerPct, setPowerPct] = useState(0);
+  const [lastShotNote, setLastShotNote] = useState('Pull down, then flick up through center.');
 
   const ballRef = useRef(ball);
   const velocityRef = useRef({ x: 0, y: 0 });
   const lastTsRef = useRef(null);
   const frameRef = useRef(null);
+  const swingTrackRef = useRef({
+    active: false,
+    armed: false,
+    maxPullDown: 0,
+    maxPullLateral: 0,
+    deepest: { x: 0, y: 0 },
+    crossedCenter: false,
+    maxUpLateral: 0
+  });
 
   const currentHole = HOLES[holeIndex];
   const scaleX = courseWidth / WORLD.w;
@@ -144,8 +177,11 @@ export default function App() {
   const resetBall = ({ penaltyStroke = false } = {}) => {
     velocityRef.current = { x: 0, y: 0 };
     setBall(currentHole.ballStart);
-    setAimPoint(null);
-    setIsDragging(false);
+    setAimAngle(getAimAngleToCup(currentHole.ballStart, currentHole.cup));
+    setIsAiming(false);
+    setSwingActive(false);
+    setPullDistance(0);
+    setPowerPct(0);
     if (penaltyStroke) {
       setStrokesCurrent((s) => s + 1);
       setWaterNotice(true);
@@ -163,8 +199,12 @@ export default function App() {
     });
     velocityRef.current = { x: 0, y: 0 };
     setBall(currentHole.ballStart);
-    setAimPoint(null);
-    setIsDragging(false);
+    setAimAngle(getAimAngleToCup(currentHole.ballStart, currentHole.cup));
+    setIsAiming(false);
+    setSwingActive(false);
+    setPullDistance(0);
+    setPowerPct(0);
+    setLastShotNote('Pull down, then flick up through center.');
   };
 
   useEffect(() => {
@@ -177,9 +217,13 @@ export default function App() {
     setStrokesCurrent(0);
     velocityRef.current = { x: 0, y: 0 };
     setBall(currentHole.ballStart);
-    setAimPoint(null);
-    setIsDragging(false);
-  }, [holeIndex, currentHole.ballStart]);
+    setAimAngle(getAimAngleToCup(currentHole.ballStart, currentHole.cup));
+    setIsAiming(false);
+    setSwingActive(false);
+    setPullDistance(0);
+    setPowerPct(0);
+    setLastShotNote('Pull down, then flick up through center.');
+  }, [holeIndex, currentHole.ballStart, currentHole.cup]);
 
   useEffect(() => {
     const tick = (ts) => {
@@ -331,112 +375,194 @@ export default function App() {
 
   const totalScore = scores.reduce((sum, s) => (typeof s === 'number' ? sum + s : sum), 0);
   const completed = scores.filter((s) => s != null).length;
+  const ballMoving = magnitude(velocityRef.current) > 0.35;
 
-  const onDragStart = (locationX, locationY) => {
-    if (sunk) {
-      return false;
+  const setAimFromTouch = (locationX, locationY) => {
+    const target = toWorld({ x: locationX, y: locationY });
+    const dir = { x: target.x - ballRef.current.x, y: target.y - ballRef.current.y };
+    if (magnitude(dir) < 1.25) {
+      return;
     }
-    if (magnitude(velocityRef.current) > 0.35) {
-      return false;
-    }
-    const touchWorld = toWorld({ x: locationX, y: locationY });
-    const dx = touchWorld.x - ballRef.current.x;
-    const dy = touchWorld.y - ballRef.current.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist > 8) {
-      return false;
-    }
-    setIsDragging(true);
-    setAimPoint(touchWorld);
-    setWaterNotice(false);
-    return true;
+    setAimAngle(Math.atan2(dir.y, dir.x));
   };
 
-  const panResponder = useMemo(
+  const aimResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: (evt) =>
-          onDragStart(evt.nativeEvent.locationX, evt.nativeEvent.locationY),
-        onMoveShouldSetPanResponder: () => false,
-        onPanResponderMove: (evt) => {
-          if (!isDragging) {
-            return;
+        onStartShouldSetPanResponder: (evt) => {
+          if (sunk || swingActive || ballMoving) {
+            return false;
           }
-          const touchWorld = toWorld({
+          const touch = toWorld({
             x: evt.nativeEvent.locationX,
             y: evt.nativeEvent.locationY
           });
-          setAimPoint(touchWorld);
+          const distFromBall = Math.hypot(touch.x - ballRef.current.x, touch.y - ballRef.current.y);
+          if (distFromBall > 20) {
+            return false;
+          }
+          setIsAiming(true);
+          setAimFromTouch(evt.nativeEvent.locationX, evt.nativeEvent.locationY);
+          return true;
+        },
+        onMoveShouldSetPanResponder: () => false,
+        onPanResponderMove: (evt) => {
+          setAimFromTouch(evt.nativeEvent.locationX, evt.nativeEvent.locationY);
         },
         onPanResponderRelease: () => {
-          if (!isDragging || !aimPoint) {
-            setIsDragging(false);
-            setAimPoint(null);
-            return;
-          }
-          const drag = {
-            x: aimPoint.x - ballRef.current.x,
-            y: aimPoint.y - ballRef.current.y
-          };
-          const pull = magnitude(drag);
-          if (pull > 1.5) {
-            const dir = normalize({ x: -drag.x, y: -drag.y });
-            const power = clamp(pull / 20, 0, 1);
-            const speed = 120 + power * 230;
-            velocityRef.current = {
-              x: dir.x * speed,
-              y: dir.y * speed
-            };
-            setStrokesCurrent((s) => s + 1);
-          }
-          setIsDragging(false);
-          setAimPoint(null);
+          setIsAiming(false);
         },
         onPanResponderTerminate: () => {
-          setIsDragging(false);
-          setAimPoint(null);
+          setIsAiming(false);
         }
       }),
-    [aimPoint, isDragging, sunk]
+    [ballMoving, sunk, swingActive]
+  );
+
+  const fireSwingShot = ({ releaseDx, releaseDy }) => {
+    const track = swingTrackRef.current;
+    const pull = clamp(track.maxPullDown, 0, MAX_PULL_DISTANCE);
+    const shotPower = Math.round((pull / MAX_PULL_DISTANCE) * 125);
+    const overswingPct = Math.max(0, shotPower - 100);
+    const overswingRatio = overswingPct / 25;
+
+    const upTravel = Math.max(1, track.deepest.y - releaseDy);
+    const xTravel = releaseDx - track.deepest.x;
+    const slope = Math.abs(xTravel) / upTravel;
+    const lateral = Math.max(track.maxPullLateral, track.maxUpLateral, Math.abs(releaseDx));
+    const crookedNorm = clamp(slope * 1.35 + lateral / 24, 0, 1.4);
+
+    const rawSign = Math.sign(releaseDx || xTravel || track.deepest.x || 1);
+    const errorDeg = crookedNorm * (4.5 + overswingRatio * 16);
+    const finalAngle = aimAngle + degToRad(errorDeg * rawSign);
+
+    const direction = { x: Math.cos(finalAngle), y: Math.sin(finalAngle) };
+    const speed = 95 + (shotPower / 125) * 290;
+    velocityRef.current = {
+      x: direction.x * speed,
+      y: direction.y * speed
+    };
+    setStrokesCurrent((s) => s + 1);
+
+    if (errorDeg > 9) {
+      setLastShotNote(`Crooked flick added ${errorDeg.toFixed(1)}° miss.`);
+    } else if (overswingPct > 0) {
+      setLastShotNote(`Overswing ${shotPower}%: keep flick straighter for accuracy.`);
+    } else {
+      setLastShotNote(`Strike ${shotPower}% power.`);
+    }
+  };
+
+  const swingResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: (evt) => {
+          if (sunk || ballMoving) {
+            return false;
+          }
+          const dx = evt.nativeEvent.locationX - PAD_CENTER;
+          const dy = evt.nativeEvent.locationY - PAD_CENTER;
+          const dist = Math.hypot(dx, dy);
+          if (dist > SWING_START_RADIUS) {
+            return false;
+          }
+
+          swingTrackRef.current = {
+            active: true,
+            armed: false,
+            maxPullDown: 0,
+            maxPullLateral: 0,
+            deepest: { x: 0, y: 0 },
+            crossedCenter: false,
+            maxUpLateral: 0
+          };
+          setSwingActive(true);
+          setPullDistance(0);
+          setPowerPct(0);
+          setWaterNotice(false);
+          return true;
+        },
+        onMoveShouldSetPanResponder: () => false,
+        onPanResponderMove: (evt) => {
+          const track = swingTrackRef.current;
+          if (!track.active) {
+            return;
+          }
+
+          const dx = evt.nativeEvent.locationX - PAD_CENTER;
+          const dy = evt.nativeEvent.locationY - PAD_CENTER;
+
+          if (dy > track.maxPullDown) {
+            track.maxPullDown = dy;
+            track.deepest = { x: dx, y: dy };
+          }
+
+          track.maxPullLateral = Math.max(track.maxPullLateral, Math.abs(dx));
+
+          if (track.maxPullDown >= MIN_PULL_TO_ARM) {
+            track.armed = true;
+          }
+
+          if (track.armed && dy < track.maxPullDown - 2) {
+            track.maxUpLateral = Math.max(track.maxUpLateral, Math.abs(dx));
+          }
+
+          if (track.armed && dy < -6) {
+            track.crossedCenter = true;
+          }
+
+          const clampedPull = clamp(track.maxPullDown, 0, MAX_PULL_DISTANCE);
+          setPullDistance(clampedPull);
+          setPowerPct(Math.round((clampedPull / MAX_PULL_DISTANCE) * 125));
+        },
+        onPanResponderRelease: (evt) => {
+          const track = swingTrackRef.current;
+          const releaseDx = evt.nativeEvent.locationX - PAD_CENTER;
+          const releaseDy = evt.nativeEvent.locationY - PAD_CENTER;
+
+          if (!track.armed) {
+            setLastShotNote('Pull farther down to load power.');
+          } else if (!track.crossedCenter) {
+            setLastShotNote('Flick up through center to strike the ball.');
+          } else {
+            fireSwingShot({ releaseDx, releaseDy });
+          }
+
+          swingTrackRef.current = {
+            active: false,
+            armed: false,
+            maxPullDown: 0,
+            maxPullLateral: 0,
+            deepest: { x: 0, y: 0 },
+            crossedCenter: false,
+            maxUpLateral: 0
+          };
+          setSwingActive(false);
+          setPullDistance(0);
+          setPowerPct(0);
+        },
+        onPanResponderTerminate: () => {
+          swingTrackRef.current.active = false;
+          setSwingActive(false);
+          setPullDistance(0);
+          setPowerPct(0);
+        }
+      }),
+    [aimAngle, ballMoving, sunk]
   );
 
   const screenBall = toScreen(ball);
   const screenCup = toScreen(currentHole.cup);
 
-  let guide = null;
-  let powerPct = 0;
-
-  if (isDragging && aimPoint) {
-    const pull = {
-      x: aimPoint.x - ball.x,
-      y: aimPoint.y - ball.y
-    };
-    const shoot = {
-      x: -pull.x,
-      y: -pull.y
-    };
-    const shootScreen = { x: shoot.x * scaleX, y: shoot.y * scaleY };
-    const len = Math.hypot(shootScreen.x, shootScreen.y);
-    const clampedLen = clamp(len, 0, 95);
-    powerPct = Math.round((clamp(magnitude(pull) / 20, 0, 1)) * 100);
-    const angle = (Math.atan2(shootScreen.y, shootScreen.x) * 180) / Math.PI;
-    guide = (
-      <View
-        style={[
-          styles.aimLine,
-          {
-            width: clampedLen,
-            left: screenBall.x,
-            top: screenBall.y,
-            transform: [{ rotate: `${angle}deg` }]
-          }
-        ]}
-      />
-    );
-  }
-
   const finishedAll = scores.every((s) => typeof s === 'number');
   const isLastHole = holeIndex === HOLES.length - 1;
+  const guideLength = 22;
+  const guideEnd = {
+    x: screenBall.x + Math.cos(aimAngle) * guideLength * scaleX,
+    y: screenBall.y + Math.sin(aimAngle) * guideLength * scaleY
+  };
+  const guideAngle = (Math.atan2(guideEnd.y - screenBall.y, guideEnd.x - screenBall.x) * 180) / Math.PI;
+  const overSwing = powerPct > 100;
 
   return (
     <SafeAreaView style={styles.root}>
@@ -449,7 +575,53 @@ export default function App() {
         <Text style={styles.meta}>Strokes: {strokesCurrent} • Total: {totalScore}</Text>
       </View>
 
-      <View style={[styles.course, { width: courseWidth, height: courseHeight }]} {...panResponder.panHandlers}>
+      <View style={[styles.course, { width: courseWidth, height: courseHeight }]} {...aimResponder.panHandlers}>
+        {currentHole.terrain?.fairway?.map((f, i) => (
+          <View
+            key={`fair-${i}`}
+            style={[
+              styles.fairway,
+              {
+                left: f.x * scaleX,
+                top: f.y * scaleY,
+                width: f.w * scaleX,
+                height: f.h * scaleY,
+                borderRadius: (f.r || 8) * scaleX
+              }
+            ]}
+          />
+        ))}
+
+        {currentHole.terrain?.green ? (
+          <View
+            style={[
+              styles.green,
+              {
+                left: currentHole.terrain.green.x * scaleX,
+                top: currentHole.terrain.green.y * scaleY,
+                width: currentHole.terrain.green.w * scaleX,
+                height: currentHole.terrain.green.h * scaleY,
+                borderRadius: currentHole.terrain.green.r * scaleX
+              }
+            ]}
+          />
+        ) : null}
+
+        {currentHole.terrain?.tee ? (
+          <View
+            style={[
+              styles.tee,
+              {
+                left: currentHole.terrain.tee.x * scaleX,
+                top: currentHole.terrain.tee.y * scaleY,
+                width: currentHole.terrain.tee.w * scaleX,
+                height: currentHole.terrain.tee.h * scaleY,
+                borderRadius: currentHole.terrain.tee.r * scaleX
+              }
+            ]}
+          />
+        ) : null}
+
         {currentHole.hazards.map((h, i) => {
           const common = {
             left: h.x * scaleX,
@@ -493,7 +665,7 @@ export default function App() {
               <View
                 key={`obs-${i}`}
                 style={[
-                  styles.bumper,
+                  o.look === 'tree' ? styles.tree : styles.bumper,
                   {
                     width: size,
                     height: size,
@@ -502,12 +674,37 @@ export default function App() {
                     top: (o.y - o.r) * scaleY
                   }
                 ]}
-              />
+              >
+                {o.look === 'tree' ? <View style={styles.treeCore} /> : null}
+              </View>
             );
           }
 
           return null;
         })}
+
+        <View
+          style={[
+            styles.flagPole,
+            {
+              left: screenCup.x - 1,
+              top: screenCup.y - 18 * scaleY,
+              height: 17 * scaleY
+            }
+          ]}
+        />
+        <View
+          style={[
+            styles.flag,
+            {
+              left: screenCup.x,
+              top: screenCup.y - 18 * scaleY,
+              borderTopWidth: 4 * scaleY,
+              borderBottomWidth: 4 * scaleY,
+              borderRightWidth: 9 * scaleX
+            }
+          ]}
+        />
 
         <View
           style={[
@@ -522,7 +719,17 @@ export default function App() {
           ]}
         />
 
-        {guide}
+        <View
+          style={[
+            styles.aimLine,
+            {
+              width: Math.hypot(guideEnd.x - screenBall.x, guideEnd.y - screenBall.y),
+              left: screenBall.x,
+              top: screenBall.y,
+              transform: [{ rotate: `${guideAngle}deg` }]
+            }
+          ]}
+        />
 
         <View
           style={[
@@ -539,17 +746,65 @@ export default function App() {
       </View>
 
       <View style={styles.footer}>
-        {isDragging ? (
-          <Text style={styles.tip}>Release to shoot • Power {powerPct}%</Text>
-        ) : (
-          <Text style={styles.tip}>Touch near the ball, drag to aim, release to shoot.</Text>
-        )}
+        <Text style={styles.tip}>
+          {isAiming
+            ? 'Adjusting aim...'
+            : 'Aim: drag near ball or use L/R buttons. Swing: pull down, flick up through center.'}
+        </Text>
+
+        <View style={styles.row}>
+          <Pressable
+            style={[styles.button, styles.ghost]}
+            onPress={() => setAimAngle((a) => a - degToRad(4))}
+            disabled={sunk || ballMoving}
+          >
+            <Text style={styles.buttonText}>Aim Left</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.button, styles.ghost]}
+            onPress={() => setAimAngle((a) => a + degToRad(4))}
+            disabled={sunk || ballMoving}
+          >
+            <Text style={styles.buttonText}>Aim Right</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.powerWrap}>
+          <View style={styles.powerHeader}>
+            <Text style={styles.powerLabel}>Power {powerPct}%</Text>
+            <Text style={[styles.powerLabel, overSwing && styles.overSwingText]}>
+              {overSwing ? 'Over-swing zone' : 'Ideal up to 100%'}
+            </Text>
+          </View>
+          <View style={styles.powerTrack}>
+            <View style={[styles.powerSafe, { width: `${(100 / 125) * 100}%` }]} />
+            <View style={[styles.powerBar, { width: `${(powerPct / 125) * 100}%` }]} />
+            <View style={styles.powerCut} />
+          </View>
+        </View>
+
+        <View style={styles.swingArea}>
+          <View style={[styles.swingPad, swingActive && styles.swingPadActive]} {...swingResponder.panHandlers}>
+            <View style={styles.padRing}>
+              <View style={styles.padCenter} />
+            </View>
+            <View
+              style={[
+                styles.pullMarker,
+                {
+                  top: PAD_CENTER + pullDistance - 7,
+                  backgroundColor: overSwing ? '#bc3b2f' : '#f0ead3'
+                }
+              ]}
+            />
+          </View>
+        </View>
+
+        <Text style={styles.tip}>{lastShotNote}</Text>
 
         {waterNotice && !sunk ? <Text style={styles.warning}>Water hazard: +1 stroke, ball reset.</Text> : null}
 
-        {sunk ? (
-          <Text style={styles.success}>Hole complete in {strokesCurrent} strokes.</Text>
-        ) : null}
+        {sunk ? <Text style={styles.success}>Hole complete in {strokesCurrent} strokes.</Text> : null}
 
         <View style={styles.row}>
           <Pressable style={styles.button} onPress={retryHole}>
@@ -601,14 +856,14 @@ export default function App() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#eef3e8',
+    backgroundColor: '#eaf0e1',
     alignItems: 'center'
   },
   header: {
     width: '100%',
     paddingHorizontal: 14,
-    paddingTop: 6,
-    paddingBottom: 8
+    paddingTop: 4,
+    paddingBottom: 6
   },
   title: {
     fontSize: 26,
@@ -623,11 +878,27 @@ const styles = StyleSheet.create({
   },
   course: {
     borderRadius: 20,
-    backgroundColor: '#86be68',
+    backgroundColor: '#7da85e',
     borderWidth: 3,
-    borderColor: '#42683f',
+    borderColor: '#3f623e',
     overflow: 'hidden',
     position: 'relative'
+  },
+  tee: {
+    position: 'absolute',
+    backgroundColor: '#4d9955',
+    borderWidth: 1,
+    borderColor: '#31683a'
+  },
+  fairway: {
+    position: 'absolute',
+    backgroundColor: '#9ccc78'
+  },
+  green: {
+    position: 'absolute',
+    backgroundColor: '#a9d88a',
+    borderWidth: 1,
+    borderColor: '#6f9c53'
   },
   wall: {
     position: 'absolute',
@@ -637,6 +908,18 @@ const styles = StyleSheet.create({
   bumper: {
     position: 'absolute',
     backgroundColor: '#635344'
+  },
+  tree: {
+    position: 'absolute',
+    backgroundColor: '#3f723d',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  treeCore: {
+    width: '45%',
+    height: '45%',
+    borderRadius: 999,
+    backgroundColor: '#2e562e'
   },
   sand: {
     position: 'absolute',
@@ -649,6 +932,19 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#2f6b94'
+  },
+  flagPole: {
+    position: 'absolute',
+    width: 2,
+    backgroundColor: '#dce6cf'
+  },
+  flag: {
+    position: 'absolute',
+    width: 0,
+    height: 0,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderRightColor: '#f15b4f'
   },
   cup: {
     position: 'absolute',
@@ -670,8 +966,8 @@ const styles = StyleSheet.create({
   footer: {
     width: '100%',
     paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 16,
+    paddingTop: 8,
+    paddingBottom: 14,
     gap: 8
   },
   tip: {
@@ -708,6 +1004,89 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.45
+  },
+  powerWrap: {
+    gap: 4
+  },
+  powerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between'
+  },
+  powerLabel: {
+    fontSize: 12,
+    color: '#304232',
+    fontWeight: '700'
+  },
+  overSwingText: {
+    color: '#9e352b'
+  },
+  powerTrack: {
+    height: 12,
+    borderRadius: 999,
+    backgroundColor: '#d9e4d0',
+    overflow: 'hidden',
+    position: 'relative'
+  },
+  powerSafe: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: '#afd58f'
+  },
+  powerBar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: '#3f8f4c'
+  },
+  powerCut: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: `${(100 / 125) * 100}%`,
+    width: 2,
+    backgroundColor: '#9e352b'
+  },
+  swingArea: {
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  swingPad: {
+    width: SWING_PAD_SIZE,
+    height: SWING_PAD_SIZE,
+    borderRadius: SWING_PAD_SIZE / 2,
+    backgroundColor: '#314432',
+    borderWidth: 2,
+    borderColor: '#516f55',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  swingPadActive: {
+    borderColor: '#9fd273'
+  },
+  padRing: {
+    width: 64,
+    height: 64,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: '#d9e4cf',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  padCenter: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: '#f4f6f2'
+  },
+  pullMarker: {
+    position: 'absolute',
+    left: PAD_CENTER - 7,
+    width: 14,
+    height: 14,
+    borderRadius: 999
   },
   summary: {
     marginTop: 4,
