@@ -2107,7 +2107,9 @@ export default function App() {
       peakHeight: 0,
       startLie: currentLie,
       endLie: 'unknown',
-      swingPath
+      swingPath,
+      tempoTag,
+      tempoMult
     });
 
     setBallHeight(flightRef.current.z);
@@ -3500,6 +3502,12 @@ export default function App() {
                 <View style={styles.shotStatRow}>
                   <Text style={styles.shotStatLabel}>Curve</Text>
                   <Text style={styles.shotStatValue}>{lastShotStats.deviationDeg}°</Text>
+                </View>
+                <View style={styles.shotStatRow}>
+                  <Text style={styles.shotStatLabel}>Tempo</Text>
+                  <Text style={[styles.shotStatValue, lastShotStats.tempoTag === 'Perfect' ? { color: '#88F8BB' } : lastShotStats.tempoTag === 'Rushed' ? { color: '#ef4444' } : lastShotStats.tempoTag === 'Slow' ? { color: '#f0c040' } : null]}>
+                    {lastShotStats.tempoTag === 'Perfect' ? '✨ ' : lastShotStats.tempoTag === 'Smooth' ? '👌 ' : lastShotStats.tempoTag === 'Rushed' ? '⚡ ' : lastShotStats.tempoTag === 'Slow' ? '🐢 ' : ''}{lastShotStats.tempoTag || 'Normal'}
+                  </Text>
                 </View>
                 <View style={styles.shotStatRow}>
                   <Text style={styles.shotStatLabel}>Lie</Text>
