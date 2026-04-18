@@ -116,6 +116,25 @@ const GRAVITY = 74;
 const GROUND_EPSILON = 0.05;
 const FRINGE_BUFFER = 4;
 const MIN_BOUNCE_VZ = 5.2;
+const CLUBS = [
+  { key: 'PT', name: 'Putter', short: 'PT', speed: 0.45, launch: 0.04, roll: 0.86, spin: 1.22 },
+  { key: 'LW', name: 'Lob Wedge', short: 'LW', speed: 0.74, launch: 1.22, roll: 0.54, spin: 0.82 },
+  { key: 'SW', name: 'Sand Wedge', short: 'SW', speed: 0.78, launch: 1.12, roll: 0.58, spin: 0.85 },
+  { key: 'GW', name: 'Gap Wedge', short: 'GW', speed: 0.84, launch: 1.0, roll: 0.63, spin: 0.9 },
+  { key: 'PW', name: 'Pitching Wedge', short: 'PW', speed: 0.9, launch: 0.92, roll: 0.68, spin: 0.93 },
+  { key: '9I', name: '9 Iron', short: '9i', speed: 0.96, launch: 0.84, roll: 0.73, spin: 0.97 },
+  { key: '8I', name: '8 Iron', short: '8i', speed: 1.01, launch: 0.78, roll: 0.79, spin: 1.0 },
+  { key: '7I', name: '7 Iron', short: '7i', speed: 1.07, launch: 0.72, roll: 0.85, spin: 1.02 },
+  { key: '6I', name: '6 Iron', short: '6i', speed: 1.12, launch: 0.67, roll: 0.92, spin: 1.04 },
+  { key: '5I', name: '5 Iron', short: '5i', speed: 1.17, launch: 0.62, roll: 0.98, spin: 1.06 },
+  { key: '4I', name: '4 Iron', short: '4i', speed: 1.22, launch: 0.58, roll: 1.03, spin: 1.08 },
+  { key: '3I', name: '3 Iron', short: '3i', speed: 1.27, launch: 0.54, roll: 1.08, spin: 1.1 },
+  { key: '7W', name: '7 Wood', short: '7w', speed: 1.25, launch: 0.64, roll: 1.02, spin: 1.0 },
+  { key: '5W', name: '5 Wood', short: '5w', speed: 1.32, launch: 0.58, roll: 1.08, spin: 0.98 },
+  { key: '3W', name: '3 Wood', short: '3w', speed: 1.4, launch: 0.52, roll: 1.13, spin: 0.96 },
+  { key: 'DR', name: 'Driver', short: 'DR', speed: 1.5, launch: 0.48, roll: 1.18, spin: 0.92 }
+];
+const TEMPO_WINDOW = { min: 220, max: 840, idealMin: 360, idealMax: 620, stall: 220 };
 
 const SURFACE_PHYSICS = {
   rough: { rollFriction: 2.7, bounce: 0.26, landingDamping: 0.82, wallRestitution: 0.66 },
@@ -136,16 +155,17 @@ const GOLFER_PIXEL_KEY = {
 };
 
 const GOLFER_SPRITE_ROWS = [
-  '....hh....',
-  '...hooh...',
-  '..osssoo..',
-  '.osskksoo.',
-  '.opssssoc.',
-  '..pppppoc.',
-  '.pp..ppoo.',
-  '.bb..bboc.',
-  '..b..b....',
-  '.b....b...'
+  '.....hh.....',
+  '....hkkh....',
+  '...hosso....',
+  '..ossssoo...',
+  '..ossssspcc.',
+  '.ppssssssocc',
+  '.ppppssppocc',
+  '.bppppppbo..',
+  '..bb..bb....',
+  '.bb....bb...',
+  '.b......b...'
 ];
 
 const GOLFER_PIXELS = GOLFER_SPRITE_ROWS.flatMap((row, y) =>
@@ -174,7 +194,41 @@ const pointInCircle = (p, c) => {
 };
 
 const getAimAngleToCup = (ballPos, cup) => Math.atan2(cup.y - ballPos.y, cup.x - ballPos.x);
-const speedFromPower = (powerPct) => 95 + (powerPct / 125) * 290;
+const speedFromPower = (powerPct, club = CLUBS[0], tempo = { speed: 1, launch: 1, accuracy: 1, note: 'Smooth tempo.' }) => {
+  const base = 95 + (powerPct / 125) * 290;
+  return base * club.speed * tempo.speed;
+};
+const getTempoFeedback = (track) => {
+  const backswingMs = track.lastMoveTs - track.startTs;
+  const elapsedMs = track.lastMoveTs - track.startTs;
+  const stallMs = track.maxPauseMs;
+  const pullSpeed = track.maxPullDown / Math.max(1, elapsedMs);
+  let speed = 1;
+  let launch = 1;
+  let accuracy = 1;
+  let note = 'Smooth tempo.';
+
+  if (backswingMs < TEMPO_WINDOW.min || pullSpeed > 0.28) {
+    speed = 0.92;
+    launch = 0.94;
+    accuracy = 0.76;
+    note = 'Too quick, rushed transition.';
+  } else if (backswingMs > TEMPO_WINDOW.max || stallMs > TEMPO_WINDOW.stall) {
+    speed = 0.9;
+    launch = 1.02;
+    accuracy = 0.82;
+    note = 'Too slow, tempo got stuck.';
+  } else if (backswingMs >= TEMPO_WINDOW.idealMin && backswingMs <= TEMPO_WINDOW.idealMax && stallMs < 140) {
+    speed = 1.03;
+    launch = 1.02;
+    accuracy = 1.08;
+    note = 'Smooth tempo, flushed it.';
+  } else {
+    note = 'Decent tempo.';
+  }
+
+  return { speed, launch, accuracy, note, backswingMs, stallMs, pullSpeed };
+};
 const expandRect = (rect, inset) => ({
   x: rect.x - inset,
   y: rect.y - inset,
@@ -202,15 +256,16 @@ const getSurfaceAtPoint = (hole, point) => {
   }
   return 'rough';
 };
-const estimateStraightDistance = (powerPct) => {
-  const startSpeed = speedFromPower(powerPct);
+const estimateStraightDistance = (powerPct, club, tempo) => {
+  const startSpeed = speedFromPower(powerPct, club, tempo);
   if (startSpeed <= STOP_SPEED) {
     return 0;
   }
   const launchRatio = clamp(powerPct / 125, 0, 1);
-  const carry = 6 + launchRatio * launchRatio * 26;
-  const rollSpeed = startSpeed * (0.91 - launchRatio * 0.16);
-  return carry + Math.max(0, (rollSpeed - STOP_SPEED) / PREVIEW_FRICTION);
+  const carry = 4 + launchRatio * launchRatio * 22 * club.speed + 16 * club.launch * tempo.launch;
+  const rollSpeed = startSpeed * (0.8 + club.roll * 0.15 - club.launch * 0.08);
+  const friction = PREVIEW_FRICTION * (1.14 / club.roll);
+  return carry + Math.max(0, (rollSpeed - STOP_SPEED) / friction);
 };
 
 export default function App() {
@@ -229,7 +284,9 @@ export default function App() {
   const [swingActive, setSwingActive] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [powerPct, setPowerPct] = useState(0);
-  const [lastShotNote, setLastShotNote] = useState('Pull down, then flick up through center.');
+  const [selectedClubIndex, setSelectedClubIndex] = useState(15);
+  const [lastShotNote, setLastShotNote] = useState('Pull down with tempo, then flick up through center.');
+  const [tempoLabel, setTempoLabel] = useState('Tempo idle');
   const [golferBallAnchor, setGolferBallAnchor] = useState(HOLES[0].ballStart);
   const [ballHeight, setBallHeight] = useState(0);
 
@@ -247,10 +304,15 @@ export default function App() {
     maxPullLateral: 0,
     deepest: { x: 0, y: 0 },
     crossedCenter: false,
-    maxUpLateral: 0
+    maxUpLateral: 0,
+    startTs: 0,
+    lastMoveTs: 0,
+    lastPullTs: 0,
+    maxPauseMs: 0
   });
 
   const currentHole = HOLES[holeIndex];
+  const selectedClub = CLUBS[selectedClubIndex];
   const scaleX = courseWidth / WORLD.w;
   const scaleY = courseHeight / WORLD.h;
   const ballRadius = 1.8 * scaleX;
@@ -282,6 +344,7 @@ export default function App() {
     setSwingActive(false);
     setPullDistance(0);
     setPowerPct(0);
+    setTempoLabel('Tempo idle');
     if (penaltyStroke) {
       setStrokesCurrent((s) => s + 1);
       setWaterNotice(true);
@@ -306,7 +369,8 @@ export default function App() {
     setSwingActive(false);
     setPullDistance(0);
     setPowerPct(0);
-    setLastShotNote('Pull down, then flick up through center.');
+    setTempoLabel('Tempo idle');
+    setLastShotNote('Pull down with tempo, then flick up through center.');
   };
 
   useEffect(() => {
@@ -340,7 +404,8 @@ export default function App() {
     setSwingActive(false);
     setPullDistance(0);
     setPowerPct(0);
-    setLastShotNote('Pull down, then flick up through center.');
+    setTempoLabel('Tempo idle');
+    setLastShotNote('Pull down with tempo, then flick up through center.');
   }, [holeIndex, currentHole.ballStart, currentHole.cup]);
 
   useEffect(() => {
@@ -592,6 +657,7 @@ export default function App() {
     const shotPower = Math.round((pull / MAX_PULL_DISTANCE) * 125);
     const overswingPct = Math.max(0, shotPower - 100);
     const overswingRatio = overswingPct / 25;
+    const tempo = getTempoFeedback(track);
 
     const upTravel = Math.max(1, track.deepest.y - releaseDy);
     const xTravel = releaseDx - track.deepest.x;
@@ -600,30 +666,34 @@ export default function App() {
     const crookedNorm = clamp(slope * 1.35 + lateral / 24, 0, 1.4);
 
     const rawSign = Math.sign(releaseDx || xTravel || track.deepest.x || 1);
-    const errorDeg = crookedNorm * (4.5 + overswingRatio * 16);
+    const tempoMiss = (1 - tempo.accuracy) * 24;
+    const errorDeg = crookedNorm * (4.5 + overswingRatio * 16) + tempoMiss;
     const finalAngle = aimAngle + degToRad(errorDeg * rawSign);
 
     const direction = { x: Math.cos(finalAngle), y: Math.sin(finalAngle) };
-    const speed = speedFromPower(shotPower);
+    const speed = speedFromPower(shotPower, selectedClub, tempo);
     const launchRatio = clamp(shotPower / 125, 0, 1);
-    const horizSpeed = speed * (0.9 - launchRatio * 0.14);
+    const horizSpeed = speed * (0.84 - selectedClub.launch * 0.06 + selectedClub.roll * 0.08);
     velocityRef.current = {
       x: direction.x * horizSpeed,
       y: direction.y * horizSpeed
     };
     flightRef.current = {
       z: 0.02,
-      vz: 6 + launchRatio * 32 + overswingRatio * 4.8
+      vz: selectedClub.key === 'PT'
+        ? 0.45 + launchRatio * 1.8
+        : (5 + launchRatio * 24 + overswingRatio * 4.8) * selectedClub.launch * tempo.launch
     };
     setBallHeight(flightRef.current.z);
+    setTempoLabel(tempo.note);
     setStrokesCurrent((s) => s + 1);
 
-    if (errorDeg > 9) {
-      setLastShotNote(`Crooked flick added ${errorDeg.toFixed(1)}° miss.`);
+    if (errorDeg > 11) {
+      setLastShotNote(`${selectedClub.name}: ${tempo.note} Added ${errorDeg.toFixed(1)}° miss.`);
     } else if (overswingPct > 0) {
-      setLastShotNote(`Overswing ${shotPower}%: keep flick straighter for accuracy.`);
+      setLastShotNote(`${selectedClub.short} ${shotPower}% overswing. ${tempo.note}`);
     } else {
-      setLastShotNote(`Strike ${shotPower}% power.`);
+      setLastShotNote(`${selectedClub.name} at ${shotPower}% power. ${tempo.note}`);
     }
   };
 
@@ -655,6 +725,7 @@ export default function App() {
             return;
           }
 
+          const now = Date.now();
           swingTrackRef.current = {
             active: true,
             armed: false,
@@ -662,11 +733,16 @@ export default function App() {
             maxPullLateral: 0,
             deepest: { x: 0, y: 0 },
             crossedCenter: false,
-            maxUpLateral: 0
+            maxUpLateral: 0,
+            startTs: now,
+            lastMoveTs: now,
+            lastPullTs: now,
+            maxPauseMs: 0
           };
           setSwingActive(true);
           setPullDistance(0);
           setPowerPct(0);
+          setTempoLabel('Build tempo...');
           setWaterNotice(false);
         },
         onMoveShouldSetPanResponder: () => swingTrackRef.current.active,
@@ -677,14 +753,18 @@ export default function App() {
             return;
           }
 
+          const now = Date.now();
           const dx = evt.nativeEvent.locationX - PAD_CENTER;
           const dy = evt.nativeEvent.locationY - PAD_CENTER;
 
           if (dy > track.maxPullDown) {
+            track.maxPauseMs = Math.max(track.maxPauseMs, now - track.lastPullTs);
             track.maxPullDown = dy;
             track.deepest = { x: dx, y: dy };
+            track.lastPullTs = now;
           }
 
+          track.lastMoveTs = now;
           track.maxPullLateral = Math.max(track.maxPullLateral, Math.abs(dx));
 
           if (track.maxPullDown >= MIN_PULL_TO_ARM) {
@@ -702,6 +782,9 @@ export default function App() {
           const clampedPull = clamp(track.maxPullDown, 0, MAX_PULL_DISTANCE);
           setPullDistance(clampedPull);
           setPowerPct(Math.round((clampedPull / MAX_PULL_DISTANCE) * 125));
+
+          const tempoPreview = getTempoFeedback(track);
+          setTempoLabel(tempoPreview.note);
         },
         onPanResponderRelease: (evt) => {
           const track = swingTrackRef.current;
@@ -723,7 +806,11 @@ export default function App() {
             maxPullLateral: 0,
             deepest: { x: 0, y: 0 },
             crossedCenter: false,
-            maxUpLateral: 0
+            maxUpLateral: 0,
+            startTs: 0,
+            lastMoveTs: 0,
+            lastPullTs: 0,
+            maxPauseMs: 0
           };
           setSwingActive(false);
           setPullDistance(0);
@@ -734,9 +821,10 @@ export default function App() {
           setSwingActive(false);
           setPullDistance(0);
           setPowerPct(0);
+          setTempoLabel('Tempo idle');
         }
       }),
-    [aimAngle, ballMoving, sunk]
+    [aimAngle, ballMoving, selectedClub, sunk]
   );
 
   const screenBall = toScreen(ball);
@@ -750,8 +838,9 @@ export default function App() {
   const finishedAll = scores.every((s) => typeof s === 'number');
   const isLastHole = holeIndex === HOLES.length - 1;
   const overSwing = powerPct > 100;
+  const previewTempo = swingActive ? getTempoFeedback(swingTrackRef.current) : { speed: 1, launch: 1, accuracy: 1, note: 'Tempo idle' };
   const previewDots = PREVIEW_POWERS.map((power) => {
-    const distanceWorld = estimateStraightDistance(power);
+    const distanceWorld = estimateStraightDistance(power, selectedClub, previewTempo);
     const size = clamp(scaleX * (1.25 + power / 140), 2.4, 4.8);
     return {
       power,
@@ -764,11 +853,11 @@ export default function App() {
   const aimDir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
   const aimPerp = { x: -aimDir.y, y: aimDir.x };
   const golferAnchorWorld = {
-    x: golferBallAnchor.x - aimDir.x * 6.6 + aimPerp.x * 2.8,
-    y: golferBallAnchor.y - aimDir.y * 6.6 + aimPerp.y * 2.8
+    x: golferBallAnchor.x - aimPerp.x * 7.6 - aimDir.x * 1.8,
+    y: golferBallAnchor.y - aimPerp.y * 7.6 - aimDir.y * 1.8
   };
   const golferAnchor = toScreen(golferAnchorWorld);
-  const golferPixelSize = clamp(scaleX * 0.66, 1.7, 2.8);
+  const golferPixelSize = clamp(scaleX * 0.62, 1.55, 2.5);
   const golferWidth = GOLFER_SPRITE_ROWS[0].length * golferPixelSize;
   const golferHeight = GOLFER_SPRITE_ROWS.length * golferPixelSize;
   const golferAngle = (aimAngle * 180) / Math.PI + 90;
@@ -1027,8 +1116,28 @@ export default function App() {
         <Text style={styles.tip}>
           {isAiming
             ? 'Adjusting aim...'
-            : 'Aim: tap or press-and-drag anywhere on course. Swing: pull down, flick up through center.'}
+            : 'Aim: tap or press-and-drag anywhere on course. Swing: pull down with tempo, then flick up through center.'}
         </Text>
+
+        <View style={styles.clubPanel}>
+          <View style={styles.clubHeaderRow}>
+            <Text style={styles.clubTitle}>Club</Text>
+            <Text style={styles.clubMeta}>{selectedClub.name} • {tempoLabel}</Text>
+          </View>
+          <View style={styles.clubGrid}>
+            {CLUBS.map((club, index) => (
+              <Pressable
+                key={club.key}
+                style={[styles.clubChip, index === selectedClubIndex && styles.clubChipActive]}
+                onPress={() => setSelectedClubIndex(index)}
+              >
+                <Text style={[styles.clubChipText, index === selectedClubIndex && styles.clubChipTextActive]}>
+                  {club.short}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
 
         <View style={styles.controlsRow}>
           <View style={styles.swingArea}>
@@ -1049,14 +1158,14 @@ export default function App() {
           </View>
 
           <View style={styles.powerMeterWrap}>
-            <Text style={styles.powerLabel}>Power {powerPct}%</Text>
+            <Text style={styles.powerLabel}>{selectedClub.short} • {powerPct}%</Text>
             <View style={styles.powerMeterTrack}>
               <View style={[styles.powerMeterSafe, { height: `${(100 / 125) * 100}%` }]} />
               <View style={[styles.powerMeterFill, { height: `${(powerPct / 125) * 100}%` }]} />
               <View style={styles.powerMeterCut} />
             </View>
             <Text style={[styles.powerHint, overSwing && styles.overSwingText]}>
-              {overSwing ? 'Over-swing zone' : 'Ideal up to 100%'}
+              {overSwing ? 'Over-swing zone' : tempoLabel}
             </Text>
           </View>
         </View>
@@ -1240,6 +1349,53 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     gap: 7
   },
+  clubPanel: {
+    gap: 6
+  },
+  clubHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8
+  },
+  clubTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#203123'
+  },
+  clubMeta: {
+    flex: 1,
+    textAlign: 'right',
+    fontSize: 11,
+    color: '#3a5140'
+  },
+  clubGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6
+  },
+  clubChip: {
+    minWidth: 34,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#dce7d3',
+    borderWidth: 1,
+    borderColor: '#aac09d',
+    alignItems: 'center'
+  },
+  clubChipActive: {
+    backgroundColor: '#2e5f34',
+    borderColor: '#2e5f34'
+  },
+  clubChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#314432'
+  },
+  clubChipTextActive: {
+    color: '#f6fbf4'
+  },
   tip: {
     fontSize: 13,
     color: '#25382c'
@@ -1297,7 +1453,7 @@ const styles = StyleSheet.create({
     color: '#9e352b'
   },
   powerMeterWrap: {
-    width: 84,
+    width: 92,
     alignItems: 'center',
     gap: 4
   },
