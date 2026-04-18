@@ -174,7 +174,7 @@ const estimateStraightDistance = (powerPct) => {
 export default function App() {
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
   const courseWidth = clamp(screenWidth - 24, 280, 430);
-  const courseHeight = Math.min(screenHeight * 0.58, courseWidth * 1.6);
+  const courseHeight = Math.min(screenHeight * 0.46, courseWidth * 1.6);
 
   const [holeIndex, setHoleIndex] = useState(0);
   const [strokesCurrent, setStrokesCurrent] = useState(0);
@@ -188,6 +188,7 @@ export default function App() {
   const [pullDistance, setPullDistance] = useState(0);
   const [powerPct, setPowerPct] = useState(0);
   const [lastShotNote, setLastShotNote] = useState('Pull down, then flick up through center.');
+  const [golferBallAnchor, setGolferBallAnchor] = useState(HOLES[0].ballStart);
 
   const ballRef = useRef(ball);
   const velocityRef = useRef({ x: 0, y: 0 });
@@ -210,6 +211,7 @@ export default function App() {
   const scaleY = courseHeight / WORLD.h;
   const ballRadius = 1.8 * scaleX;
   const cupRadius = 3.0 * scaleX;
+  const ballMoving = magnitude(velocityRef.current) > 0.3;
 
   const syncCourseFrame = () => {
     if (!courseRef.current || typeof courseRef.current.measureInWindow !== 'function') {
@@ -259,6 +261,20 @@ export default function App() {
   useEffect(() => {
     ballRef.current = ball;
   }, [ball]);
+
+  useEffect(() => {
+    if (ballMoving) {
+      return;
+    }
+    setGolferBallAnchor((prev) => {
+      const dx = prev.x - ball.x;
+      const dy = prev.y - ball.y;
+      if (Math.hypot(dx, dy) < 0.05) {
+        return prev;
+      }
+      return ball;
+    });
+  }, [ball, ballMoving]);
 
   useEffect(() => {
     setSunk(false);
@@ -424,7 +440,6 @@ export default function App() {
 
   const totalScore = scores.reduce((sum, s) => (typeof s === 'number' ? sum + s : sum), 0);
   const completed = scores.filter((s) => s != null).length;
-  const ballMoving = magnitude(velocityRef.current) > 0.35;
 
   const setAimFromTouch = (pageX, pageY) => {
     const frame = courseFrameRef.current;
@@ -656,8 +671,8 @@ export default function App() {
   const aimDir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
   const aimPerp = { x: -aimDir.y, y: aimDir.x };
   const golferAnchorWorld = {
-    x: ball.x - aimDir.x * 6.6 + aimPerp.x * 2.8,
-    y: ball.y - aimDir.y * 6.6 + aimPerp.y * 2.8
+    x: golferBallAnchor.x - aimDir.x * 6.6 + aimPerp.x * 2.8,
+    y: golferBallAnchor.y - aimDir.y * 6.6 + aimPerp.y * 2.8
   };
   const golferAnchor = toScreen(golferAnchorWorld);
   const golferPixelSize = clamp(scaleX * 0.66, 1.7, 2.8);
