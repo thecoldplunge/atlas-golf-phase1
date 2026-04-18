@@ -749,6 +749,50 @@ const FRINGE_BUFFER = 8;
 const MIN_BOUNCE_VZ = 3.2;
 const CURVE_FORCE = 0.12;
 const CURVE_LAUNCH_BLEND = 0.3;
+
+// Haptic feedback: vibrate on Android/Chrome, audio tick on iOS Safari
+const hapticBuzz = (pattern = 30) => {
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    navigator.vibrate(typeof pattern === 'number' ? pattern : pattern);
+    return;
+  }
+  // Fallback: short audio tick via Web Audio API
+  try {
+    const ctx = window.__hapticAudioCtx || (window.__hapticAudioCtx = new (window.AudioContext || window.webkitAudioContext)());
+    if (ctx.state === 'suspended') ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 220;
+    gain.gain.value = 0.15;
+    osc.start();
+    const dur = typeof pattern === 'number' ? pattern / 1000 : 0.03;
+    osc.stop(ctx.currentTime + dur);
+  } catch (e) { /* silent */ }
+};
+const hapticDoubleTap = () => {
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    navigator.vibrate([20, 60, 20]);
+    return;
+  }
+  try {
+    const ctx = window.__hapticAudioCtx || (window.__hapticAudioCtx = new (window.AudioContext || window.webkitAudioContext)());
+    if (ctx.state === 'suspended') ctx.resume();
+    const playTick = (delay) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 330;
+      gain.gain.value = 0.15;
+      osc.start(ctx.currentTime + delay);
+      osc.stop(ctx.currentTime + delay + 0.02);
+    };
+    playTick(0);
+    playTick(0.08);
+  } catch (e) { /* silent */ }
+};
 const PUTTING_ZOOM_MULT = 1.8;
 const SLOPE_FORCE = 5.0;
 const PUTT_PREVIEW_DT = 1 / 120;
@@ -1105,7 +1149,7 @@ export default function App() {
   const selectedClub = CLUBS[selectedClubIndex];
   const scaleX = pixelsPerWorld;
   const scaleY = pixelsPerWorld;
-  const ballRadius = clamp(BALL_RADIUS_WORLD * pixelsPerWorld * 0.48, 5, 14);
+  const ballRadius = clamp(BALL_RADIUS_WORLD * pixelsPerWorld * 0.48 * 0.6, 3, 10);
   const cupRadius = clamp(CUP_RADIUS_WORLD * pixelsPerWorld * 0.32, 6, 14);
   const clampCamera = (c) => ({
     x: clamp(c.x, halfVpW, WORLD.w - halfVpW),
@@ -2224,9 +2268,7 @@ export default function App() {
               setSwingPhase('forward');
               transitionTimeRef.current = Date.now();
               // Short buzz at the top of backswing — cue to pause
-              if (typeof navigator !== 'undefined' && navigator.vibrate) {
-                navigator.vibrate(30);
-              }
+              hapticBuzz(30);
             }
           } else {
             // FORWARD SWING: track deviation
@@ -2258,10 +2300,8 @@ export default function App() {
               // Perfect window
               tempoMult = 0.82;
               tempoTag = 'Perfect';
-              // Double-tap vibration for perfect tempo
-              if (typeof navigator !== 'undefined' && navigator.vibrate) {
-                navigator.vibrate([20, 60, 20]);
-              }
+              // Double-tap vibration/audio for perfect tempo
+              hapticDoubleTap();
             } else if (forwardMs <= 350) {
               // Good but slightly slow
               tempoMult = 0.92;
