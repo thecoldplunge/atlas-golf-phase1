@@ -235,6 +235,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
+const BUILD_VERSION = 'web v0.3.2';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1215,6 +1216,9 @@ export default function App() {
         </View>
 
         <View style={styles.topOverlay} pointerEvents="box-none">
+          <View style={styles.versionWrap} pointerEvents="none">
+            <Text style={styles.versionText}>{BUILD_VERSION}</Text>
+          </View>
           <View style={styles.topHudRow}>
             <View style={styles.menuWrap}>
               <Pressable style={styles.menuButton} onPress={() => setMenuOpen((v) => !v)}>
@@ -1546,6 +1550,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8
+  },
+  versionWrap: {
+    alignItems: 'flex-end',
+    marginBottom: 6
+  },
+  versionText: {
+    color: 'rgba(228,239,222,0.72)',
+    fontSize: 10,
+    fontWeight: '700',
+    backgroundColor: 'rgba(7, 11, 9, 0.54)',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    overflow: 'hidden'
   },
   menuWrap: {
     position: 'relative',
