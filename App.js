@@ -3211,69 +3211,67 @@ export default function App() {
           </View>
 
           {puttingMode ? (
-            <>
+            <View style={styles.puttCompactBar}>
+              <View style={styles.puttCompactInfo}>
+                <Text style={styles.puttCompactTarget}>Target: {puttTargetText}</Text>
+                <Text style={styles.puttCompactSub}>{puttStatusText}</Text>
+              </View>
               <Pressable
                 style={[
-                  styles.simulatePuttButton,
+                  styles.puttCompactSimBtn,
                   (!puttAimPoint || sunk || ballMoving || puttSimulated) && styles.disabled
                 ]}
                 disabled={!puttAimPoint || sunk || ballMoving || puttSimulated}
                 onPress={handleSimulatePutt}
               >
-                <Text style={styles.simulatePuttButtonText}>Simulate Putt</Text>
+                <Text style={styles.puttCompactSimText}>Simulate</Text>
               </Pressable>
-              <View style={styles.puttTargetBanner}>
-                <Text style={styles.puttTargetBannerTitle}>Target: {puttTargetText}</Text>
-                <Text style={styles.puttTargetBannerSub}>{puttStatusText}</Text>
+            </View>
+          ) : (
+            <>
+              <View style={styles.clubSelectorWrap}>
+                <Pressable
+                  style={styles.clubPickerTrigger}
+                  onPress={() => setClubPickerOpen((v) => !v)}
+                >
+                  <Text style={styles.clubPickerTriggerLabel}>Club</Text>
+                  <Text style={styles.clubPickerTriggerValue}>{selectedClub.short} • {selectedClub.name}</Text>
+                  <Text style={styles.clubPickerTriggerChevron}>{clubPickerOpen ? '▲' : '▼'}</Text>
+                </Pressable>
+
+                {clubPickerOpen ? (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clubScrollContent}>
+                    {CLUBS.map((club, index) => (
+                      <Pressable
+                        key={club.key}
+                        style={[styles.clubChip, index === selectedClubIndex && styles.clubChipActive]}
+                        onPress={() => {
+                          setSelectedClubIndex(index);
+                          setClubPickerOpen(false);
+                        }}
+                      >
+                        <Text style={[styles.clubChipText, index === selectedClubIndex && styles.clubChipTextActive]}>
+                          {club.short}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                ) : null}
               </View>
+
+              <Text style={styles.helperText}>
+                {isAiming
+                  ? 'Adjusting aim...'
+                  : showScorecard
+                    ? 'Review your scorecard to continue.'
+                    : shotControlOpen
+                    ? 'Drag the blue dot, then tap Shoot to hit.'
+                    : Platform.OS === 'web'
+                      ? 'Tap Yards, the club card, or Hit to open shot shaping. Drag on the course to pan, tap to aim.'
+                      : 'Tap Yards, the club card, or Hit to open shot shaping. Use two fingers on course to pan camera.'}
+              </Text>
             </>
-          ) : null}
-
-          <View style={styles.clubSelectorWrap}>
-            <Pressable
-              style={[styles.clubPickerTrigger, puttingMode && styles.disabled]}
-              disabled={puttingMode}
-              onPress={() => setClubPickerOpen((v) => !v)}
-            >
-              <Text style={styles.clubPickerTriggerLabel}>Club</Text>
-              <Text style={styles.clubPickerTriggerValue}>{selectedClub.short} • {selectedClub.name}</Text>
-              <Text style={styles.clubPickerTriggerChevron}>{clubPickerOpen ? '▲' : '▼'}</Text>
-            </Pressable>
-
-            {clubPickerOpen && !puttingMode ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clubScrollContent}>
-                {CLUBS.map((club, index) => (
-                  <Pressable
-                    key={club.key}
-                    style={[styles.clubChip, index === selectedClubIndex && styles.clubChipActive]}
-                    onPress={() => {
-                      setSelectedClubIndex(index);
-                      setClubPickerOpen(false);
-                    }}
-                  >
-                    <Text style={[styles.clubChipText, index === selectedClubIndex && styles.clubChipTextActive]}>
-                      {club.short}
-                    </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            ) : null}
-          </View>
-
-          <Text style={styles.helperText}>
-            {isAiming
-              ? 'Adjusting aim...'
-              : showScorecard
-                ? 'Review your scorecard to continue.'
-              : puttingMode
-                ? 'Putting mode: place aim point on the green, tap Simulate Putt, then swing to match the target power.'
-                : shotControlOpen
-                ? 'Drag the blue dot, then tap Shoot to hit.'
-                : Platform.OS === 'web'
-                  ? 'Tap Yards, the club card, or Hit to open shot shaping. Drag on the course to pan, tap to aim.'
-                  : 'Tap Yards, the club card, or Hit to open shot shaping. Use two fingers on course to pan camera.'}
-          </Text>
-          <Text style={styles.lastShotText}>{lastShotNote}</Text>
+          )}
 
           {waterNotice && !sunk && !waterDropMenu ? <Text style={styles.warning}>Water hazard: +1 stroke penalty.</Text> : null}
         </View>
@@ -3939,6 +3937,41 @@ const styles = StyleSheet.create({
     bottom: 10,
     zIndex: 90,
     gap: 8
+  },
+  puttCompactBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(8,12,10,0.85)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginHorizontal: 6,
+    marginBottom: 4
+  },
+  puttCompactInfo: {
+    flex: 1
+  },
+  puttCompactTarget: {
+    color: '#f5fbef',
+    fontSize: 14,
+    fontWeight: '700'
+  },
+  puttCompactSub: {
+    color: '#b8e0a8',
+    fontSize: 11
+  },
+  puttCompactSimBtn: {
+    backgroundColor: '#4a9e3f',
+    borderRadius: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginLeft: 8
+  },
+  puttCompactSimText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800'
   },
   simulatePuttButton: {
     alignSelf: 'stretch',
