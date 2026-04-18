@@ -288,7 +288,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v2.3.1';
+const BUILD_VERSION = 'web v2.4.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -2238,7 +2238,9 @@ const styles = StyleSheet.create({
     position: 'relative'
   },
   worldLayer: {
-    position: 'absolute'
+    position: 'absolute',
+    backgroundColor: '#2a5220',
+    backgroundImage: 'repeating-linear-gradient(55deg, rgba(0,0,0,0.08) 0px, rgba(0,0,0,0.08) 1px, transparent 1px, transparent 9px)'
   },
   courseTintTop: {
     position: 'absolute',
@@ -2258,34 +2260,40 @@ const styles = StyleSheet.create({
   },
   tee: {
     position: 'absolute',
-    backgroundColor: '#4a965a',
+    backgroundColor: '#5aad6a',
+    backgroundImage: 'repeating-linear-gradient(0deg, transparent 0px, transparent 5px, rgba(255,255,255,0.07) 5px, rgba(255,255,255,0.07) 10px)',
     borderWidth: 2,
-    borderColor: '#2f6b3d'
+    borderColor: '#3a8a4a'
   },
   fairway: {
     position: 'absolute',
-    backgroundColor: '#9ac977',
+    backgroundColor: '#7ab855',
+    backgroundImage: 'repeating-linear-gradient(90deg, transparent 0px, transparent 8px, rgba(0,0,0,0.07) 8px, rgba(0,0,0,0.07) 16px)',
     borderWidth: 2,
-    borderColor: '#86b064',
-    overflow: 'hidden'
+    borderColor: '#5a9440',
+    overflow: 'hidden',
+    boxShadow: 'inset 0 0 10px rgba(0,0,0,0.12)'
   },
   fairwaySheen: {
     position: 'absolute',
     left: 0,
     right: 0,
     top: 0,
-    height: '36%',
-    backgroundColor: 'rgba(255,255,255,0.15)'
+    height: '30%',
+    backgroundColor: 'rgba(255,255,255,0.08)'
   },
   green: {
     position: 'absolute',
-    backgroundColor: '#b4dd97',
+    backgroundColor: '#4ec96a',
+    backgroundImage: 'repeating-linear-gradient(135deg, transparent 0px, transparent 5px, rgba(255,255,255,0.06) 5px, rgba(255,255,255,0.06) 10px)',
     borderWidth: 2,
-    borderColor: '#7ea565'
+    borderColor: '#3aaa52',
+    boxShadow: 'inset 0 0 18px rgba(0,0,0,0.18)'
   },
   fringe: {
     position: 'absolute',
-    backgroundColor: '#7dae62'
+    backgroundColor: '#5fa048',
+    backgroundImage: 'repeating-linear-gradient(90deg, transparent 0px, transparent 6px, rgba(0,0,0,0.05) 6px, rgba(0,0,0,0.05) 12px)'
   },
   slopeArrowText: {
     position: 'absolute',
@@ -2364,10 +2372,13 @@ const styles = StyleSheet.create({
   },
   sand: {
     position: 'absolute',
-    backgroundColor: '#d9c17f',
+    backgroundColor: '#d4b96a',
+    backgroundImage: 'radial-gradient(circle, rgba(180,148,80,0.45) 1px, transparent 1px)',
+    backgroundSize: '7px 7px',
     borderRadius: 999,
     borderWidth: 2,
-    borderColor: '#b59b5f'
+    borderColor: '#a8843a',
+    boxShadow: 'inset 0 3px 10px rgba(120,88,20,0.35)'
   },
   water: {
     position: 'absolute',
