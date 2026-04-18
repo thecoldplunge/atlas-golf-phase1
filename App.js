@@ -287,7 +287,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v2.2.3';
+const BUILD_VERSION = 'web v2.3.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1199,7 +1199,8 @@ export default function App() {
 
     const launch = getLaunchData(deviation);
     const speed = speedFromPower(launch.effectivePower, selectedClub);
-    const horizSpeed = speed;
+    const liePenalty = (SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty;
+    const horizSpeed = speed * liePenalty;
 
     velocityRef.current = {
       x: launch.direction.x * horizSpeed,
@@ -1442,17 +1443,32 @@ export default function App() {
     if (Math.abs(dir.x) < 0.001 && Math.abs(dir.y) < 0.001) {
       return [];
     }
-    const center = {
-      x: green.x + green.w * clamp(slope.cx ?? 0.5, 0, 1),
-      y: green.y + green.h * clamp(slope.cy ?? 0.5, 0, 1)
-    };
-    const lead = Math.max(2.2, Math.min(green.w, green.h) * 0.11);
-    return [-1, 0, 1].map((step, idx) => ({
-      key: `slope-arrow-${slopeIndex}-${idx}`,
-      x: center.x - dir.x * lead * step,
-      y: center.y - dir.y * lead * step,
-      char: WIND_ARROWS[slope.dir] || '•'
-    }));
+    const cx = green.x + green.w * clamp(slope.cx ?? 0.5, 0, 1);
+    const cy = green.y + green.h * clamp(slope.cy ?? 0.5, 0, 1);
+    const str = clamp(slope.strength ?? 0.5, 0, 1);
+    // Stronger slope = tighter grid (more arrows packed closer)
+    const spacing = Math.max(3, 8 - str * 5); // 3-8 world units apart
+    const radius = Math.min(green.w, green.h) * 0.35;
+    const arrows = [];
+    for (let gx = -radius; gx <= radius; gx += spacing) {
+      for (let gy = -radius; gy <= radius; gy += spacing) {
+        const px = cx + gx;
+        const py = cy + gy;
+        // Only inside green and within slope influence radius
+        if (!pointInRect({ x: px, y: py }, green)) continue;
+        const dist = Math.hypot(gx, gy);
+        if (dist > radius) continue;
+        const fade = clamp(1 - dist / radius, 0.2, 1);
+        arrows.push({
+          key: `slope-arrow-${slopeIndex}-${gx.toFixed(0)}-${gy.toFixed(0)}`,
+          x: px,
+          y: py,
+          char: WIND_ARROWS[slope.dir] || '•',
+          opacity: fade * 0.7
+        });
+      }
+    }
+    return arrows;
   });
 
   const rayToWorldEdge = (() => {
@@ -1584,8 +1600,9 @@ export default function App() {
                     style={[
                       styles.slopeArrowText,
                       {
-                        left: arrow.x * scaleX - 10,
-                        top: arrow.y * scaleY - 16
+                        left: arrow.x * scaleX - 5,
+                        top: arrow.y * scaleY - 9,
+                        opacity: arrow.opacity ?? 0.7
                       }
                     ]}
                   >
@@ -2268,11 +2285,11 @@ const styles = StyleSheet.create({
   },
   slopeArrowText: {
     position: 'absolute',
-    fontSize: 28,
+    fontSize: 14,
     color: 'rgba(255, 255, 180, 0.85)',
-    textShadowColor: 'rgba(0, 0, 0, 0.42)',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3
+    textShadowRadius: 2
   },
   puttAimMarker: {
     position: 'absolute',
