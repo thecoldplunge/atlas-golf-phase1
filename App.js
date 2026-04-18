@@ -116,7 +116,6 @@ const MIN_PULL_TO_ARM = 12;
 const MAX_PULL_DISTANCE = 92;
 const YARDS_PER_WORLD = 2.6;
 const AIM_DOT_STEP_WORLD = 3.6;
-const MARKER_STEP_YARDS = 25;
 const PREVIEW_FRICTION = 2.1;
 const STOP_SPEED = 6;
 const GRAVITY = 74;
@@ -1041,22 +1040,6 @@ export default function App() {
     });
   }
 
-  const markerStepWorld = MARKER_STEP_YARDS / YARDS_PER_WORLD;
-  const yardMarkers = [];
-  for (let worldDist = markerStepWorld; worldDist <= aimGuideWorld; worldDist += markerStepWorld) {
-    const point = {
-      x: ball.x + aimDir.x * worldDist,
-      y: ball.y + aimDir.y * worldDist
-    };
-    const screen = toScreen(point);
-    yardMarkers.push({
-      key: `marker-${worldDist.toFixed(2)}`,
-      x: screen.x,
-      y: screen.y,
-      yards: Math.round(worldDist * YARDS_PER_WORLD)
-    });
-  }
-
   const golferAnchorWorld = {
     x: clamp(golferBallAnchor.x - 8.1 + aimPerp.x * 0.6, 2.5, WORLD.w - 2.5),
     y: clamp(golferBallAnchor.y - aimDir.y * 1.6 + aimPerp.y * 0.6, 2.5, WORLD.h - 2.5)
@@ -1229,21 +1212,6 @@ export default function App() {
                 }
               ]}
             />
-          ))}
-
-          {yardMarkers.map((marker) => (
-            <View
-              key={marker.key}
-              style={[
-                styles.yardMarker,
-                {
-                  left: marker.x - 16,
-                  top: marker.y - 16
-                }
-              ]}
-            >
-              <Text style={styles.yardMarkerText}>{marker.yards}</Text>
-            </View>
           ))}
 
           <View
@@ -1594,22 +1562,6 @@ const styles = StyleSheet.create({
   aimDot: {
     position: 'absolute',
     backgroundColor: 'rgba(245, 249, 236, 0.8)'
-  },
-  yardMarker: {
-    position: 'absolute',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.65)',
-    backgroundColor: 'rgba(10,16,13,0.62)',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  yardMarkerText: {
-    color: '#eff8e7',
-    fontSize: 10,
-    fontWeight: '700'
   },
   flagPole: {
     position: 'absolute',
