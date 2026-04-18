@@ -119,10 +119,10 @@ const YARDS_PER_WORLD = 2.6;
 const AIM_DOT_STEP_WORLD = 3.6;
 const PREVIEW_FRICTION = 2.1;
 const STOP_SPEED = 6;
-const GRAVITY = 74;
+const GRAVITY = 30;
 const GROUND_EPSILON = 0.05;
 const FRINGE_BUFFER = 4;
-const MIN_BOUNCE_VZ = 5.2;
+const MIN_BOUNCE_VZ = 3.2;
 const CLUBS = [
   { key: 'PT', name: 'Putter', short: 'PT', speed: 0.45, launch: 0.04, roll: 0.86, spin: 1.22 },
   { key: 'LW', name: 'Lob Wedge', short: 'LW', speed: 0.74, launch: 1.22, roll: 0.54, spin: 0.82 },
@@ -820,7 +820,7 @@ export default function App() {
     const horizSpeed = speed * (0.62 - selectedClub.launch * 0.04 + selectedClub.roll * 0.05);
     const clubLaunchBoost = selectedClub.key === 'PT'
       ? 1
-      : 1.35 + selectedClub.launch * 0.95;
+      : 0.92 + selectedClub.launch * 0.42;
     velocityRef.current = {
       x: direction.x * horizSpeed,
       y: direction.y * horizSpeed
@@ -828,8 +828,8 @@ export default function App() {
     flightRef.current = {
       z: 0.08,
       vz: selectedClub.key === 'PT'
-        ? 0.35 + launchRatio * 1.25
-        : (8.5 + launchRatio * 34 + overswingRatio * 6.5) * selectedClub.launch * tempo.launch * clubLaunchBoost
+        ? 0.22 + launchRatio * 0.75
+        : (4.8 + launchRatio * 13.5 + overswingRatio * 2.2) * selectedClub.launch * tempo.launch * clubLaunchBoost
     };
     setBallHeight(flightRef.current.z);
     setTempoLabel(tempo.note);
