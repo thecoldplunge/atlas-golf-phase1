@@ -11,6 +11,8 @@ A semi-lo-fi mobile golf prototype built with Expo + React Native.
 - 5 playable holes with increasing difficulty
 - Stroke tracking (current hole + total round)
 - Quick reset controls (`Retry Hole` and `Quick Reset`)
+- Retro top-down golfer avatar near the ball (pixel-art style via React Native views)
+- Aim-line shot preview dots at 25% / 50% / 75% / 100% power
 - Minimal clean visual style
 
 ## Tech choices (minimal dependencies)
@@ -68,6 +70,7 @@ Expo will boot the app in the iOS Simulator.
 
 - Set aim by tapping anywhere on the course
 - You can also press and hold on the course, then drag to continuously adjust aim
+- Shot preview dots along the aim line show straight-travel estimates at 25%, 50%, 75%, and 100% power
 - Swing uses a lower control pad (Golden Tee style) with a vertical power meter on its right
 - Start thumb in the center ring
 - Pull straight down to load power (0% to 125%)

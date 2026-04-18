@@ -109,6 +109,34 @@ const PAD_CENTER = SWING_PAD_SIZE / 2;
 const SWING_START_RADIUS = 34;
 const MIN_PULL_TO_ARM = 12;
 const MAX_PULL_DISTANCE = 92;
+const PREVIEW_POWERS = [25, 50, 75, 100];
+const PREVIEW_FRICTION = 2.1;
+const STOP_SPEED = 6;
+
+const GOLFER_PIXEL_KEY = {
+  h: '#c94f3a',
+  o: '#20282a',
+  s: '#4d76c2',
+  k: '#f0c08c',
+  p: '#2f5239',
+  b: '#1a1f1c',
+  c: '#d9ddd2'
+};
+
+const GOLFER_SPRITE_ROWS = [
+  '...hh...',
+  '..hooh..',
+  '..osso.c',
+  '.osskoc.',
+  '.osssoc.',
+  '..oppo..',
+  '..p..p..',
+  '..b..b..'
+];
+
+const GOLFER_PIXELS = GOLFER_SPRITE_ROWS.flatMap((row, y) =>
+  row.split('').flatMap((token, x) => (token === '.' ? [] : [{ x, y, color: GOLFER_PIXEL_KEY[token] }]))
+);
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -132,6 +160,14 @@ const pointInCircle = (p, c) => {
 };
 
 const getAimAngleToCup = (ballPos, cup) => Math.atan2(cup.y - ballPos.y, cup.x - ballPos.x);
+const speedFromPower = (powerPct) => 95 + (powerPct / 125) * 290;
+const estimateStraightDistance = (powerPct) => {
+  const startSpeed = speedFromPower(powerPct);
+  if (startSpeed <= STOP_SPEED) {
+    return 0;
+  }
+  return (startSpeed - STOP_SPEED) / PREVIEW_FRICTION;
+};
 
 export default function App() {
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -168,7 +204,7 @@ export default function App() {
   const currentHole = HOLES[holeIndex];
   const scaleX = courseWidth / WORLD.w;
   const scaleY = courseHeight / WORLD.h;
-  const ballRadius = 2.3 * scaleX;
+  const ballRadius = 1.8 * scaleX;
   const cupRadius = 3.0 * scaleX;
 
   const toScreen = (p) => ({ x: p.x * scaleX, y: p.y * scaleY });
@@ -557,6 +593,28 @@ export default function App() {
   };
   const guideAngle = (Math.atan2(guideEnd.y - screenBall.y, guideEnd.x - screenBall.x) * 180) / Math.PI;
   const overSwing = powerPct > 100;
+  const previewDots = PREVIEW_POWERS.map((power) => {
+    const distanceWorld = estimateStraightDistance(power);
+    const size = clamp(scaleX * (1.25 + power / 140), 2.4, 4.8);
+    return {
+      power,
+      size,
+      x: screenBall.x + Math.cos(aimAngle) * distanceWorld * scaleX,
+      y: screenBall.y + Math.sin(aimAngle) * distanceWorld * scaleY
+    };
+  });
+
+  const aimDir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
+  const aimPerp = { x: -aimDir.y, y: aimDir.x };
+  const golferAnchorWorld = {
+    x: ball.x - aimDir.x * 6.2 + aimPerp.x * 2.2,
+    y: ball.y - aimDir.y * 6.2 + aimPerp.y * 2.2
+  };
+  const golferAnchor = toScreen(golferAnchorWorld);
+  const golferPixelSize = clamp(scaleX * 0.78, 1.9, 3.3);
+  const golferWidth = 8 * golferPixelSize;
+  const golferHeight = 8 * golferPixelSize;
+  const golferAngle = (aimAngle * 180) / Math.PI + 90;
 
   return (
     <SafeAreaView style={styles.root}>
@@ -724,6 +782,53 @@ export default function App() {
             }
           ]}
         />
+
+        {previewDots.map((dot) => (
+          <View
+            key={`preview-${dot.power}`}
+            style={[
+              styles.previewDot,
+              {
+                width: dot.size,
+                height: dot.size,
+                borderRadius: dot.size / 2,
+                left: dot.x - dot.size / 2,
+                top: dot.y - dot.size / 2,
+                opacity: 0.42 + dot.power / 250
+              }
+            ]}
+          />
+        ))}
+
+        <View
+          pointerEvents="none"
+          style={[
+            styles.golferWrap,
+            {
+              width: golferWidth,
+              height: golferHeight,
+              left: golferAnchor.x - golferWidth / 2,
+              top: golferAnchor.y - golferHeight / 2,
+              transform: [{ rotate: `${golferAngle}deg` }]
+            }
+          ]}
+        >
+          {GOLFER_PIXELS.map((pixel, i) => (
+            <View
+              key={`golfer-px-${i}`}
+              style={[
+                styles.golferPixel,
+                {
+                  width: golferPixelSize,
+                  height: golferPixelSize,
+                  left: pixel.x * golferPixelSize,
+                  top: pixel.y * golferPixelSize,
+                  backgroundColor: pixel.color
+                }
+              ]}
+            />
+          ))}
+        </View>
 
         <View
           style={[
@@ -939,6 +1044,18 @@ const styles = StyleSheet.create({
     position: 'absolute',
     height: 3,
     backgroundColor: '#f4f2d2'
+  },
+  previewDot: {
+    position: 'absolute',
+    backgroundColor: '#eef2d6',
+    borderWidth: 1,
+    borderColor: '#cedab5'
+  },
+  golferWrap: {
+    position: 'absolute'
+  },
+  golferPixel: {
+    position: 'absolute'
   },
   footer: {
     width: '100%',
