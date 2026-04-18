@@ -114,7 +114,9 @@ const PAD_CENTER = SWING_PAD_SIZE / 2;
 const SWING_START_RADIUS = 60;
 const MIN_PULL_TO_ARM = 12;
 const MAX_PULL_DISTANCE = 92;
-const PREVIEW_POWERS = [25, 50, 75, 100];
+const YARDS_PER_WORLD = 2.6;
+const AIM_DOT_STEP_WORLD = 3.6;
+const MARKER_STEP_YARDS = 25;
 const PREVIEW_FRICTION = 2.1;
 const STOP_SPEED = 6;
 const GRAVITY = 74;
@@ -178,6 +180,25 @@ const GOLFER_SPRITE_ROWS = [
 const GOLFER_PIXELS = GOLFER_SPRITE_ROWS.flatMap((row, y) =>
   row.split('').flatMap((token, x) => (token === '.' ? [] : [{ x, y, color: GOLFER_PIXEL_KEY[token] }]))
 );
+const WIND_PRESETS = ['4 mph N', '7 mph NE', '6 mph W', '9 mph SW', '5 mph E'];
+const SHOT_SHAPE_HINTS = {
+  PT: 'Low roll',
+  LW: 'High soft',
+  SW: 'High check',
+  GW: 'Mid check',
+  PW: 'Mid flight',
+  '9I': 'Mid draw',
+  '8I': 'Piercing',
+  '7I': 'Piercing',
+  '6I': 'Strong draw',
+  '5I': 'Strong draw',
+  '4I': 'Low runner',
+  '3I': 'Stinger',
+  '7W': 'High carry',
+  '5W': 'Long carry',
+  '3W': 'Penetrating',
+  DR: 'Power fade'
+};
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -960,24 +981,82 @@ export default function App() {
   const ballVisualScale = 1 - airborneRatio * 0.12;
   const shadowScale = 1 + airborneRatio * 0.5;
   const shadowOpacity = 0.28 - airborneRatio * 0.18;
+  const worldOffsetX = viewWidth / 2 - camera.x * pixelsPerWorld;
+  const worldOffsetY = viewHeight / 2 - camera.y * pixelsPerWorld;
 
   const finishedAll = scores.every((s) => typeof s === 'number');
   const isLastHole = holeIndex === HOLES.length - 1;
   const overSwing = powerPct > 100;
   const previewTempo = swingActive ? getTempoFeedback(swingTrackRef.current) : { speed: 1, launch: 1, accuracy: 1, note: 'Tempo idle' };
-  const previewDots = PREVIEW_POWERS.map((power) => {
-    const distanceWorld = estimateStraightDistance(power, selectedClub, previewTempo);
-    const size = clamp(pixelsPerWorld * (1.25 + power / 140), 2.4, 4.8);
-    return {
-      power,
-      size,
-      x: screenBall.x + Math.cos(aimAngle) * distanceWorld * pixelsPerWorld,
-      y: screenBall.y + Math.sin(aimAngle) * distanceWorld * pixelsPerWorld
-    };
-  });
+  const neutralTempo = { speed: 1, launch: 1, accuracy: 1, note: 'Neutral' };
 
   const aimDir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
   const aimPerp = { x: -aimDir.y, y: aimDir.x };
+  const distanceToCupWorld = Math.hypot(currentHole.cup.x - ball.x, currentHole.cup.y - ball.y);
+  const yardsToCup = Math.max(0, Math.round(distanceToCupWorld * YARDS_PER_WORLD));
+  const windLabel = WIND_PRESETS[holeIndex % WIND_PRESETS.length];
+  const stockClubYards = Math.round(estimateStraightDistance(100, selectedClub, neutralTempo) * YARDS_PER_WORLD);
+  const previewPower = swingActive ? powerPct : 100;
+  const previewYards = Math.round(estimateStraightDistance(previewPower, selectedClub, previewTempo) * YARDS_PER_WORLD);
+  const shotShape = SHOT_SHAPE_HINTS[selectedClub.key] || 'Neutral';
+  const shotNumber = sunk ? strokesCurrent : strokesCurrent + 1;
+
+  const rayToWorldEdge = (() => {
+    const candidates = [];
+    if (Math.abs(aimDir.x) > 0.0001) {
+      const tx0 = (0 - ball.x) / aimDir.x;
+      const tx1 = (WORLD.w - ball.x) / aimDir.x;
+      if (tx0 > 0) candidates.push(tx0);
+      if (tx1 > 0) candidates.push(tx1);
+    }
+    if (Math.abs(aimDir.y) > 0.0001) {
+      const ty0 = (0 - ball.y) / aimDir.y;
+      const ty1 = (WORLD.h - ball.y) / aimDir.y;
+      if (ty0 > 0) candidates.push(ty0);
+      if (ty1 > 0) candidates.push(ty1);
+    }
+    if (!candidates.length) {
+      return 0;
+    }
+    return Math.max(0, Math.min(...candidates));
+  })();
+  const aimGuideWorld = clamp(
+    Math.max(distanceToCupWorld + 12, estimateStraightDistance(100, selectedClub, previewTempo) * 1.1),
+    6,
+    rayToWorldEdge
+  );
+
+  const aimLineDots = [];
+  for (let worldDist = AIM_DOT_STEP_WORLD; worldDist <= aimGuideWorld; worldDist += AIM_DOT_STEP_WORLD) {
+    const point = {
+      x: ball.x + aimDir.x * worldDist,
+      y: ball.y + aimDir.y * worldDist
+    };
+    const screen = toScreen(point);
+    aimLineDots.push({
+      key: `aim-dot-${worldDist.toFixed(2)}`,
+      x: screen.x,
+      y: screen.y,
+      size: clamp(2 + (worldDist / aimGuideWorld) * 1.9, 2, 4)
+    });
+  }
+
+  const markerStepWorld = MARKER_STEP_YARDS / YARDS_PER_WORLD;
+  const yardMarkers = [];
+  for (let worldDist = markerStepWorld; worldDist <= aimGuideWorld; worldDist += markerStepWorld) {
+    const point = {
+      x: ball.x + aimDir.x * worldDist,
+      y: ball.y + aimDir.y * worldDist
+    };
+    const screen = toScreen(point);
+    yardMarkers.push({
+      key: `marker-${worldDist.toFixed(2)}`,
+      x: screen.x,
+      y: screen.y,
+      yards: Math.round(worldDist * YARDS_PER_WORLD)
+    });
+  }
+
   const golferAnchorWorld = {
     x: clamp(golferBallAnchor.x - 8.1 + aimPerp.x * 0.6, 2.5, WORLD.w - 2.5),
     y: clamp(golferBallAnchor.y - aimDir.y * 1.6 + aimPerp.y * 0.6, 2.5, WORLD.h - 2.5)
@@ -989,509 +1068,553 @@ export default function App() {
   const golferAngle = (aimAngle * 180) / Math.PI + 90;
 
   return (
-    <View style={styles.root}>
-      <StatusBar style="dark" />
-      <View style={styles.topOverlay} pointerEvents="box-none">
-        <View style={styles.topBar}>
-          <View style={styles.menuWrap}>
-            <Pressable style={styles.menuButton} onPress={() => setMenuOpen((v) => !v)}>
-              <Text style={styles.menuIcon}>☰</Text>
-            </Pressable>
-            {menuOpen ? (
-              <View style={styles.menuPanel}>
-                <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); retryHole(); }}>
-                  <Text style={styles.menuItemText}>Retry Hole</Text>
-                </Pressable>
-                <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); resetBall({ penaltyStroke: true }); }}>
-                  <Text style={styles.menuItemText}>Quick Reset</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.menuItem, holeIndex === 0 && styles.disabled]}
-                  disabled={holeIndex === 0}
-                  onPress={() => {
-                    setMenuOpen(false);
-                    setHoleIndex((h) => Math.max(0, h - 1));
-                  }}
-                >
-                  <Text style={styles.menuItemText}>Prev Hole</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.menuItem, !sunk && styles.disabled]}
-                  disabled={!sunk}
-                  onPress={() => {
-                    setMenuOpen(false);
-                    if (!isLastHole) {
-                      setHoleIndex((h) => h + 1);
-                    }
-                  }}
-                >
-                  <Text style={styles.menuItemText}>{isLastHole ? 'Round Done' : 'Next Hole'}</Text>
-                </Pressable>
-              </View>
-            ) : null}
-          </View>
+    <SafeAreaView style={styles.root}>
+      <StatusBar style="light" />
+      <View style={styles.courseShell}>
+        <View
+          ref={courseRef}
+          onLayout={syncCourseFrame}
+          style={[styles.course, { width: viewWidth, height: viewHeight }]}
+          {...aimResponder.panHandlers}
+        >
+          <View style={styles.courseTintTop} pointerEvents="none" />
+          <View style={styles.courseTintBottom} pointerEvents="none" />
 
-          <View style={styles.headerPill}>
-            <Text style={styles.meta}>
-              Hole {holeIndex + 1}/{HOLES.length} • {currentHole.name} • Par {currentHole.par}
-            </Text>
-            <Text style={styles.meta}>Strokes: {strokesCurrent} • Total: {totalScore}</Text>
-          </View>
-        </View>
-      </View>
-
-      <View
-        ref={courseRef}
-        onLayout={syncCourseFrame}
-        style={[styles.course, { width: viewWidth, height: viewHeight }]}
-        {...aimResponder.panHandlers}
-      >
-        {currentHole.terrain?.fairway?.map((f, i) => (
-          <View
-            key={`fair-${i}`}
-            style={[
-              styles.fairway,
-              {
-                left: f.x * scaleX,
-                top: f.y * scaleY,
-                width: f.w * scaleX,
-                height: f.h * scaleY,
-                borderRadius: (f.r || 8) * scaleX
-              }
-            ]}
-          />
-        ))}
-
-        {currentHole.terrain?.green ? (
-          <>
-            <View
-              style={[
-                styles.fringe,
-                {
-                  left: (currentHole.terrain.green.x - FRINGE_BUFFER) * scaleX,
-                  top: (currentHole.terrain.green.y - FRINGE_BUFFER) * scaleY,
-                  width: (currentHole.terrain.green.w + FRINGE_BUFFER * 2) * scaleX,
-                  height: (currentHole.terrain.green.h + FRINGE_BUFFER * 2) * scaleY,
-                  borderRadius: (currentHole.terrain.green.r + FRINGE_BUFFER) * scaleX
-                }
-              ]}
-            />
-            <View
-              style={[
-                styles.green,
-                {
-                  left: currentHole.terrain.green.x * scaleX,
-                  top: currentHole.terrain.green.y * scaleY,
-                  width: currentHole.terrain.green.w * scaleX,
-                  height: currentHole.terrain.green.h * scaleY,
-                  borderRadius: currentHole.terrain.green.r * scaleX
-                }
-              ]}
-            />
-          </>
-        ) : null}
-
-        {currentHole.terrain?.tee ? (
           <View
             style={[
-              styles.tee,
+              styles.worldLayer,
               {
-                left: currentHole.terrain.tee.x * scaleX,
-                top: currentHole.terrain.tee.y * scaleY,
-                width: currentHole.terrain.tee.w * scaleX,
-                height: currentHole.terrain.tee.h * scaleY,
-                borderRadius: currentHole.terrain.tee.r * scaleX
+                left: worldOffsetX,
+                top: worldOffsetY,
+                width: WORLD.w * scaleX,
+                height: WORLD.h * scaleY
               }
             ]}
-          />
-        ) : null}
-
-        {currentHole.hazards.map((h, i) => {
-          const common = {
-            left: h.x * scaleX,
-            top: h.y * scaleY,
-            width: h.w * scaleX,
-            height: h.h * scaleY
-          };
-
-          if (h.type === 'sandRect') {
-            return <View key={`haz-${i}`} style={[styles.sand, common]} />;
-          }
-
-          if (h.type === 'waterRect') {
-            return <View key={`haz-${i}`} style={[styles.water, common]} />;
-          }
-
-          return null;
-        })}
-
-        {currentHole.obstacles.map((o, i) => {
-          if (o.type === 'rect') {
-            return (
+          >
+            {currentHole.terrain?.fairway?.map((f, i) => (
               <View
-                key={`obs-${i}`}
+                key={`fair-${i}`}
                 style={[
-                  styles.wall,
+                  styles.fairway,
                   {
-                    left: o.x * scaleX,
-                    top: o.y * scaleY,
-                    width: o.w * scaleX,
-                    height: o.h * scaleY
-                  }
-                ]}
-              />
-            );
-          }
-
-          if (o.type === 'circle') {
-            const size = o.r * scaleX * 2;
-            return (
-              <View
-                key={`obs-${i}`}
-                style={[
-                  o.look === 'tree' ? styles.tree : styles.bumper,
-                  {
-                    width: size,
-                    height: size,
-                    borderRadius: size / 2,
-                    left: (o.x - o.r) * scaleX,
-                    top: (o.y - o.r) * scaleY
+                    left: f.x * scaleX,
+                    top: f.y * scaleY,
+                    width: f.w * scaleX,
+                    height: f.h * scaleY,
+                    borderRadius: (f.r || 8) * scaleX
                   }
                 ]}
               >
-                {o.look === 'tree' ? <View style={styles.treeCore} /> : null}
+                <View style={styles.fairwaySheen} />
               </View>
-            );
-          }
+            ))}
 
-          return null;
-        })}
+            {currentHole.terrain?.green ? (
+              <>
+                <View
+                  style={[
+                    styles.fringe,
+                    {
+                      left: (currentHole.terrain.green.x - FRINGE_BUFFER) * scaleX,
+                      top: (currentHole.terrain.green.y - FRINGE_BUFFER) * scaleY,
+                      width: (currentHole.terrain.green.w + FRINGE_BUFFER * 2) * scaleX,
+                      height: (currentHole.terrain.green.h + FRINGE_BUFFER * 2) * scaleY,
+                      borderRadius: (currentHole.terrain.green.r + FRINGE_BUFFER) * scaleX
+                    }
+                  ]}
+                />
+                <View
+                  style={[
+                    styles.green,
+                    {
+                      left: currentHole.terrain.green.x * scaleX,
+                      top: currentHole.terrain.green.y * scaleY,
+                      width: currentHole.terrain.green.w * scaleX,
+                      height: currentHole.terrain.green.h * scaleY,
+                      borderRadius: currentHole.terrain.green.r * scaleX
+                    }
+                  ]}
+                />
+              </>
+            ) : null}
 
-        <View
-          style={[
-            styles.flagPole,
-            {
-              left: screenCup.x - 1,
-              top: screenCup.y - 18 * pixelsPerWorld,
-              height: 17 * pixelsPerWorld
-            }
-          ]}
-        />
-        <View
-          style={[
-            styles.flag,
-            {
-              left: screenCup.x,
-              top: screenCup.y - 18 * pixelsPerWorld,
-              borderTopWidth: 4 * pixelsPerWorld,
-              borderBottomWidth: 4 * pixelsPerWorld,
-              borderRightWidth: 9 * pixelsPerWorld
-            }
-          ]}
-        />
+            {currentHole.terrain?.tee ? (
+              <View
+                style={[
+                  styles.tee,
+                  {
+                    left: currentHole.terrain.tee.x * scaleX,
+                    top: currentHole.terrain.tee.y * scaleY,
+                    width: currentHole.terrain.tee.w * scaleX,
+                    height: currentHole.terrain.tee.h * scaleY,
+                    borderRadius: currentHole.terrain.tee.r * scaleX
+                  }
+                ]}
+              />
+            ) : null}
 
-        <View
-          style={[
-            styles.cup,
-            {
-              width: cupRadius * 2,
-              height: cupRadius * 2,
-              borderRadius: cupRadius,
-              left: screenCup.x - cupRadius,
-              top: screenCup.y - cupRadius
-            }
-          ]}
-        />
+            {currentHole.hazards.map((h, i) => {
+              const common = {
+                left: h.x * scaleX,
+                top: h.y * scaleY,
+                width: h.w * scaleX,
+                height: h.h * scaleY
+              };
 
-        {previewDots.map((dot) => (
-          <View
-            key={`preview-${dot.power}`}
-            style={[
-              styles.previewDot,
-              {
-                width: dot.size,
-                height: dot.size,
-                borderRadius: dot.size / 2,
-                left: dot.x - dot.size / 2,
-                top: dot.y - dot.size / 2,
-                opacity: 0.42 + dot.power / 250
+              if (h.type === 'sandRect') {
+                return <View key={`haz-${i}`} style={[styles.sand, common]} />;
               }
-            ]}
-          />
-        ))}
 
-        <View
-          pointerEvents="none"
-          style={[
-            styles.golferWrap,
-            {
-              width: golferWidth,
-              height: golferHeight,
-              left: golferAnchor.x - golferWidth / 2,
-              top: golferAnchor.y - golferHeight / 2,
-              transform: [{ rotate: `${golferAngle}deg` }]
-            }
-          ]}
-        >
-          {GOLFER_PIXELS.map((pixel, i) => (
+              if (h.type === 'waterRect') {
+                return <View key={`haz-${i}`} style={[styles.water, common]} />;
+              }
+
+              return null;
+            })}
+
+            {currentHole.obstacles.map((o, i) => {
+              if (o.type === 'rect') {
+                return (
+                  <View
+                    key={`obs-${i}`}
+                    style={[
+                      styles.wall,
+                      {
+                        left: o.x * scaleX,
+                        top: o.y * scaleY,
+                        width: o.w * scaleX,
+                        height: o.h * scaleY
+                      }
+                    ]}
+                  />
+                );
+              }
+
+              if (o.type === 'circle') {
+                const size = o.r * scaleX * 2;
+                return (
+                  <View
+                    key={`obs-${i}`}
+                    style={[
+                      o.look === 'tree' ? styles.tree : styles.bumper,
+                      {
+                        width: size,
+                        height: size,
+                        borderRadius: size / 2,
+                        left: (o.x - o.r) * scaleX,
+                        top: (o.y - o.r) * scaleY
+                      }
+                    ]}
+                  >
+                    {o.look === 'tree' ? <View style={styles.treeCore} /> : null}
+                  </View>
+                );
+              }
+
+              return null;
+            })}
+          </View>
+
+          {aimLineDots.map((dot) => (
             <View
-              key={`golfer-px-${i}`}
+              key={dot.key}
               style={[
-                styles.golferPixel,
+                styles.aimDot,
                 {
-                  width: golferPixelSize,
-                  height: golferPixelSize,
-                  left: pixel.x * golferPixelSize,
-                  top: pixel.y * golferPixelSize,
-                  backgroundColor: pixel.color
+                  width: dot.size,
+                  height: dot.size,
+                  borderRadius: dot.size / 2,
+                  left: dot.x - dot.size / 2,
+                  top: dot.y - dot.size / 2
                 }
               ]}
             />
           ))}
-        </View>
 
-        <View
-          style={[
-            styles.ballShadow,
-            {
-              width: ballRadius * 2.05,
-              height: ballRadius * 1.15,
-              borderRadius: ballRadius,
-              left: screenBall.x - ballRadius * 1.02,
-              top: screenBall.y - ballRadius * 0.46,
-              opacity: Math.max(0.08, shadowOpacity),
-              transform: [{ scaleX: shadowScale }, { scaleY: shadowScale * 0.96 }]
-            }
-          ]}
-        />
+          {yardMarkers.map((marker) => (
+            <View
+              key={marker.key}
+              style={[
+                styles.yardMarker,
+                {
+                  left: marker.x - 16,
+                  top: marker.y - 16
+                }
+              ]}
+            >
+              <Text style={styles.yardMarkerText}>{marker.yards}</Text>
+            </View>
+          ))}
 
-        <View
-          style={[
-            styles.ball,
-            {
-              width: ballRadius * 2,
-              height: ballRadius * 2,
-              borderRadius: ballRadius,
-              left: screenBall.x - ballRadius,
-              top: screenBall.y - ballRadius - liftPx,
-              transform: [{ scale: ballVisualScale }]
-            }
-          ]}
-        />
-      </View>
+          <View
+            style={[
+              styles.flagPole,
+              {
+                left: screenCup.x - 1,
+                top: screenCup.y - 18 * pixelsPerWorld,
+                height: 17 * pixelsPerWorld
+              }
+            ]}
+          />
+          <View
+            style={[
+              styles.flag,
+              {
+                left: screenCup.x,
+                top: screenCup.y - 18 * pixelsPerWorld,
+                borderTopWidth: 4 * pixelsPerWorld,
+                borderBottomWidth: 4 * pixelsPerWorld,
+                borderRightWidth: 9 * pixelsPerWorld
+              }
+            ]}
+          />
 
-      <View style={styles.footer} pointerEvents="box-none">
-        <View style={styles.footerPanel}>
-        <Text style={styles.tip}>
-          {isAiming
-            ? 'Adjusting aim...'
-            : 'Aim: tap or press-and-drag anywhere on course. Swing: pull down with tempo, then flick up through center.'}
-        </Text>
+          <View
+            style={[
+              styles.cup,
+              {
+                width: cupRadius * 2,
+                height: cupRadius * 2,
+                borderRadius: cupRadius,
+                left: screenCup.x - cupRadius,
+                top: screenCup.y - cupRadius
+              }
+            ]}
+          />
 
-        <View style={styles.clubPanel}>
-          <View style={styles.clubHeaderRow}>
-            <Text style={styles.clubTitle}>Club</Text>
-            <Text style={styles.clubMeta}>{selectedClub.name} • {tempoLabel}</Text>
-          </View>
-          <View style={styles.clubGrid}>
-            {CLUBS.map((club, index) => (
-              <Pressable
-                key={club.key}
-                style={[styles.clubChip, index === selectedClubIndex && styles.clubChipActive]}
-                onPress={() => setSelectedClubIndex(index)}
-              >
-                <Text style={[styles.clubChipText, index === selectedClubIndex && styles.clubChipTextActive]}>
-                  {club.short}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.controlsRow}>
-          <View style={styles.swingArea}>
-            <View style={[styles.swingPad, swingActive && styles.swingPadActive]} {...swingResponder.panHandlers}>
-              <View style={styles.padRing}>
-                <View style={styles.padCenter} />
-              </View>
+          <View
+            pointerEvents="none"
+            style={[
+              styles.golferWrap,
+              {
+                width: golferWidth,
+                height: golferHeight,
+                left: golferAnchor.x - golferWidth / 2,
+                top: golferAnchor.y - golferHeight / 2,
+                transform: [{ rotate: `${golferAngle}deg` }]
+              }
+            ]}
+          >
+            {GOLFER_PIXELS.map((pixel, i) => (
               <View
+                key={`golfer-px-${i}`}
                 style={[
-                  styles.pullMarker,
+                  styles.golferPixel,
                   {
-                    top: PAD_CENTER + pullDistance - 7,
-                    backgroundColor: overSwing ? '#bc3b2f' : '#f0ead3'
+                    width: golferPixelSize,
+                    height: golferPixelSize,
+                    left: pixel.x * golferPixelSize,
+                    top: pixel.y * golferPixelSize,
+                    backgroundColor: pixel.color
                   }
                 ]}
               />
-            </View>
+            ))}
           </View>
 
-          <View style={styles.powerMeterWrap}>
-            <Text style={styles.powerLabel}>{selectedClub.short} • {powerPct}%</Text>
-            <View style={styles.powerMeterTrack}>
-              <View style={[styles.powerMeterSafe, { height: `${(100 / 125) * 100}%` }]} />
-              <View style={[styles.powerMeterFill, { height: `${(powerPct / 125) * 100}%` }]} />
-              <View style={styles.powerMeterCut} />
+          <View
+            style={[
+              styles.ballShadow,
+              {
+                width: ballRadius * 2.05,
+                height: ballRadius * 1.15,
+                borderRadius: ballRadius,
+                left: screenBall.x - ballRadius * 1.02,
+                top: screenBall.y - ballRadius * 0.46,
+                opacity: Math.max(0.08, shadowOpacity),
+                transform: [{ scaleX: shadowScale }, { scaleY: shadowScale * 0.96 }]
+              }
+            ]}
+          />
+
+          <View
+            style={[
+              styles.ball,
+              {
+                width: ballRadius * 2,
+                height: ballRadius * 2,
+                borderRadius: ballRadius,
+                left: screenBall.x - ballRadius,
+                top: screenBall.y - ballRadius - liftPx,
+                transform: [{ scale: ballVisualScale }]
+              }
+            ]}
+          />
+        </View>
+
+        <View style={styles.topOverlay} pointerEvents="box-none">
+          <View style={styles.topHudRow}>
+            <View style={styles.menuWrap}>
+              <Pressable style={styles.menuButton} onPress={() => setMenuOpen((v) => !v)}>
+                <Text style={styles.menuIcon}>☰</Text>
+              </Pressable>
+              {menuOpen ? (
+                <View style={styles.menuPanel}>
+                  <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); retryHole(); }}>
+                    <Text style={styles.menuItemText}>Retry Hole</Text>
+                  </Pressable>
+                  <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); resetBall({ penaltyStroke: true }); }}>
+                    <Text style={styles.menuItemText}>Quick Reset</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.menuItem, holeIndex === 0 && styles.disabled]}
+                    disabled={holeIndex === 0}
+                    onPress={() => {
+                      setMenuOpen(false);
+                      setHoleIndex((h) => Math.max(0, h - 1));
+                    }}
+                  >
+                    <Text style={styles.menuItemText}>Prev Hole</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.menuItem, !sunk && styles.disabled]}
+                    disabled={!sunk}
+                    onPress={() => {
+                      setMenuOpen(false);
+                      if (!isLastHole) {
+                        setHoleIndex((h) => h + 1);
+                      }
+                    }}
+                  >
+                    <Text style={styles.menuItemText}>{isLastHole ? 'Round Done' : 'Next Hole'}</Text>
+                  </Pressable>
+                </View>
+              ) : null}
             </View>
-            <Text style={[styles.powerHint, overSwing && styles.overSwingText]}>
-              {overSwing ? 'Over-swing zone' : tempoLabel}
-            </Text>
+
+            <View style={styles.hudStrip}>
+              <View style={styles.hudItem}>
+                <Text style={styles.hudLabel}>Hole</Text>
+                <Text style={styles.hudValue}>{holeIndex + 1} / {HOLES.length}</Text>
+              </View>
+              <View style={styles.hudItem}>
+                <Text style={styles.hudLabel}>Par</Text>
+                <Text style={styles.hudValue}>{currentHole.par}</Text>
+              </View>
+              <View style={styles.hudItem}>
+                <Text style={styles.hudLabel}>Shot</Text>
+                <Text style={styles.hudValue}>{shotNumber}</Text>
+              </View>
+              <View style={styles.hudItem}>
+                <Text style={styles.hudLabel}>Yards</Text>
+                <Text style={styles.hudValue}>{yardsToCup}</Text>
+              </View>
+              <View style={styles.hudItem}>
+                <Text style={styles.hudLabel}>Wind</Text>
+                <Text style={styles.hudValue}>{windLabel}</Text>
+              </View>
+            </View>
           </View>
         </View>
 
-        <Text style={styles.tip}>{lastShotNote}</Text>
-
-        {waterNotice && !sunk ? <Text style={styles.warning}>Water hazard: +1 stroke, ball reset.</Text> : null}
-
-        {sunk ? <Text style={styles.success}>Hole complete in {strokesCurrent} strokes.</Text> : null}
-
-
-        {finishedAll ? (
-          <View style={styles.summary}>
-            <Text style={styles.summaryTitle}>Round Complete</Text>
-            <Text style={styles.summaryText}>Played holes: {completed}</Text>
-            <Text style={styles.summaryText}>Final strokes: {totalScore}</Text>
+        <View style={styles.powerRailWrap} pointerEvents="none">
+          <Text style={styles.powerRailPct}>{powerPct}%</Text>
+          <View style={styles.powerRailTrack}>
+            <View style={[styles.powerRailSafe, { height: `${(100 / 125) * 100}%` }]} />
+            <View style={[styles.powerRailFill, { height: `${(powerPct / 125) * 100}%` }]} />
+            <View style={styles.powerRailCut} />
           </View>
-        ) : null}
+          <Text style={[styles.powerRailMeta, overSwing && styles.overSwingText]}>
+            {overSwing ? 'Over' : 'Power'}
+          </Text>
+        </View>
+
+        <View style={styles.bottomOverlay} pointerEvents="box-none">
+          <View style={styles.bottomMainRow}>
+            <View style={styles.clubCard}>
+              <Text style={styles.clubCardTitle}>{selectedClub.name}</Text>
+              <Text style={styles.clubCardSub}>{selectedClub.short} • {shotShape}</Text>
+              <Text style={styles.clubCardYards}>{previewYards} yd</Text>
+              <Text style={styles.clubCardMeta}>Stock {stockClubYards} • To pin {yardsToCup}</Text>
+              <Text style={styles.clubCardMeta}>Tempo {tempoLabel}</Text>
+            </View>
+
+            <View style={styles.swingDock}>
+              <View style={[styles.swingPad, swingActive && styles.swingPadActive]} {...swingResponder.panHandlers}>
+                <View style={styles.swingHaloOuter} />
+                <View style={styles.swingHaloInner}>
+                  <Text style={styles.swingPct}>{powerPct}%</Text>
+                </View>
+                <View
+                  style={[
+                    styles.pullMarker,
+                    {
+                      top: PAD_CENTER + pullDistance - 8,
+                      backgroundColor: overSwing ? '#cf5d47' : '#f3f3ee'
+                    }
+                  ]}
+                />
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.clubSelectorWrap}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clubScrollContent}>
+              {CLUBS.map((club, index) => (
+                <Pressable
+                  key={club.key}
+                  style={[styles.clubChip, index === selectedClubIndex && styles.clubChipActive]}
+                  onPress={() => setSelectedClubIndex(index)}
+                >
+                  <Text style={[styles.clubChipText, index === selectedClubIndex && styles.clubChipTextActive]}>
+                    {club.short}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+
+          <Text style={styles.helperText}>
+            {isAiming
+              ? 'Adjusting aim...'
+              : 'Pull down then swipe up through center to swing. Use two fingers on course to pan camera.'}
+          </Text>
+          <Text style={styles.lastShotText}>{lastShotNote}</Text>
+
+          {waterNotice && !sunk ? <Text style={styles.warning}>Water hazard: +1 stroke, ball reset.</Text> : null}
+          {sunk ? <Text style={styles.success}>Hole complete in {strokesCurrent} strokes.</Text> : null}
+
+          {finishedAll ? (
+            <View style={styles.summary}>
+              <Text style={styles.summaryTitle}>Round Complete</Text>
+              <Text style={styles.summaryText}>Played holes: {completed}</Text>
+              <Text style={styles.summaryText}>Final strokes: {totalScore}</Text>
+            </View>
+          ) : null}
         </View>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#3a5c30'
+    backgroundColor: '#223923'
   },
-  topOverlay: {
+  courseShell: {
+    flex: 1
+  },
+  course: {
+    backgroundColor: '#486f3d',
+    overflow: 'hidden',
+    position: 'relative'
+  },
+  worldLayer: {
+    position: 'absolute'
+  },
+  courseTintTop: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    zIndex: 60,
-    paddingTop: 52,
-    paddingHorizontal: 12,
-    elevation: 20
+    height: '44%',
+    backgroundColor: 'rgba(255,255,255,0.05)'
   },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10
-  },
-  menuWrap: {
-    position: 'relative',
-    zIndex: 80,
-    elevation: 30
-  },
-  menuButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: 'rgba(21, 31, 24, 0.82)',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  menuIcon: {
-    color: '#f7fbf4',
-    fontSize: 21,
-    fontWeight: '700'
-  },
-  menuPanel: {
+  courseTintBottom: {
     position: 'absolute',
-    top: 52,
     left: 0,
-    width: 150,
-    borderRadius: 14,
-    backgroundColor: 'rgba(21, 31, 24, 0.92)',
-    padding: 6,
-    gap: 4
-  },
-  menuItem: {
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.06)'
-  },
-  menuItemText: {
-    color: '#f7fbf4',
-    fontWeight: '700',
-    fontSize: 13
-  },
-  headerPill: {
-    flex: 1,
-    borderRadius: 14,
-    backgroundColor: 'rgba(21, 31, 24, 0.68)',
-    paddingHorizontal: 12,
-    paddingVertical: 8
-  },
-  meta: {
-    fontSize: 13,
-    color: '#f2f7ee',
-    marginTop: 2
-  },
-  course: {
-    backgroundColor: '#3a5c30',
-    overflow: 'hidden',
-    position: 'relative'
+    right: 0,
+    bottom: 0,
+    height: '42%',
+    backgroundColor: 'rgba(0,0,0,0.10)'
   },
   tee: {
     position: 'absolute',
-    backgroundColor: '#4d9955',
-    borderWidth: 1,
-    borderColor: '#31683a'
+    backgroundColor: '#4a965a',
+    borderWidth: 2,
+    borderColor: '#2f6b3d'
   },
   fairway: {
     position: 'absolute',
-    backgroundColor: '#9ccc78'
+    backgroundColor: '#9ac977',
+    borderWidth: 2,
+    borderColor: '#86b064',
+    overflow: 'hidden'
+  },
+  fairwaySheen: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    height: '36%',
+    backgroundColor: 'rgba(255,255,255,0.15)'
   },
   green: {
     position: 'absolute',
-    backgroundColor: '#a9d88a',
-    borderWidth: 1,
-    borderColor: '#6f9c53'
+    backgroundColor: '#b4dd97',
+    borderWidth: 2,
+    borderColor: '#7ea565'
   },
   fringe: {
     position: 'absolute',
-    backgroundColor: '#8ebe71'
+    backgroundColor: '#7dae62'
   },
   wall: {
     position: 'absolute',
-    backgroundColor: '#4f3f2f',
-    borderRadius: 5
+    backgroundColor: '#5a4732',
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: '#3c2d22'
   },
   bumper: {
     position: 'absolute',
-    backgroundColor: '#635344'
+    backgroundColor: '#6e5a46',
+    borderWidth: 2,
+    borderColor: '#4f3f31'
   },
   tree: {
     position: 'absolute',
-    backgroundColor: '#3f723d',
+    backgroundColor: '#2f6e3e',
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#1f4c28'
   },
   treeCore: {
     width: '45%',
     height: '45%',
     borderRadius: 999,
-    backgroundColor: '#2e562e'
+    backgroundColor: '#214e2b'
   },
   sand: {
     position: 'absolute',
-    backgroundColor: '#dcc784',
-    borderRadius: 16
+    backgroundColor: '#d9c17f',
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: '#b59b5f'
   },
   water: {
     position: 'absolute',
-    backgroundColor: '#4fa0d8',
-    borderRadius: 12,
+    backgroundColor: '#3f88bc',
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: '#26618a'
+  },
+  aimDot: {
+    position: 'absolute',
+    backgroundColor: 'rgba(245, 249, 236, 0.8)'
+  },
+  yardMarker: {
+    position: 'absolute',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2f6b94'
+    borderColor: 'rgba(255,255,255,0.65)',
+    backgroundColor: 'rgba(10,16,13,0.62)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  yardMarkerText: {
+    color: '#eff8e7',
+    fontSize: 10,
+    fontWeight: '700'
   },
   flagPole: {
     position: 'absolute',
     width: 2,
-    backgroundColor: '#dce6cf'
+    backgroundColor: '#edf4e4'
   },
   flag: {
     position: 'absolute',
@@ -1503,25 +1626,19 @@ const styles = StyleSheet.create({
   },
   cup: {
     position: 'absolute',
-    backgroundColor: '#16220f',
+    backgroundColor: '#1b2514',
     borderWidth: 2,
-    borderColor: '#0a1307'
+    borderColor: '#091006'
   },
   ball: {
     position: 'absolute',
-    backgroundColor: '#f7f7f4',
+    backgroundColor: '#fbfbf8',
     borderWidth: 1,
-    borderColor: '#cfd5ca'
+    borderColor: '#ccd2c7'
   },
   ballShadow: {
     position: 'absolute',
-    backgroundColor: '#1d2e1a'
-  },
-  previewDot: {
-    position: 'absolute',
-    backgroundColor: '#eef2d6',
-    borderWidth: 1,
-    borderColor: '#cedab5'
+    backgroundColor: '#142415'
   },
   golferWrap: {
     position: 'absolute'
@@ -1529,50 +1646,255 @@ const styles = StyleSheet.create({
   golferPixel: {
     position: 'absolute'
   },
-  footer: {
+  topOverlay: {
     position: 'absolute',
-    bottom: 0,
+    top: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 22
+    zIndex: 80,
+    paddingHorizontal: 10,
+    paddingTop: 4
   },
-  footerPanel: {
-    gap: 7,
-    backgroundColor: 'rgba(14, 22, 14, 0.82)',
-    borderRadius: 18,
-    padding: 12
-  },
-  clubPanel: {
-    gap: 6
-  },
-  clubHeaderRow: {
+  topHudRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 8
   },
-  clubTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#d4e8cc'
+  menuWrap: {
+    position: 'relative',
+    zIndex: 95
   },
-  clubMeta: {
+  menuButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: 'rgba(8, 12, 10, 0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  menuIcon: {
+    color: '#f6f7f3',
+    fontSize: 20,
+    fontWeight: '700'
+  },
+  menuPanel: {
+    position: 'absolute',
+    top: 48,
+    left: 0,
+    width: 160,
+    borderRadius: 14,
+    backgroundColor: 'rgba(7, 11, 9, 0.90)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    padding: 6,
+    gap: 4
+  },
+  menuItem: {
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.06)'
+  },
+  menuItemText: {
+    color: '#f2f9ec',
+    fontWeight: '700',
+    fontSize: 13
+  },
+  hudStrip: {
     flex: 1,
-    textAlign: 'right',
-    fontSize: 11,
-    color: '#9dc490'
-  },
-  clubGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6
+    gap: 6,
+    backgroundColor: 'rgba(7, 11, 9, 0.64)',
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    paddingHorizontal: 6,
+    paddingVertical: 6
+  },
+  hudItem: {
+    minWidth: 52,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.05)'
+  },
+  hudLabel: {
+    color: '#9fb59f',
+    fontSize: 10,
+    fontWeight: '600'
+  },
+  hudValue: {
+    color: '#f5fbef',
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  powerRailWrap: {
+    position: 'absolute',
+    right: 10,
+    top: '27%',
+    zIndex: 85,
+    width: 58,
+    alignItems: 'center',
+    gap: 4
+  },
+  powerRailPct: {
+    color: '#f5f9f0',
+    fontSize: 13,
+    fontWeight: '800',
+    backgroundColor: 'rgba(6, 10, 8, 0.74)',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3
+  },
+  powerRailTrack: {
+    width: 24,
+    height: 204,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: 'rgba(8,12,10,0.78)',
+    overflow: 'hidden',
+    position: 'relative'
+  },
+  powerRailSafe: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(106,165,113,0.58)'
+  },
+  powerRailFill: {
+    position: 'absolute',
+    left: 3,
+    right: 3,
+    bottom: 3,
+    borderRadius: 10,
+    backgroundColor: '#8fd37a'
+  },
+  powerRailCut: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: `${(100 / 125) * 100}%`,
+    height: 2,
+    backgroundColor: '#e06f58'
+  },
+  powerRailMeta: {
+    color: '#d2dfcc',
+    fontSize: 11,
+    fontWeight: '700'
+  },
+  bottomOverlay: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    bottom: 10,
+    zIndex: 90,
+    gap: 8
+  },
+  bottomMainRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 10
+  },
+  clubCard: {
+    flex: 1,
+    minHeight: 124,
+    borderRadius: 16,
+    backgroundColor: 'rgba(8, 12, 10, 0.74)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.17)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    justifyContent: 'space-between'
+  },
+  clubCardTitle: {
+    color: '#eff8e6',
+    fontSize: 15,
+    fontWeight: '700'
+  },
+  clubCardSub: {
+    color: '#aec3a9',
+    fontSize: 12
+  },
+  clubCardYards: {
+    color: '#f5fbef',
+    fontSize: 26,
+    fontWeight: '800'
+  },
+  clubCardMeta: {
+    color: '#a9bda5',
+    fontSize: 11
+  },
+  swingDock: {
+    width: SWING_PAD_SIZE + 8,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  swingPad: {
+    width: SWING_PAD_SIZE,
+    height: SWING_PAD_SIZE,
+    borderRadius: SWING_PAD_SIZE / 2,
+    backgroundColor: 'rgba(7, 11, 9, 0.84)',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.24)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  swingPadActive: {
+    borderColor: '#93d27c',
+    shadowColor: '#94d87d',
+    shadowOpacity: 0.48,
+    shadowRadius: 12
+  },
+  swingHaloOuter: {
+    position: 'absolute',
+    width: 102,
+    height: 102,
+    borderRadius: 52,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)'
+  },
+  swingHaloInner: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
+    borderColor: 'rgba(248,251,242,0.8)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  swingPct: {
+    color: '#f6fbef',
+    fontSize: 14,
+    fontWeight: '700'
+  },
+  pullMarker: {
+    position: 'absolute',
+    left: PAD_CENTER - 8,
+    width: 16,
+    height: 16,
+    borderRadius: 999
+  },
+  clubSelectorWrap: {
+    borderRadius: 14,
+    backgroundColor: 'rgba(7, 11, 9, 0.65)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    paddingVertical: 8
+  },
+  clubScrollContent: {
+    paddingHorizontal: 8,
+    gap: 7
   },
   clubChip: {
-    minWidth: 34,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    minWidth: 38,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.10)',
     borderWidth: 1,
@@ -1580,154 +1902,49 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   clubChipActive: {
-    backgroundColor: '#2e5f34',
-    borderColor: '#2e5f34'
+    backgroundColor: '#2c6842',
+    borderColor: '#95d28a'
   },
   clubChipText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
-    color: '#c5dcc0'
+    color: '#d6e7d0'
   },
   clubChipTextActive: {
     color: '#f6fbf4'
   },
-  tip: {
-    fontSize: 13,
-    color: '#c8dfc0'
+  helperText: {
+    fontSize: 12,
+    color: '#d0dfcb',
+    textAlign: 'center'
+  },
+  lastShotText: {
+    fontSize: 12,
+    color: '#aeca9f',
+    textAlign: 'center'
   },
   warning: {
-    fontSize: 13,
-    color: '#933e2d',
+    fontSize: 12,
+    color: '#e1917f',
+    textAlign: 'center',
     fontWeight: '700'
   },
   success: {
-    fontSize: 13,
-    color: '#1c5d22',
+    fontSize: 12,
+    color: '#9ed98f',
+    textAlign: 'center',
     fontWeight: '700'
   },
-  row: {
-    flexDirection: 'row',
-    gap: 10
-  },
-  button: {
-    flex: 1,
-    backgroundColor: '#2e5f34',
-    borderRadius: 12,
-    paddingVertical: 10,
-    alignItems: 'center'
-  },
-  ghost: {
-    backgroundColor: '#476d4c'
-  },
-  buttonText: {
-    color: '#f8fbf3',
-    fontWeight: '700'
+  overSwingText: {
+    color: '#e07f6d'
   },
   disabled: {
     opacity: 0.45
   },
-  controlsRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12
-  },
-  powerLabel: {
-    fontSize: 12,
-    color: '#d4e8cc',
-    fontWeight: '700',
-    textAlign: 'center'
-  },
-  powerHint: {
-    fontSize: 11,
-    color: '#9dc490',
-    fontWeight: '700',
-    textAlign: 'center'
-  },
-  overSwingText: {
-    color: '#9e352b'
-  },
-  powerMeterWrap: {
-    width: 92,
-    alignItems: 'center',
-    gap: 4
-  },
-  powerMeterTrack: {
-    width: 30,
-    height: SWING_PAD_SIZE + 6,
-    borderRadius: 18,
-    backgroundColor: '#d9e4d0',
-    overflow: 'hidden',
-    position: 'relative'
-  },
-  powerMeterSafe: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#afd58f'
-  },
-  powerMeterFill: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#3f8f4c'
-  },
-  powerMeterCut: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: `${(100 / 125) * 100}%`,
-    height: 2,
-    backgroundColor: '#9e352b'
-  },
-  swingArea: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 2
-  },
-  swingPad: {
-    width: SWING_PAD_SIZE,
-    height: SWING_PAD_SIZE,
-    borderRadius: SWING_PAD_SIZE / 2,
-    backgroundColor: '#314432',
-    borderWidth: 2,
-    borderColor: '#516f55',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  swingPadActive: {
-    borderColor: '#9fd273'
-  },
-  padRing: {
-    width: 64,
-    height: 64,
-    borderRadius: 999,
-    borderWidth: 2,
-    borderColor: '#d9e4cf',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  padCenter: {
-    width: 10,
-    height: 10,
-    borderRadius: 999,
-    backgroundColor: '#f4f6f2'
-  },
-  pullMarker: {
-    position: 'absolute',
-    left: PAD_CENTER - 7,
-    width: 14,
-    height: 14,
-    borderRadius: 999
-  },
   summary: {
-    marginTop: 4,
     padding: 10,
     borderRadius: 12,
-    backgroundColor: '#dce9d2'
+    backgroundColor: 'rgba(232, 243, 225, 0.92)'
   },
   summaryTitle: {
     fontWeight: '800',
