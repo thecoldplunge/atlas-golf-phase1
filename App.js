@@ -287,7 +287,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v2.1.0';
+const BUILD_VERSION = 'web v2.1.1';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1345,8 +1345,10 @@ export default function App() {
 
   const screenBall = toScreen(ball);
   const screenCup = toScreen(currentHole.cup);
-  const liftPx = clamp(ballHeight * pixelsPerWorld * 1.55, 0, 54);
-  const airborneRatio = clamp(ballHeight / 18, 0, 1);
+  // Smooth arc: sqrt scale prevents ceiling effect while keeping ball on-screen
+  const rawLiftPx = ballHeight * pixelsPerWorld * 1.55;
+  const liftPx = rawLiftPx > 0 ? Math.sqrt(rawLiftPx) * 8 : 0;
+  const airborneRatio = clamp(ballHeight / 35, 0, 1);
   const ballVisualScale = 1 - airborneRatio * 0.12;
   const shadowScale = 1 + airborneRatio * 0.5;
   const shadowOpacity = 0.28 - airborneRatio * 0.18;
