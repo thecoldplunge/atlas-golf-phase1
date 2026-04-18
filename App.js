@@ -287,7 +287,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v2.1.1';
+const BUILD_VERSION = 'web v2.2.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -343,10 +343,10 @@ const estimateStraightDistance = (powerPct, club, strike = { launch: 1, spin: 1 
   const shotRatio = clamp(powerPct / 100, 0, 1.2);
   return (club.carryYards * shotRatio * strike.launch) / YARDS_PER_WORLD;
 };
-const getDefaultPuttPowerPct = (distanceToCupYards) => {
-  // Keep 50% as the baseline read and scale up/down with putt length.
-  const baseline = 50 + (distanceToCupYards - 8) * 2;
-  return clamp(Math.round(baseline), 30, 95);
+const puttPowerForDistance = (distanceWorld) => {
+  const basePuttSpeed = (CLUBS[0].carryYards / YARDS_PER_WORLD) * 2.8;
+  const launchRatio = basePuttSpeed > 0 ? distanceWorld / basePuttSpeed : 0;
+  return clamp(Math.round(clamp(launchRatio, 0, 1) * 125), 0, 125);
 };
 const getSlopeDirectionUnit = (dir) => {
   const parsed = WIND_DIRS[dir] || { x: 0, y: 0 };
@@ -406,6 +406,10 @@ export default function App() {
   const viewHeight = Math.max(screenHeight, 568);
   const [puttingMode, setPuttingMode] = useState(false);
   const [puttPreview, setPuttPreview] = useState(null);
+  const [puttAimPoint, setPuttAimPoint] = useState(null);
+  const [puttSimulated, setPuttSimulated] = useState(false);
+  const [puttTargetPowerPct, setPuttTargetPowerPct] = useState(null);
+  const [puttSwingFeedback, setPuttSwingFeedback] = useState('');
   const basePixelsPerWorld = Math.max(viewWidth / WORLD.w, viewHeight / WORLD.h);
   const cameraZoom = CAMERA_ZOOM * (puttingMode ? PUTTING_ZOOM_MULT : 1);
   const pixelsPerWorld = basePixelsPerWorld * cameraZoom;
@@ -515,6 +519,10 @@ export default function App() {
     setSpinOffset({ x: 0, y: 0 });
     setPuttingMode(false);
     setPuttPreview(null);
+    setPuttAimPoint(null);
+    setPuttSimulated(false);
+    setPuttTargetPowerPct(null);
+    setPuttSwingFeedback('');
     powerRef.current = 0; setPowerPct(0);
     shotCurveDegRef.current = 0;
     shotAimAngleRef.current = getAimAngleToCup(currentHole.ballStart, currentHole.cup);
@@ -548,6 +556,10 @@ export default function App() {
     setSpinOffset({ x: 0, y: 0 });
     setPuttingMode(false);
     setPuttPreview(null);
+    setPuttAimPoint(null);
+    setPuttSimulated(false);
+    setPuttTargetPowerPct(null);
+    setPuttSwingFeedback('');
     powerRef.current = 0; setPowerPct(0);
     shotCurveDegRef.current = 0;
     shotAimAngleRef.current = getAimAngleToCup(currentHole.ballStart, currentHole.cup);
@@ -593,6 +605,10 @@ export default function App() {
     setSpinOffset({ x: 0, y: 0 });
     setPuttingMode(false);
     setPuttPreview(null);
+    setPuttAimPoint(null);
+    setPuttSimulated(false);
+    setPuttTargetPowerPct(null);
+    setPuttSwingFeedback('');
     powerRef.current = 0; setPowerPct(0);
     shotCurveDegRef.current = 0;
     shotAimAngleRef.current = getAimAngleToCup(currentHole.ballStart, currentHole.cup);
@@ -797,6 +813,10 @@ export default function App() {
     if (sunk) {
       setPuttingMode(false);
       setPuttPreview(null);
+      setPuttAimPoint(null);
+      setPuttSimulated(false);
+      setPuttTargetPowerPct(null);
+      setPuttSwingFeedback('');
       return;
     }
     const lie = getSurfaceAtPoint(currentHole, ball);
@@ -808,30 +828,28 @@ export default function App() {
     if (puttingMode && !onPuttingSurface) {
       setPuttingMode(false);
       setPuttPreview(null);
+      setPuttAimPoint(null);
+      setPuttSimulated(false);
+      setPuttTargetPowerPct(null);
+      setPuttSwingFeedback('');
       return;
     }
 
     if (!ballMoving && onPuttingSurface && !puttingMode) {
-      const distanceToCupYards = Math.hypot(currentHole.cup.x - ball.x, currentHole.cup.y - ball.y) * YARDS_PER_WORLD;
-      const defaultPuttPower = getDefaultPuttPowerPct(distanceToCupYards);
       setPuttingMode(true);
       setSelectedClubIndex(0);
       setShotControlOpen(false);
       setSpinOffset({ x: 0, y: 0 });
       setPuttPreview(null);
-      powerRef.current = defaultPuttPower;
-      setPowerPct(defaultPuttPower);
-      setTempoLabel(`Putt read • ${defaultPuttPower}%`);
-      setLastShotNote('Putting mode: aim on the course and watch the live preview. Pull down, swipe up, release to hit.');
+      setPuttAimPoint(null);
+      setPuttSimulated(false);
+      setPuttTargetPowerPct(null);
+      setPuttSwingFeedback('');
+      powerRef.current = 0;
+      setPowerPct(0);
+      setTempoLabel('Place aim point');
+      setLastShotNote('Putting mode: place an aim point on the green, tap Simulate Putt, then swing to match the target power.');
       setCamera((prev) => clampCamera({ x: ball.x, y: ball.y }));
-    }
-
-    if (!ballMoving && onPuttingSurface && puttingMode && powerRef.current <= 5) {
-      const distanceToCupYards = Math.hypot(currentHole.cup.x - ball.x, currentHole.cup.y - ball.y) * YARDS_PER_WORLD;
-      const defaultPuttPower = getDefaultPuttPowerPct(distanceToCupYards);
-      powerRef.current = defaultPuttPower;
-      setPowerPct(defaultPuttPower);
-      setTempoLabel(`Putt read • ${defaultPuttPower}%`);
     }
   }, [ball, ballMoving, currentHole, currentLie, puttingMode, sunk]);
 
@@ -861,11 +879,44 @@ export default function App() {
     const localX = clamp(pageX - frame.x, 0, frame.width);
     const localY = clamp(pageY - frame.y, 0, frame.height);
     const target = toWorld({ x: localX, y: localY });
+    if (puttingMode) {
+      const green = currentHole.terrain?.green;
+      if (!green || !pointInRect(target, green)) {
+        return;
+      }
+      setPuttAimPoint(target);
+      setPuttSimulated(false);
+      setPuttTargetPowerPct(null);
+      setPuttSwingFeedback('');
+    }
     const dir = { x: target.x - ballRef.current.x, y: target.y - ballRef.current.y };
     if (magnitude(dir) < 0.2) {
       return;
     }
     setAimAngle(Math.atan2(dir.y, dir.x));
+  };
+
+  const handleSimulatePutt = () => {
+    if (!puttingMode || sunk || ballMoving || !puttAimPoint) {
+      return;
+    }
+    const dx = puttAimPoint.x - ballRef.current.x;
+    const dy = puttAimPoint.y - ballRef.current.y;
+    const distWorld = Math.hypot(dx, dy);
+    if (distWorld < 0.1) {
+      return;
+    }
+    const targetAngle = Math.atan2(dy, dx);
+    const targetPower = puttPowerForDistance(distWorld);
+    setAimAngle(targetAngle);
+    powerRef.current = targetPower;
+    setPowerPct(targetPower);
+    setPuttPreview(simulatePuttPreview(0, targetPower, targetAngle));
+    setPuttTargetPowerPct(targetPower);
+    setPuttSimulated(true);
+    setPuttSwingFeedback('');
+    setTempoLabel(`Target: ${targetPower}%`);
+    setLastShotNote('Preview locked. Swing now and match the target power while keeping the stroke straight.');
   };
 
   const isTouchInsideCourse = (evt) => {
@@ -983,7 +1034,7 @@ export default function App() {
           webPanStartCameraRef.current = null;
         }
       }),
-    [ballMoving, pixelsPerWorld, sunk]
+    [ballMoving, currentHole, pixelsPerWorld, puttingMode, sunk]
   );
 
   const getShotControlMetrics = (offset = spinOffset) => {
@@ -1064,14 +1115,15 @@ export default function App() {
     return adjusted;
   };
 
-  const getLaunchData = (deviation = 0) => {
+  const getLaunchData = (deviation = 0, options = {}) => {
     const shotMetrics = getShotControlMetrics();
     const swingCurveDeg = deviation * 25;
     const totalCurveDeg = shotMetrics.curveDeg + swingCurveDeg;
     const launchCurveDeg = totalCurveDeg * CURVE_LAUNCH_BLEND;
-    const finalAngle = aimAngle + degToRad(launchCurveDeg);
+    const baseAimAngle = options.aimAngle ?? aimAngle;
+    const finalAngle = baseAimAngle + degToRad(launchCurveDeg);
     const direction = { x: Math.cos(finalAngle), y: Math.sin(finalAngle) };
-    const effectivePower = powerRef.current;
+    const effectivePower = options.powerPct ?? powerRef.current;
     const launchRatio = clamp(effectivePower / 125, 0, 1);
     return {
       shotMetrics,
@@ -1084,11 +1136,12 @@ export default function App() {
     };
   };
 
-  const simulatePuttPreview = (deviation = 0) => {
-    if (powerRef.current <= 5) {
+  const simulatePuttPreview = (deviation = 0, overridePowerPct = null, overrideAimAngle = null) => {
+    const effectivePower = overridePowerPct ?? powerRef.current;
+    if (effectivePower <= 5) {
       return null;
     }
-    const launch = getLaunchData(deviation);
+    const launch = getLaunchData(deviation, { powerPct: effectivePower, aimAngle: overrideAimAngle });
     const puttSpeed = (CLUBS[0].carryYards / YARDS_PER_WORLD) * launch.launchRatio * 2.8;
     const vel = {
       x: launch.direction.x * puttSpeed,
@@ -1136,25 +1189,6 @@ export default function App() {
       endLie: getSurfaceAtPoint(currentHole, finalPos)
     };
   };
-
-  useEffect(() => {
-    if (!puttingMode || sunk || ballMoving) {
-      if (!puttingMode) {
-        setPuttPreview(null);
-      }
-      return;
-    }
-    if (powerRef.current <= 5) {
-      const distanceToCupYards = Math.hypot(currentHole.cup.x - ball.x, currentHole.cup.y - ball.y) * YARDS_PER_WORLD;
-      const defaultPuttPower = getDefaultPuttPowerPct(distanceToCupYards);
-      if (defaultPuttPower !== powerRef.current) {
-        powerRef.current = defaultPuttPower;
-        setPowerPct(defaultPuttPower);
-        return;
-      }
-    }
-    setPuttPreview(simulatePuttPreview());
-  }, [aimAngle, powerPct, puttingMode, sunk, ballMoving, ball.x, ball.y, currentHole]);
 
   const strikeBall = (deviation = 0) => {
     if (sunk || ballMoving) return;
@@ -1229,11 +1263,21 @@ export default function App() {
     setStrokesCurrent((s) => s + 1);
     setShotControlOpen(false);
     setPuttPreview(null);
+    setPuttSimulated(false);
     setSwingPhase('idle');
     setPowerPct(0);
     powerRef.current = 0;
     setSwingDeviation(0);
-    setLastShotNote(`${selectedClub.short} — ${contactLabel}, ${shotShapeLabel.toLowerCase()}, ${launch.effectivePower}% power.`);
+    if (puttingMode) {
+      const swingPower = Math.round(launch.effectivePower);
+      const targetText = typeof puttTargetPowerPct === 'number' ? ` (Target: ${puttTargetPowerPct}%)` : '';
+      setPuttAimPoint(null);
+      setPuttSwingFeedback(`Your swing: ${swingPower}%${targetText}`);
+      setLastShotNote(`Putt struck at ${swingPower}%${targetText}.`);
+    } else {
+      setPuttSwingFeedback('');
+      setLastShotNote(`${selectedClub.short} — ${contactLabel}, ${shotShapeLabel.toLowerCase()}, ${launch.effectivePower}% power.`);
+    }
   };
 
   const shotControlResponder = useMemo(
@@ -1375,13 +1419,15 @@ export default function App() {
   const previewYards = Math.round(estimateStraightDistance(previewPower, selectedClub, { launch: shotMetrics.launchAdjust, spin: shotMetrics.spinAdjust }) * YARDS_PER_WORLD);
   const shotShape = `${SHOT_SHAPE_HINTS[selectedClub.key] || 'Neutral'} • ${shotMetrics.shapeLabel}`;
   const shotNumber = sunk ? strokesCurrent : strokesCurrent + 1;
+  const puttTargetText = typeof puttTargetPowerPct === 'number' ? `${puttTargetPowerPct}%` : '--';
+  const puttStatusText = puttSwingFeedback
+    || (puttSimulated ? (puttPreview ? `${puttPreview.distanceToCupYards} yd to cup` : 'Preview active') : 'Place aim point on green');
   const puttPreviewDots = puttPreview?.path?.map((point, i, arr) => ({
     key: `putt-preview-${i}`,
     point,
     size: i === arr.length - 1 ? 8 : 3.4 + (i / Math.max(1, arr.length - 1)) * 2.4,
     opacity: 0.95 - (i / Math.max(1, arr.length - 1)) * 0.65
   })) || [];
-  const previewDistanceText = puttPreview ? `${puttPreview.distanceToCupYards} yd to cup` : 'Calculating preview...';
 
   const slopeArrows = (currentHole.slopes || []).flatMap((slope, slopeIndex) => {
     const green = currentHole.terrain?.green;
@@ -1401,7 +1447,7 @@ export default function App() {
       key: `slope-arrow-${slopeIndex}-${idx}`,
       x: center.x - dir.x * lead * step,
       y: center.y - dir.y * lead * step,
-      angle: `${(Math.atan2(dir.y, dir.x) * 180) / Math.PI}deg`
+      char: WIND_ARROWS[slope.dir] || '•'
     }));
   });
 
@@ -1528,20 +1574,19 @@ export default function App() {
                   ]}
                 />
                 {puttingMode ? slopeArrows.map((arrow) => (
-                  <View
+                  <Text
                     key={arrow.key}
                     pointerEvents="none"
                     style={[
-                      styles.slopeArrow,
+                      styles.slopeArrowText,
                       {
-                        left: arrow.x * scaleX - 11,
-                        top: arrow.y * scaleY - 4.5,
-                        transform: [{ rotate: arrow.angle }]
+                        left: arrow.x * scaleX - 10,
+                        top: arrow.y * scaleY - 16
                       }
                     ]}
                   >
-                    <View style={styles.slopeArrowHead} />
-                  </View>
+                    {arrow.char}
+                  </Text>
                 )) : null}
               </>
             ) : null}
@@ -1621,6 +1666,22 @@ export default function App() {
 
               return null;
             })}
+
+            {puttingMode && puttAimPoint ? (
+              <View
+                pointerEvents="none"
+                style={[
+                  styles.puttAimMarker,
+                  {
+                    left: puttAimPoint.x * scaleX - 12,
+                    top: puttAimPoint.y * scaleY - 12
+                  }
+                ]}
+              >
+                <View style={styles.puttAimMarkerH} />
+                <View style={styles.puttAimMarkerV} />
+              </View>
+            ) : null}
 
             {puttPreview ? (
               <>
@@ -1858,7 +1919,8 @@ export default function App() {
               <Text style={styles.clubCardSub}>{selectedClub.short} • {shotShape}</Text>
               <Text style={styles.clubCardYards}>{previewYards} yd</Text>
               <Text style={styles.clubCardMeta}>Stock {stockClubYards} • To pin {yardsToCup}</Text>
-              <Text style={styles.clubCardMeta}>{puttingMode ? `Putt preview: ${previewDistanceText}` : tempoLabel}</Text>
+              <Text style={styles.clubCardMeta}>{puttingMode ? `Target: ${puttTargetText}` : tempoLabel}</Text>
+              {puttingMode ? <Text style={styles.clubCardMeta}>{puttStatusText}</Text> : null}
             </Pressable>
 
             <View style={styles.swingDock}>
@@ -1931,6 +1993,25 @@ export default function App() {
             </View>
           </View>
 
+          {puttingMode ? (
+            <>
+              <Pressable
+                style={[
+                  styles.simulatePuttButton,
+                  (!puttAimPoint || sunk || ballMoving) && styles.disabled
+                ]}
+                disabled={!puttAimPoint || sunk || ballMoving}
+                onPress={handleSimulatePutt}
+              >
+                <Text style={styles.simulatePuttButtonText}>Simulate Putt</Text>
+              </Pressable>
+              <View style={styles.puttTargetBanner}>
+                <Text style={styles.puttTargetBannerTitle}>Target: {puttTargetText}</Text>
+                <Text style={styles.puttTargetBannerSub}>{puttStatusText}</Text>
+              </View>
+            </>
+          ) : null}
+
           <View style={styles.clubSelectorWrap}>
             <Pressable
               style={[styles.clubPickerTrigger, puttingMode && styles.disabled]}
@@ -1966,7 +2047,7 @@ export default function App() {
             {isAiming
               ? 'Adjusting aim...'
               : puttingMode
-                ? 'Putting mode: live break preview updates as you aim. Pull down, swipe up, release to putt.'
+                ? 'Putting mode: place aim point on the green, tap Simulate Putt, then swing to match the target power.'
                 : shotControlOpen
                 ? 'Drag the blue dot, then tap Shoot to hit.'
                 : Platform.OS === 'web'
@@ -2181,29 +2262,38 @@ const styles = StyleSheet.create({
     position: 'absolute',
     backgroundColor: '#7dae62'
   },
-  slopeArrow: {
+  slopeArrowText: {
     position: 'absolute',
-    width: 22,
-    height: 9,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255, 255, 200, 0.7)',
-    borderWidth: 1,
-    borderColor: 'rgba(36, 56, 24, 0.35)',
-    opacity: 0.7,
-    alignItems: 'flex-end',
+    fontSize: 28,
+    color: 'rgba(255, 255, 180, 0.85)',
+    textShadowColor: 'rgba(0, 0, 0, 0.42)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3
+  },
+  puttAimMarker: {
+    position: 'absolute',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 240, 160, 0.95)',
+    backgroundColor: 'rgba(255, 240, 160, 0.08)',
+    alignItems: 'center',
     justifyContent: 'center'
   },
-  slopeArrowHead: {
+  puttAimMarkerH: {
     position: 'absolute',
-    right: -7,
-    width: 0,
-    height: 0,
-    borderTopWidth: 5,
-    borderBottomWidth: 5,
-    borderLeftWidth: 8,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
-    borderLeftColor: 'rgba(255, 255, 200, 0.7)'
+    width: 14,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: 'rgba(255, 240, 160, 0.95)'
+  },
+  puttAimMarkerV: {
+    position: 'absolute',
+    width: 2,
+    height: 14,
+    borderRadius: 1,
+    backgroundColor: 'rgba(255, 240, 160, 0.95)'
   },
   puttPreviewDot: {
     position: 'absolute',
@@ -2506,6 +2596,40 @@ const styles = StyleSheet.create({
     bottom: 10,
     zIndex: 90,
     gap: 8
+  },
+  simulatePuttButton: {
+    alignSelf: 'stretch',
+    borderRadius: 12,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(102, 186, 90, 0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(199, 242, 161, 0.9)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  simulatePuttButtonText: {
+    color: '#0f1e0f',
+    fontSize: 14,
+    fontWeight: '800'
+  },
+  puttTargetBanner: {
+    borderRadius: 12,
+    backgroundColor: 'rgba(8, 12, 10, 0.76)',
+    borderWidth: 1,
+    borderColor: 'rgba(194, 232, 149, 0.55)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 3
+  },
+  puttTargetBannerTitle: {
+    color: '#f5ffde',
+    fontSize: 16,
+    fontWeight: '800'
+  },
+  puttTargetBannerSub: {
+    color: '#d3e9c6',
+    fontSize: 12,
+    fontWeight: '600'
   },
   bottomMainRow: {
     flexDirection: 'row',
