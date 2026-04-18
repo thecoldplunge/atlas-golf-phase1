@@ -47,9 +47,9 @@ function simulateShot(club, powerPct) {
   let carryX = 0, hasLanded = false, peakZ = 0;
 
   for (let tick = 0; tick < 6000; tick++) {
+    // Drag applied BEFORE position update (matches fixed game tick)
     if (z > GROUND_EPSILON || vz > 0.3) {
       velx *= Math.max(0, 1 - AIR_DRAG * DT);
-      vz -= GRAVITY * DT;
     } else {
       if (!hasLanded) {
         hasLanded = true;
@@ -61,6 +61,7 @@ function simulateShot(club, powerPct) {
       vz = 0; z = 0;
     }
     x += velx * DT;
+    vz -= GRAVITY * DT;
     z = Math.max(0, z + vz * DT);
     if (z > peakZ) peakZ = z;
     if (hasLanded && Math.abs(velx) < 0.3) break;

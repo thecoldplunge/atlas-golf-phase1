@@ -260,7 +260,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v1.4.1';
+const BUILD_VERSION = 'web v1.4.2';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -542,15 +542,11 @@ export default function App() {
         const movingVertically = flight.z > 0.01 || Math.abs(flight.vz) > 0.15;
 
         if (speed > 0.3 || movingVertically) {
-          let next = {
-            x: ballRef.current.x + vel.x * dt,
-            y: ballRef.current.y + vel.y * dt
-          };
-
-          const surfaceName = getSurfaceAtPoint(tickHole, next);
-          const surfacePhysics = SURFACE_PHYSICS[surfaceName] || SURFACE_PHYSICS.rough;
+          const surfaceNamePre = getSurfaceAtPoint(tickHole, ballRef.current);
+          const surfacePhysics = SURFACE_PHYSICS[surfaceNamePre] || SURFACE_PHYSICS.rough;
           const onGround = flight.z <= GROUND_EPSILON && Math.abs(flight.vz) < 0.3;
 
+          // Apply drag BEFORE position update so distance matches physics sim
           if (onGround) {
             const dragFactor = Math.max(0, 1 - surfacePhysics.rollFriction * dt);
             vel.x *= dragFactor;
@@ -590,6 +586,12 @@ export default function App() {
               flight.vz = 0;
             }
           }
+
+          // Position update uses post-drag velocity
+          let next = {
+            x: ballRef.current.x + vel.x * dt,
+            y: ballRef.current.y + vel.y * dt
+          };
 
           const radiusWorld = BALL_RADIUS_WORLD;
           const restitution = surfacePhysics.wallRestitution;
