@@ -104,11 +104,11 @@ const HOLES = [
   }
 ];
 
-const WORLD = { w: 100, h: 160 };
+const WORLD = { w: 260, h: 420 };
 const CAMERA_ZOOM = 3.2;
 const MANUAL_PAN_GRACE_MS = 2200;
-const BALL_RADIUS_WORLD = 1.8;
-const CUP_RADIUS_WORLD = 3.0;
+const BALL_RADIUS_WORLD = 1.2;
+const CUP_RADIUS_WORLD = 2.0;
 const SWING_PAD_SIZE = 148;
 const PAD_CENTER = SWING_PAD_SIZE / 2;
 const SWING_START_RADIUS = 60;
@@ -501,22 +501,9 @@ export default function App() {
           const radiusWorld = BALL_RADIUS_WORLD;
           const restitution = surfacePhysics.wallRestitution;
 
-          if (next.x < radiusWorld) {
-            next.x = radiusWorld;
-            vel.x = Math.abs(vel.x) * restitution;
-          }
-          if (next.x > WORLD.w - radiusWorld) {
-            next.x = WORLD.w - radiusWorld;
-            vel.x = -Math.abs(vel.x) * restitution;
-          }
-          if (next.y < radiusWorld) {
-            next.y = radiusWorld;
-            vel.y = Math.abs(vel.y) * restitution;
-          }
-          if (next.y > WORLD.h - radiusWorld) {
-            next.y = WORLD.h - radiusWorld;
-            vel.y = -Math.abs(vel.y) * restitution;
-          }
+          // No outer arena walls. Let the larger course feel open.
+          next.x = clamp(next.x, radiusWorld, WORLD.w - radiusWorld);
+          next.y = clamp(next.y, radiusWorld, WORLD.h - radiusWorld);
 
           if (flight.z <= 1.15) {
             currentHole.obstacles.forEach((o) => {
@@ -635,9 +622,12 @@ export default function App() {
     const dx = ball.x - currentHole.cup.x;
     const dy = ball.y - currentHole.cup.y;
     const dist = Math.hypot(dx, dy);
-    if (dist < CUP_RADIUS_WORLD) {
+    const slowEnough = magnitude(velocityRef.current) < 26 && ballHeight < 0.35;
+    if (dist < CUP_RADIUS_WORLD + BALL_RADIUS_WORLD * 0.7 && slowEnough) {
       setSunk(true);
       velocityRef.current = { x: 0, y: 0 };
+      setBall(currentHole.cup);
+      ballRef.current = currentHole.cup;
       setScores((prev) => {
         const next = [...prev];
         next[holeIndex] = strokesCurrent;
@@ -977,7 +967,7 @@ export default function App() {
   return (
     <View style={styles.root}>
       <StatusBar style="dark" />
-      <View style={styles.topOverlay}>
+      <View style={styles.topOverlay} pointerEvents="box-none">
         <View style={styles.topBar}>
           <View style={styles.menuWrap}>
             <Pressable style={styles.menuButton} onPress={() => setMenuOpen((v) => !v)}>
@@ -1266,7 +1256,8 @@ export default function App() {
         />
       </View>
 
-      <View style={styles.footer}>
+      <View style={styles.footer} pointerEvents="box-none">
+        <View style={styles.footerPanel}>
         <Text style={styles.tip}>
           {isAiming
             ? 'Adjusting aim...'
@@ -1338,6 +1329,7 @@ export default function App() {
             <Text style={styles.summaryText}>Final strokes: {totalScore}</Text>
           </View>
         ) : null}
+        </View>
       </View>
     </View>
   );
@@ -1353,9 +1345,10 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    zIndex: 20,
+    zIndex: 60,
     paddingTop: 12,
-    paddingHorizontal: 12
+    paddingHorizontal: 12,
+    elevation: 20
   },
   topBar: {
     flexDirection: 'row',
@@ -1363,7 +1356,9 @@ const styles = StyleSheet.create({
     gap: 10
   },
   menuWrap: {
-    position: 'relative'
+    position: 'relative',
+    zIndex: 80,
+    elevation: 30
   },
   menuButton: {
     width: 42,
@@ -1517,9 +1512,13 @@ const styles = StyleSheet.create({
     right: 0,
     paddingHorizontal: 14,
     paddingTop: 10,
-    paddingBottom: 22,
+    paddingBottom: 22
+  },
+  footerPanel: {
     gap: 7,
-    backgroundColor: 'rgba(14, 22, 14, 0.82)'
+    backgroundColor: 'rgba(14, 22, 14, 0.82)',
+    borderRadius: 18,
+    padding: 12
   },
   clubPanel: {
     gap: 6
