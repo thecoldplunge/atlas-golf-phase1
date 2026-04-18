@@ -254,7 +254,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v0.9.1';
+const BUILD_VERSION = 'web v0.9.2';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -280,7 +280,7 @@ const pointInCircle = (p, c) => {
 const getAimAngleToCup = (ballPos, cup) => Math.atan2(cup.y - ballPos.y, cup.x - ballPos.x);
 const speedFromPower = (powerPct, club = CLUBS[0]) => {
   const normalized = clamp(powerPct / 100, 0, 1.2);
-  const base = 55 + normalized * 160;
+  const base = 120 + normalized * 340;
   return base * club.speed;
 };
 const expandRect = (rect, inset) => ({
@@ -874,8 +874,8 @@ export default function App() {
     flightRef.current = {
       z: 0.08,
       vz: selectedClub.key === 'PT'
-        ? 0.4 + launchRatio * 1.2
-        : (8 + launchRatio * 22) * selectedClub.launch * shotMetrics.launchAdjust * clubLaunchBoost
+        ? 0.8 + launchRatio * 2.4
+        : (14 + launchRatio * 38) * selectedClub.launch * shotMetrics.launchAdjust * clubLaunchBoost
     };
 
     setBallHeight(flightRef.current.z);
