@@ -6,7 +6,8 @@ import {
   SafeAreaView,
   StyleSheet,
   Text,
-  View
+  View,
+  ScrollView
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
@@ -104,6 +105,10 @@ const HOLES = [
 ];
 
 const WORLD = { w: 100, h: 160 };
+const CAMERA_ZOOM = 3.2;
+const MANUAL_PAN_GRACE_MS = 2200;
+const BALL_RADIUS_WORLD = 1.8;
+const CUP_RADIUS_WORLD = 3.0;
 const SWING_PAD_SIZE = 148;
 const PAD_CENTER = SWING_PAD_SIZE / 2;
 const SWING_START_RADIUS = 60;
@@ -145,27 +150,29 @@ const SURFACE_PHYSICS = {
 };
 
 const GOLFER_PIXEL_KEY = {
-  h: '#c94f3a',
+  h: '#d25f49',
   o: '#20282a',
-  s: '#4d76c2',
+  s: '#3f76c1',
   k: '#f0c08c',
-  p: '#2f5239',
+  p: '#2e563c',
   b: '#1a1f1c',
-  c: '#d9ddd2'
+  c: '#d9ddd2',
+  n: '#263246',
+  w: '#edf1ea'
 };
 
 const GOLFER_SPRITE_ROWS = [
-  '.....hh.....',
-  '....hkkh....',
-  '...hosso....',
-  '..ossssoo...',
-  '..ossssspcc.',
-  '.ppssssssocc',
-  '.ppppssppocc',
-  '.bppppppbo..',
-  '..bb..bb....',
-  '.bb....bb...',
-  '.b......b...'
+  '.....nn.....',
+  '....nwwn....',
+  '...nkkkkn...',
+  '..nnssssnn..',
+  '..nsshhssn..',
+  '.ppsssssspp.',
+  '.ppsskksspp.',
+  '..pppppppp..',
+  '..bb....bb..',
+  '.bb......bb.',
+  '.b........b.'
 ];
 
 const GOLFER_PIXELS = GOLFER_SPRITE_ROWS.flatMap((row, y) =>
@@ -198,36 +205,42 @@ const speedFromPower = (powerPct, club = CLUBS[0], tempo = { speed: 1, launch: 1
   const base = 95 + (powerPct / 125) * 290;
   return base * club.speed * tempo.speed;
 };
-const getTempoFeedback = (track) => {
-  const backswingMs = track.lastMoveTs - track.startTs;
-  const elapsedMs = track.lastMoveTs - track.startTs;
-  const stallMs = track.maxPauseMs;
-  const pullSpeed = track.maxPullDown / Math.max(1, elapsedMs);
+const getTempoFeedback = (track, sampleTs = Date.now()) => {
+  const deepestTs = track.deepestTs || track.lastPullTs || sampleTs;
+  const crossedTs = track.crossedTs || 0;
+  const backswingMs = Math.max(1, deepestTs - track.startTs);
+  const elapsedMs = Math.max(1, sampleTs - track.startTs);
+  const topHoldMs = crossedTs
+    ? Math.max(0, crossedTs - deepestTs)
+    : Math.max(0, sampleTs - deepestTs);
+  const stallMs = Math.max(track.maxPauseMs, topHoldMs);
+  const pullSpeed = track.maxPullDown / backswingMs;
+  const flickMs = crossedTs ? Math.max(1, sampleTs - crossedTs) : 0;
   let speed = 1;
   let launch = 1;
   let accuracy = 1;
-  let note = 'Smooth tempo.';
+  let note = 'Smooth tempo';
 
-  if (backswingMs < TEMPO_WINDOW.min || pullSpeed > 0.28) {
+  if (backswingMs < TEMPO_WINDOW.min || pullSpeed > 0.32 || flickMs > 0 && flickMs < 45) {
     speed = 0.92;
     launch = 0.94;
     accuracy = 0.76;
-    note = 'Too quick, rushed transition.';
+    note = 'Too quick';
   } else if (backswingMs > TEMPO_WINDOW.max || stallMs > TEMPO_WINDOW.stall) {
     speed = 0.9;
     launch = 1.02;
     accuracy = 0.82;
-    note = 'Too slow, tempo got stuck.';
+    note = 'Too slow';
   } else if (backswingMs >= TEMPO_WINDOW.idealMin && backswingMs <= TEMPO_WINDOW.idealMax && stallMs < 140) {
     speed = 1.03;
     launch = 1.02;
     accuracy = 1.08;
-    note = 'Smooth tempo, flushed it.';
+    note = 'Smooth tempo';
   } else {
-    note = 'Decent tempo.';
+    note = 'Decent tempo';
   }
 
-  return { speed, launch, accuracy, note, backswingMs, stallMs, pullSpeed };
+  return { speed, launch, accuracy, note, backswingMs, stallMs, pullSpeed, elapsedMs };
 };
 const expandRect = (rect, inset) => ({
   x: rect.x - inset,
@@ -266,8 +279,12 @@ const estimateStraightDistance = (powerPct, club, tempo) => {
 
 export default function App() {
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-  const courseWidth = clamp(screenWidth - 24, 280, 430);
-  const courseHeight = Math.min(screenHeight * 0.46, courseWidth * 1.6);
+  const viewWidth = screenWidth;
+  const viewHeight = screenHeight;
+  const basePixelsPerWorld = Math.max(screenWidth / WORLD.w, screenHeight / WORLD.h);
+  const pixelsPerWorld = basePixelsPerWorld * CAMERA_ZOOM;
+  const halfVpW = (viewWidth / 2) / pixelsPerWorld;
+  const halfVpH = (viewHeight / 2) / pixelsPerWorld;
 
   const [holeIndex, setHoleIndex] = useState(0);
   const [strokesCurrent, setStrokesCurrent] = useState(0);
@@ -286,6 +303,10 @@ export default function App() {
   const [tempoLabel, setTempoLabel] = useState('Tempo idle');
   const [golferBallAnchor, setGolferBallAnchor] = useState(HOLES[0].ballStart);
   const [ballHeight, setBallHeight] = useState(0);
+  const [camera, setCamera] = useState({ x: HOLES[0].ballStart.x, y: HOLES[0].ballStart.y });
+  const cameraRef = useRef({ x: HOLES[0].ballStart.x, y: HOLES[0].ballStart.y });
+  const manualPanUntilRef = useRef(0);
+  const panCentroidRef = useRef(null);
 
   const ballRef = useRef(ball);
   const velocityRef = useRef({ x: 0, y: 0 });
@@ -305,15 +326,21 @@ export default function App() {
     startTs: 0,
     lastMoveTs: 0,
     lastPullTs: 0,
-    maxPauseMs: 0
+    maxPauseMs: 0,
+    deepestTs: 0,
+    crossedTs: 0
   });
 
   const currentHole = HOLES[holeIndex];
   const selectedClub = CLUBS[selectedClubIndex];
-  const scaleX = courseWidth / WORLD.w;
-  const scaleY = courseHeight / WORLD.h;
-  const ballRadius = 1.8 * scaleX;
-  const cupRadius = 3.0 * scaleX;
+  const scaleX = pixelsPerWorld;
+  const scaleY = pixelsPerWorld;
+  const ballRadius = clamp(BALL_RADIUS_WORLD * pixelsPerWorld * 0.48, 5, 14);
+  const cupRadius = clamp(CUP_RADIUS_WORLD * pixelsPerWorld * 0.32, 6, 14);
+  const clampCamera = (c) => ({
+    x: clamp(c.x, halfVpW, WORLD.w - halfVpW),
+    y: clamp(c.y, halfVpH, WORLD.h - halfVpH)
+  });
   const ballMoving =
     magnitude(velocityRef.current) > 0.3 ||
     flightRef.current.z > 0.04 ||
@@ -328,8 +355,14 @@ export default function App() {
     });
   };
 
-  const toScreen = (p) => ({ x: p.x * scaleX, y: p.y * scaleY });
-  const toWorld = (p) => ({ x: p.x / scaleX, y: p.y / scaleY });
+  const toScreen = (p) => ({
+    x: (p.x - cameraRef.current.x) * pixelsPerWorld + viewWidth / 2,
+    y: (p.y - cameraRef.current.y) * pixelsPerWorld + viewHeight / 2
+  });
+  const toWorld = (p) => ({
+    x: cameraRef.current.x + (p.x - viewWidth / 2) / pixelsPerWorld,
+    y: cameraRef.current.y + (p.y - viewHeight / 2) / pixelsPerWorld
+  });
 
   const resetBall = ({ penaltyStroke = false } = {}) => {
     velocityRef.current = { x: 0, y: 0 };
@@ -342,6 +375,10 @@ export default function App() {
     setPullDistance(0);
     setPowerPct(0);
     setTempoLabel('Tempo idle');
+    const nc = clampCamera(currentHole.ballStart);
+    setCamera(nc);
+    cameraRef.current = nc;
+    manualPanUntilRef.current = 0;
     if (penaltyStroke) {
       setStrokesCurrent((s) => s + 1);
       setWaterNotice(true);
@@ -368,11 +405,19 @@ export default function App() {
     setPowerPct(0);
     setTempoLabel('Tempo idle');
     setLastShotNote('Pull down with tempo, then flick up through center.');
+    const nc = clampCamera(currentHole.ballStart);
+    setCamera(nc);
+    cameraRef.current = nc;
+    manualPanUntilRef.current = 0;
   };
 
   useEffect(() => {
     ballRef.current = ball;
   }, [ball]);
+
+  useEffect(() => {
+    cameraRef.current = camera;
+  }, [camera]);
 
   useEffect(() => {
     if (ballMoving) {
@@ -453,7 +498,7 @@ export default function App() {
             }
           }
 
-          const radiusWorld = ballRadius / scaleX;
+          const radiusWorld = BALL_RADIUS_WORLD;
           const restitution = surfacePhysics.wallRestitution;
 
           if (next.x < radiusWorld) {
@@ -543,6 +588,26 @@ export default function App() {
         }
       }
 
+      // Camera auto-follow
+      const nowMs = Date.now();
+      if (nowMs >= manualPanUntilRef.current) {
+        const vel = velocityRef.current;
+        const ballPos = ballRef.current;
+        setCamera((prev) => {
+          const target = clampCamera({
+            x: ballPos.x + clamp(vel.x * 0.025, -5, 5),
+            y: ballPos.y + clamp(vel.y * 0.025, -7, 7)
+          });
+          const ease = magnitude(vel) > 1 ? 0.14 : 0.08;
+          const next = clampCamera({
+            x: prev.x + (target.x - prev.x) * ease,
+            y: prev.y + (target.y - prev.y) * ease
+          });
+          if (Math.hypot(next.x - prev.x, next.y - prev.y) < 0.001) return prev;
+          return next;
+        });
+      }
+
       frameRef.current = requestAnimationFrame(tick);
     };
 
@@ -553,7 +618,7 @@ export default function App() {
       }
       lastTsRef.current = null;
     };
-  }, [ballRadius, currentHole.hazards, currentHole.obstacles, scaleX, sunk]);
+  }, [currentHole.hazards, currentHole.obstacles, sunk]);
 
   useEffect(() => {
     if (sunk) {
@@ -570,7 +635,7 @@ export default function App() {
     const dx = ball.x - currentHole.cup.x;
     const dy = ball.y - currentHole.cup.y;
     const dist = Math.hypot(dx, dy);
-    if (dist < cupRadius / scaleX) {
+    if (dist < CUP_RADIUS_WORLD) {
       setSunk(true);
       velocityRef.current = { x: 0, y: 0 };
       setScores((prev) => {
@@ -579,7 +644,7 @@ export default function App() {
         return next;
       });
     }
-  }, [ball, ballHeight, cupRadius, currentHole.cup.x, currentHole.cup.y, holeIndex, scaleX, strokesCurrent, sunk]);
+  }, [ball, ballHeight, currentHole.cup.x, currentHole.cup.y, holeIndex, strokesCurrent, sunk]);
 
   const totalScore = scores.reduce((sum, s) => (typeof s === 'number' ? sum + s : sum), 0);
   const completed = scores.filter((s) => s != null).length;
@@ -613,6 +678,15 @@ export default function App() {
     );
   };
 
+  const getTouchesCentroid = (nativeEvent) => {
+    const touches = nativeEvent.touches;
+    if (!touches || touches.length < 2) return null;
+    return {
+      x: (touches[0].pageX + touches[1].pageX) / 2,
+      y: (touches[0].pageY + touches[1].pageY) / 2
+    };
+  };
+
   const aimResponder = useMemo(
     () =>
       PanResponder.create({
@@ -633,6 +707,22 @@ export default function App() {
         },
         onMoveShouldSetPanResponder: () => false,
         onPanResponderMove: (evt) => {
+          const centroid = getTouchesCentroid(evt.nativeEvent);
+          if (centroid) {
+            const prev = panCentroidRef.current;
+            if (prev) {
+              const dx = centroid.x - prev.x;
+              const dy = centroid.y - prev.y;
+              if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+                manualPanUntilRef.current = Date.now() + MANUAL_PAN_GRACE_MS;
+                setCamera((c) => clampCamera({ x: c.x - dx / pixelsPerWorld, y: c.y - dy / pixelsPerWorld }));
+              }
+            }
+            panCentroidRef.current = centroid;
+            setIsAiming(false);
+            return;
+          }
+          panCentroidRef.current = null;
           if (!isTouchInsideCourse(evt)) {
             return;
           }
@@ -645,16 +735,16 @@ export default function App() {
           setIsAiming(false);
         }
       }),
-    [ballMoving, sunk, swingActive]
+    [ballMoving, pixelsPerWorld, sunk, swingActive]
   );
 
-  const fireSwingShot = ({ releaseDx, releaseDy }) => {
+  const fireSwingShot = ({ releaseDx, releaseDy, releaseTs }) => {
     const track = swingTrackRef.current;
     const pull = clamp(track.maxPullDown, 0, MAX_PULL_DISTANCE);
     const shotPower = Math.round((pull / MAX_PULL_DISTANCE) * 125);
     const overswingPct = Math.max(0, shotPower - 100);
     const overswingRatio = overswingPct / 25;
-    const tempo = getTempoFeedback(track);
+    const tempo = getTempoFeedback(track, releaseTs);
 
     const upTravel = Math.max(1, track.deepest.y - releaseDy);
     const xTravel = releaseDx - track.deepest.x;
@@ -689,11 +779,11 @@ export default function App() {
     setStrokesCurrent((s) => s + 1);
 
     if (errorDeg > 11) {
-      setLastShotNote(`${selectedClub.name}: ${tempo.note} Added ${errorDeg.toFixed(1)}° miss.`);
+      setLastShotNote(`${selectedClub.name}: ${tempo.note} cadence added ${errorDeg.toFixed(1)}° miss.`);
     } else if (overswingPct > 0) {
-      setLastShotNote(`${selectedClub.short} ${shotPower}% overswing. ${tempo.note}`);
+      setLastShotNote(`${selectedClub.short} ${shotPower}% overswing. Tempo: ${tempo.note}.`);
     } else {
-      setLastShotNote(`${selectedClub.name} at ${shotPower}% power. ${tempo.note}`);
+      setLastShotNote(`${selectedClub.name} at ${shotPower}% power. Tempo: ${tempo.note}.`);
     }
   };
 
@@ -737,7 +827,9 @@ export default function App() {
             startTs: now,
             lastMoveTs: now,
             lastPullTs: now,
-            maxPauseMs: 0
+            maxPauseMs: 0,
+            deepestTs: now,
+            crossedTs: 0
           };
           setSwingActive(true);
           setPullDistance(0);
@@ -762,6 +854,7 @@ export default function App() {
             track.maxPullDown = dy;
             track.deepest = { x: dx, y: dy };
             track.lastPullTs = now;
+            track.deepestTs = now;
           }
 
           track.lastMoveTs = now;
@@ -777,13 +870,16 @@ export default function App() {
 
           if (track.armed && dy < -6) {
             track.crossedCenter = true;
+            if (!track.crossedTs) {
+              track.crossedTs = now;
+            }
           }
 
           const clampedPull = clamp(track.maxPullDown, 0, MAX_PULL_DISTANCE);
           setPullDistance(clampedPull);
           setPowerPct(Math.round((clampedPull / MAX_PULL_DISTANCE) * 125));
 
-          const tempoPreview = getTempoFeedback(track);
+          const tempoPreview = getTempoFeedback(track, now);
           setTempoLabel(tempoPreview.note);
         },
         onPanResponderRelease: (evt) => {
@@ -796,7 +892,7 @@ export default function App() {
           } else if (!track.crossedCenter) {
             setLastShotNote('Flick up through center to strike the ball.');
           } else {
-            fireSwingShot({ releaseDx, releaseDy });
+            fireSwingShot({ releaseDx, releaseDy, releaseTs: Date.now() });
           }
 
           swingTrackRef.current = {
@@ -810,14 +906,30 @@ export default function App() {
             startTs: 0,
             lastMoveTs: 0,
             lastPullTs: 0,
-            maxPauseMs: 0
+            maxPauseMs: 0,
+            deepestTs: 0,
+            crossedTs: 0
           };
           setSwingActive(false);
           setPullDistance(0);
           setPowerPct(0);
         },
         onPanResponderTerminate: () => {
-          swingTrackRef.current.active = false;
+          swingTrackRef.current = {
+            active: false,
+            armed: false,
+            maxPullDown: 0,
+            maxPullLateral: 0,
+            deepest: { x: 0, y: 0 },
+            crossedCenter: false,
+            maxUpLateral: 0,
+            startTs: 0,
+            lastMoveTs: 0,
+            lastPullTs: 0,
+            maxPauseMs: 0,
+            deepestTs: 0,
+            crossedTs: 0
+          };
           setSwingActive(false);
           setPullDistance(0);
           setPowerPct(0);
@@ -829,7 +941,7 @@ export default function App() {
 
   const screenBall = toScreen(ball);
   const screenCup = toScreen(currentHole.cup);
-  const liftPx = clamp(ballHeight * scaleY * 1.55, 0, 54);
+  const liftPx = clamp(ballHeight * pixelsPerWorld * 1.55, 0, 54);
   const airborneRatio = clamp(ballHeight / 18, 0, 1);
   const ballVisualScale = 1 - airborneRatio * 0.12;
   const shadowScale = 1 + airborneRatio * 0.5;
@@ -841,29 +953,29 @@ export default function App() {
   const previewTempo = swingActive ? getTempoFeedback(swingTrackRef.current) : { speed: 1, launch: 1, accuracy: 1, note: 'Tempo idle' };
   const previewDots = PREVIEW_POWERS.map((power) => {
     const distanceWorld = estimateStraightDistance(power, selectedClub, previewTempo);
-    const size = clamp(scaleX * (1.25 + power / 140), 2.4, 4.8);
+    const size = clamp(pixelsPerWorld * (1.25 + power / 140), 2.4, 4.8);
     return {
       power,
       size,
-      x: screenBall.x + Math.cos(aimAngle) * distanceWorld * scaleX,
-      y: screenBall.y + Math.sin(aimAngle) * distanceWorld * scaleY
+      x: screenBall.x + Math.cos(aimAngle) * distanceWorld * pixelsPerWorld,
+      y: screenBall.y + Math.sin(aimAngle) * distanceWorld * pixelsPerWorld
     };
   });
 
   const aimDir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
   const aimPerp = { x: -aimDir.y, y: aimDir.x };
   const golferAnchorWorld = {
-    x: golferBallAnchor.x - aimPerp.x * 7.6 - aimDir.x * 1.8,
-    y: golferBallAnchor.y - aimPerp.y * 7.6 - aimDir.y * 1.8
+    x: clamp(golferBallAnchor.x - 8.1 + aimPerp.x * 0.6, 2.5, WORLD.w - 2.5),
+    y: clamp(golferBallAnchor.y - aimDir.y * 1.6 + aimPerp.y * 0.6, 2.5, WORLD.h - 2.5)
   };
   const golferAnchor = toScreen(golferAnchorWorld);
-  const golferPixelSize = clamp(scaleX * 0.62, 1.55, 2.5);
+  const golferPixelSize = clamp(pixelsPerWorld * 0.62, 1.55, 2.5);
   const golferWidth = GOLFER_SPRITE_ROWS[0].length * golferPixelSize;
   const golferHeight = GOLFER_SPRITE_ROWS.length * golferPixelSize;
   const golferAngle = (aimAngle * 180) / Math.PI + 90;
 
   return (
-    <SafeAreaView style={styles.root}>
+    <View style={styles.root}>
       <StatusBar style="dark" />
       <View style={styles.topOverlay}>
         <View style={styles.topBar}>
@@ -917,7 +1029,7 @@ export default function App() {
       <View
         ref={courseRef}
         onLayout={syncCourseFrame}
-        style={[styles.course, { width: courseWidth, height: courseHeight }]}
+        style={[styles.course, { width: viewWidth, height: viewHeight }]}
         {...aimResponder.panHandlers}
       >
         {currentHole.terrain?.fairway?.map((f, i) => (
@@ -1046,8 +1158,8 @@ export default function App() {
             styles.flagPole,
             {
               left: screenCup.x - 1,
-              top: screenCup.y - 18 * scaleY,
-              height: 17 * scaleY
+              top: screenCup.y - 18 * pixelsPerWorld,
+              height: 17 * pixelsPerWorld
             }
           ]}
         />
@@ -1056,10 +1168,10 @@ export default function App() {
             styles.flag,
             {
               left: screenCup.x,
-              top: screenCup.y - 18 * scaleY,
-              borderTopWidth: 4 * scaleY,
-              borderBottomWidth: 4 * scaleY,
-              borderRightWidth: 9 * scaleX
+              top: screenCup.y - 18 * pixelsPerWorld,
+              borderTopWidth: 4 * pixelsPerWorld,
+              borderBottomWidth: 4 * pixelsPerWorld,
+              borderRightWidth: 9 * pixelsPerWorld
             }
           ]}
         />
@@ -1227,15 +1339,14 @@ export default function App() {
           </View>
         ) : null}
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#eaf0e1',
-    alignItems: 'center'
+    backgroundColor: '#3a5c30'
   },
   topOverlay: {
     position: 'absolute',
@@ -1301,10 +1412,7 @@ const styles = StyleSheet.create({
     marginTop: 2
   },
   course: {
-    borderRadius: 20,
-    backgroundColor: '#7da85e',
-    borderWidth: 3,
-    borderColor: '#3f623e',
+    backgroundColor: '#3a5c30',
     overflow: 'hidden',
     position: 'relative'
   },
@@ -1403,11 +1511,15 @@ const styles = StyleSheet.create({
     position: 'absolute'
   },
   footer: {
-    width: '100%',
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     paddingHorizontal: 14,
-    paddingTop: 6,
-    paddingBottom: 14,
-    gap: 7
+    paddingTop: 10,
+    paddingBottom: 22,
+    gap: 7,
+    backgroundColor: 'rgba(14, 22, 14, 0.82)'
   },
   clubPanel: {
     gap: 6
@@ -1421,13 +1533,13 @@ const styles = StyleSheet.create({
   clubTitle: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#203123'
+    color: '#d4e8cc'
   },
   clubMeta: {
     flex: 1,
     textAlign: 'right',
     fontSize: 11,
-    color: '#3a5140'
+    color: '#9dc490'
   },
   clubGrid: {
     flexDirection: 'row',
@@ -1439,9 +1551,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: '#dce7d3',
+    backgroundColor: 'rgba(255,255,255,0.10)',
     borderWidth: 1,
-    borderColor: '#aac09d',
+    borderColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center'
   },
   clubChipActive: {
@@ -1451,14 +1563,14 @@ const styles = StyleSheet.create({
   clubChipText: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#314432'
+    color: '#c5dcc0'
   },
   clubChipTextActive: {
     color: '#f6fbf4'
   },
   tip: {
     fontSize: 13,
-    color: '#25382c'
+    color: '#c8dfc0'
   },
   warning: {
     fontSize: 13,
@@ -1499,13 +1611,13 @@ const styles = StyleSheet.create({
   },
   powerLabel: {
     fontSize: 12,
-    color: '#304232',
+    color: '#d4e8cc',
     fontWeight: '700',
     textAlign: 'center'
   },
   powerHint: {
     fontSize: 11,
-    color: '#304232',
+    color: '#9dc490',
     fontWeight: '700',
     textAlign: 'center'
   },
