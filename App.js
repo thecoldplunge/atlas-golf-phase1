@@ -747,7 +747,7 @@ const GRAVITY = 30;
 const GROUND_EPSILON = 0.05;
 const FRINGE_BUFFER = 8;
 const MIN_BOUNCE_VZ = 3.2;
-const CURVE_FORCE = 1.0;
+const CURVE_FORCE = 0.12;
 const CURVE_LAUNCH_BLEND = 0.3;
 const PUTTING_ZOOM_MULT = 1.8;
 const SLOPE_FORCE = 5.0;
@@ -864,7 +864,7 @@ const generateWind = (holes = HOLES) => {
     return { speed: roundSpeed, dir };
   });
 };
-const WIND_FORCE_SCALE = 0.18;
+const WIND_FORCE_SCALE = 0.35;
 const SHOT_SHAPE_HINTS = {
   PT: 'Low roll',
   LW: 'High soft',
@@ -1425,8 +1425,17 @@ export default function App() {
               const aim = shotAimAngleRef.current;
               const perpDir = { x: -Math.sin(aim), y: Math.cos(aim) };
               const lateralAccel = shotCurveDeg * CURVE_FORCE;
-              vel.x += perpDir.x * lateralAccel * dt;
-              vel.y += perpDir.y * lateralAccel * dt;
+              // Apply curve as a direction change, not a speed boost
+              // Add lateral force but also slightly reduce forward component
+              const fwdDir = { x: Math.cos(aim), y: Math.sin(aim) };
+              const fwdSpeed = vel.x * fwdDir.x + vel.y * fwdDir.y;
+              const lateralDelta = lateralAccel * dt;
+              vel.x += perpDir.x * lateralDelta;
+              vel.y += perpDir.y * lateralDelta;
+              // Drag forward slightly to conserve energy (sliced balls don't go farther)
+              const fwdDrag = Math.max(0.998, 1 - Math.abs(lateralDelta) * 0.001);
+              vel.x *= fwdDrag;
+              vel.y *= fwdDrag;
             }
           }
 
@@ -2341,7 +2350,7 @@ export default function App() {
 
   const aimLineDots = [0.25, 0.5, 0.75, 1].map((pct) => {
     const worldDist = aimGuideWorld * pct;
-    const curveOffset = Math.sin(pct * Math.PI * 0.95) * aimGuideWorld * degToRad(totalPreviewCurveDeg) * 0.55 * pct;
+    const curveOffset = Math.sin(pct * Math.PI * 0.95) * aimGuideWorld * degToRad(totalPreviewCurveDeg) * 0.07 * pct;
     const loftOffset = -(shotMetrics.launchAdjust - 1) * 10 * Math.sin(pct * Math.PI) * 0.4;
     const point = {
       x: ball.x + aimDir.x * worldDist + aimPerp.x * curveOffset,
