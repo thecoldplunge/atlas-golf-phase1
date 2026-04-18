@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "LoFi Golf Proto",
+    "slug": "atlas-golf-phase1",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#f4f7ef"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#f4f7ef"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
