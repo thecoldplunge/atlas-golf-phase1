@@ -939,17 +939,25 @@ export default function App() {
   );
 
   const aimLineDots = [];
+  const previewCurveRad = degToRad(shotMetrics.curveDeg);
+  const previewCurveStrength = previewCurveRad * 0.7;
+  const previewLaunchLift = (shotMetrics.launchAdjust - 1) * 14;
   for (let worldDist = AIM_DOT_STEP_WORLD; worldDist <= aimGuideWorld; worldDist += AIM_DOT_STEP_WORLD) {
+    const t = worldDist / Math.max(aimGuideWorld, 0.001);
+    const curveOffset = Math.sin(t * Math.PI * 0.95) * aimGuideWorld * previewCurveStrength * t;
+    const loftOffset = -previewLaunchLift * Math.sin(t * Math.PI) * 0.45;
     const point = {
-      x: ball.x + aimDir.x * worldDist,
-      y: ball.y + aimDir.y * worldDist
+      x: ball.x + aimDir.x * worldDist + aimPerp.x * curveOffset,
+      y: ball.y + aimDir.y * worldDist + aimPerp.y * curveOffset + loftOffset
     };
     const screen = toScreen(point);
     aimLineDots.push({
       key: `aim-dot-${worldDist.toFixed(2)}`,
       x: screen.x,
       y: screen.y,
-      size: clamp(2 + (worldDist / aimGuideWorld) * 1.9, 2, 4)
+      size: clamp(2 + (worldDist / aimGuideWorld) * 2.2, 2, 4.6),
+      opacity: 0.46 + t * 0.4,
+      color: shotControlOpen ? '#78b7ff' : 'rgba(245, 249, 236, 0.8)'
     });
   }
 
@@ -1121,7 +1129,9 @@ export default function App() {
                   height: dot.size,
                   borderRadius: dot.size / 2,
                   left: dot.x - dot.size / 2,
-                  top: dot.y - dot.size / 2
+                  top: dot.y - dot.size / 2,
+                  opacity: dot.opacity,
+                  backgroundColor: dot.color
                 }
               ]}
             />
@@ -1257,7 +1267,13 @@ export default function App() {
                 <Text style={styles.hudLabel}>Shot</Text>
                 <Text style={styles.hudValue}>{shotNumber}</Text>
               </View>
-              <Pressable style={[styles.hudItem, styles.hudItemPressable, shotControlOpen && styles.hudItemActive]} onPress={() => setShotControlOpen((v) => !v)}>
+              <Pressable
+                style={[styles.hudItem, styles.hudItemPressable, shotControlOpen && styles.hudItemActive]}
+                onPress={() => {
+                  setShotControlOpen((v) => !v);
+                  setLastShotNote('Shot shape opened from yardage. Drag the blue dot, then tap the ball to hit.');
+                }}
+              >
                 <Text style={styles.hudLabel}>Yards</Text>
                 <Text style={styles.hudValue}>{yardsToCup}</Text>
               </Pressable>
@@ -1283,13 +1299,19 @@ export default function App() {
 
         <View style={styles.bottomOverlay} pointerEvents="box-none">
           <View style={styles.bottomMainRow}>
-            <View style={styles.clubCard}>
+            <Pressable
+              style={[styles.clubCard, shotControlOpen && styles.clubCardActive]}
+              onPress={() => {
+                setShotControlOpen(true);
+                setLastShotNote('Shot shape opened. Drag the blue dot, then tap the ball to hit.');
+              }}
+            >
               <Text style={styles.clubCardTitle}>{selectedClub.name}</Text>
               <Text style={styles.clubCardSub}>{selectedClub.short} • {shotShape}</Text>
               <Text style={styles.clubCardYards}>{previewYards} yd</Text>
               <Text style={styles.clubCardMeta}>Stock {stockClubYards} • To pin {yardsToCup}</Text>
               <Text style={styles.clubCardMeta}>{tempoLabel}</Text>
-            </View>
+            </Pressable>
 
             <View style={styles.swingDock}>
               <View style={[styles.swingPad, shotControlOpen && styles.swingPadActive]} {...shotControlResponder.panHandlers}>
@@ -1683,6 +1705,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     justifyContent: 'space-between'
+  },
+  clubCardActive: {
+    borderColor: 'rgba(111, 174, 255, 0.92)',
+    backgroundColor: 'rgba(14, 27, 47, 0.78)'
   },
   clubCardTitle: {
     color: '#eff8e6',
