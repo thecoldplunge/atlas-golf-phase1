@@ -188,7 +188,7 @@ const MIN_BOUNCE_VZ = 3.2;
 const CURVE_FORCE = 1.0;
 const CURVE_LAUNCH_BLEND = 0.3;
 const PUTTING_ZOOM_MULT = 1.8;
-const SLOPE_FORCE = 3.0;
+const SLOPE_FORCE = 0.6;
 const PUTT_PREVIEW_DT = 1 / 120;
 const PUTT_PREVIEW_MAX_TICKS = 1400;
 const PUTT_PREVIEW_SAMPLE_TICKS = 8;
@@ -287,7 +287,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v2.2.0';
+const BUILD_VERSION = 'web v2.2.1';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1673,8 +1673,8 @@ export default function App() {
                 style={[
                   styles.puttAimMarker,
                   {
-                    left: puttAimPoint.x * scaleX - 12,
-                    top: puttAimPoint.y * scaleY - 12
+                    left: puttAimPoint.x * scaleX - 14,
+                    top: puttAimPoint.y * scaleY - 14
                   }
                 ]}
               >
@@ -1998,9 +1998,9 @@ export default function App() {
               <Pressable
                 style={[
                   styles.simulatePuttButton,
-                  (!puttAimPoint || sunk || ballMoving) && styles.disabled
+                  (!puttAimPoint || sunk || ballMoving || puttSimulated) && styles.disabled
                 ]}
-                disabled={!puttAimPoint || sunk || ballMoving}
+                disabled={!puttAimPoint || sunk || ballMoving || puttSimulated}
                 onPress={handleSimulatePutt}
               >
                 <Text style={styles.simulatePuttButtonText}>Simulate Putt</Text>
@@ -2272,28 +2272,28 @@ const styles = StyleSheet.create({
   },
   puttAimMarker: {
     position: 'absolute',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 240, 160, 0.95)',
-    backgroundColor: 'rgba(255, 240, 160, 0.08)',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 3,
+    borderColor: '#ff4444',
+    backgroundColor: 'rgba(255, 68, 68, 0.15)',
     alignItems: 'center',
     justifyContent: 'center'
   },
   puttAimMarkerH: {
     position: 'absolute',
-    width: 14,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: 'rgba(255, 240, 160, 0.95)'
+    width: 18,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#ff4444'
   },
   puttAimMarkerV: {
     position: 'absolute',
-    width: 2,
-    height: 14,
-    borderRadius: 1,
-    backgroundColor: 'rgba(255, 240, 160, 0.95)'
+    width: 3,
+    height: 18,
+    borderRadius: 1.5,
+    backgroundColor: '#ff4444'
   },
   puttPreviewDot: {
     position: 'absolute',
