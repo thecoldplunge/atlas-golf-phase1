@@ -124,14 +124,16 @@ const GOLFER_PIXEL_KEY = {
 };
 
 const GOLFER_SPRITE_ROWS = [
-  '...hh...',
-  '..hooh..',
-  '..osso.c',
-  '.osskoc.',
-  '.osssoc.',
-  '..oppo..',
-  '..p..p..',
-  '..b..b..'
+  '....hh....',
+  '...hooh...',
+  '..osssoo..',
+  '.osskksoo.',
+  '.opssssoc.',
+  '..pppppoc.',
+  '.pp..ppoo.',
+  '.bb..bboc.',
+  '..b..b....',
+  '.b....b...'
 ];
 
 const GOLFER_PIXELS = GOLFER_SPRITE_ROWS.flatMap((row, y) =>
@@ -191,6 +193,8 @@ export default function App() {
   const velocityRef = useRef({ x: 0, y: 0 });
   const lastTsRef = useRef(null);
   const frameRef = useRef(null);
+  const courseRef = useRef(null);
+  const courseFrameRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
   const swingTrackRef = useRef({
     active: false,
     armed: false,
@@ -206,6 +210,15 @@ export default function App() {
   const scaleY = courseHeight / WORLD.h;
   const ballRadius = 1.8 * scaleX;
   const cupRadius = 3.0 * scaleX;
+
+  const syncCourseFrame = () => {
+    if (!courseRef.current || typeof courseRef.current.measureInWindow !== 'function') {
+      return;
+    }
+    courseRef.current.measureInWindow((x, y, width, height) => {
+      courseFrameRef.current = { x, y, width, height };
+    });
+  };
 
   const toScreen = (p) => ({ x: p.x * scaleX, y: p.y * scaleY });
   const toWorld = (p) => ({ x: p.x / scaleX, y: p.y / scaleY });
@@ -413,8 +426,14 @@ export default function App() {
   const completed = scores.filter((s) => s != null).length;
   const ballMoving = magnitude(velocityRef.current) > 0.35;
 
-  const setAimFromTouch = (locationX, locationY) => {
-    const target = toWorld({ x: locationX, y: locationY });
+  const setAimFromTouch = (pageX, pageY) => {
+    const frame = courseFrameRef.current;
+    if (frame.width <= 0 || frame.height <= 0) {
+      return;
+    }
+    const localX = clamp(pageX - frame.x, 0, frame.width);
+    const localY = clamp(pageY - frame.y, 0, frame.height);
+    const target = toWorld({ x: localX, y: localY });
     const dir = { x: target.x - ballRef.current.x, y: target.y - ballRef.current.y };
     if (magnitude(dir) < 0.2) {
       return;
@@ -423,8 +442,17 @@ export default function App() {
   };
 
   const isTouchInsideCourse = (evt) => {
-    const { locationX, locationY } = evt.nativeEvent;
-    return locationX >= 0 && locationX <= courseWidth && locationY >= 0 && locationY <= courseHeight;
+    const frame = courseFrameRef.current;
+    if (frame.width <= 0 || frame.height <= 0) {
+      return false;
+    }
+    const { pageX, pageY } = evt.nativeEvent;
+    return (
+      pageX >= frame.x &&
+      pageX <= frame.x + frame.width &&
+      pageY >= frame.y &&
+      pageY <= frame.y + frame.height
+    );
   };
 
   const aimResponder = useMemo(
@@ -438,18 +466,19 @@ export default function App() {
         },
         onStartShouldSetPanResponderCapture: (evt) => isTouchInsideCourse(evt),
         onPanResponderGrant: (evt) => {
+          syncCourseFrame();
           if (!isTouchInsideCourse(evt)) {
             return;
           }
           setIsAiming(true);
-          setAimFromTouch(evt.nativeEvent.locationX, evt.nativeEvent.locationY);
+          setAimFromTouch(evt.nativeEvent.pageX, evt.nativeEvent.pageY);
         },
         onMoveShouldSetPanResponder: () => false,
         onPanResponderMove: (evt) => {
           if (!isTouchInsideCourse(evt)) {
             return;
           }
-          setAimFromTouch(evt.nativeEvent.locationX, evt.nativeEvent.locationY);
+          setAimFromTouch(evt.nativeEvent.pageX, evt.nativeEvent.pageY);
         },
         onPanResponderRelease: () => {
           setIsAiming(false);
@@ -458,7 +487,7 @@ export default function App() {
           setIsAiming(false);
         }
       }),
-    [ballMoving, courseHeight, courseWidth, sunk, swingActive]
+    [ballMoving, sunk, swingActive]
   );
 
   const fireSwingShot = ({ releaseDx, releaseDy }) => {
@@ -612,12 +641,6 @@ export default function App() {
 
   const finishedAll = scores.every((s) => typeof s === 'number');
   const isLastHole = holeIndex === HOLES.length - 1;
-  const guideLength = 22;
-  const guideEnd = {
-    x: screenBall.x + Math.cos(aimAngle) * guideLength * scaleX,
-    y: screenBall.y + Math.sin(aimAngle) * guideLength * scaleY
-  };
-  const guideAngle = (Math.atan2(guideEnd.y - screenBall.y, guideEnd.x - screenBall.x) * 180) / Math.PI;
   const overSwing = powerPct > 100;
   const previewDots = PREVIEW_POWERS.map((power) => {
     const distanceWorld = estimateStraightDistance(power);
@@ -633,13 +656,13 @@ export default function App() {
   const aimDir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
   const aimPerp = { x: -aimDir.y, y: aimDir.x };
   const golferAnchorWorld = {
-    x: ball.x - aimDir.x * 6.2 + aimPerp.x * 2.2,
-    y: ball.y - aimDir.y * 6.2 + aimPerp.y * 2.2
+    x: ball.x - aimDir.x * 6.6 + aimPerp.x * 2.8,
+    y: ball.y - aimDir.y * 6.6 + aimPerp.y * 2.8
   };
   const golferAnchor = toScreen(golferAnchorWorld);
-  const golferPixelSize = clamp(scaleX * 0.78, 1.9, 3.3);
-  const golferWidth = 8 * golferPixelSize;
-  const golferHeight = 8 * golferPixelSize;
+  const golferPixelSize = clamp(scaleX * 0.66, 1.7, 2.8);
+  const golferWidth = GOLFER_SPRITE_ROWS[0].length * golferPixelSize;
+  const golferHeight = GOLFER_SPRITE_ROWS.length * golferPixelSize;
   const golferAngle = (aimAngle * 180) / Math.PI + 90;
 
   return (
@@ -652,7 +675,12 @@ export default function App() {
         <Text style={styles.meta}>Strokes: {strokesCurrent} • Total: {totalScore}</Text>
       </View>
 
-      <View style={[styles.course, { width: courseWidth, height: courseHeight }]} {...aimResponder.panHandlers}>
+      <View
+        ref={courseRef}
+        onLayout={syncCourseFrame}
+        style={[styles.course, { width: courseWidth, height: courseHeight }]}
+        {...aimResponder.panHandlers}
+      >
         {currentHole.terrain?.fairway?.map((f, i) => (
           <View
             key={`fair-${i}`}
@@ -792,18 +820,6 @@ export default function App() {
               borderRadius: cupRadius,
               left: screenCup.x - cupRadius,
               top: screenCup.y - cupRadius
-            }
-          ]}
-        />
-
-        <View
-          style={[
-            styles.aimLine,
-            {
-              width: Math.hypot(guideEnd.x - screenBall.x, guideEnd.y - screenBall.y),
-              left: screenBall.x,
-              top: screenBall.y,
-              transform: [{ rotate: `${guideAngle}deg` }]
             }
           ]}
         />
@@ -1058,11 +1074,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#f7f7f4',
     borderWidth: 1,
     borderColor: '#cfd5ca'
-  },
-  aimLine: {
-    position: 'absolute',
-    height: 3,
-    backgroundColor: '#f4f2d2'
   },
   previewDot: {
     position: 'absolute',
