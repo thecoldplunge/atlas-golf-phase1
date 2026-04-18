@@ -162,22 +162,22 @@ const GROUND_EPSILON = 0.05;
 const FRINGE_BUFFER = 4;
 const MIN_BOUNCE_VZ = 3.2;
 const CLUBS = [
-  { key: 'PT', name: 'Putter', short: 'PT', speed: 0.45, launch: 0.04, roll: 0.86, spin: 1.22 },
-  { key: 'LW', name: 'Lob Wedge', short: 'LW', speed: 0.74, launch: 1.22, roll: 0.54, spin: 0.82 },
-  { key: 'SW', name: 'Sand Wedge', short: 'SW', speed: 0.78, launch: 1.12, roll: 0.58, spin: 0.85 },
-  { key: 'GW', name: 'Gap Wedge', short: 'GW', speed: 0.84, launch: 1.0, roll: 0.63, spin: 0.9 },
-  { key: 'PW', name: 'Pitching Wedge', short: 'PW', speed: 0.9, launch: 0.92, roll: 0.68, spin: 0.93 },
-  { key: '9I', name: '9 Iron', short: '9i', speed: 0.96, launch: 0.84, roll: 0.73, spin: 0.97 },
-  { key: '8I', name: '8 Iron', short: '8i', speed: 1.01, launch: 0.78, roll: 0.79, spin: 1.0 },
-  { key: '7I', name: '7 Iron', short: '7i', speed: 1.07, launch: 0.72, roll: 0.85, spin: 1.02 },
-  { key: '6I', name: '6 Iron', short: '6i', speed: 1.12, launch: 0.67, roll: 0.92, spin: 1.04 },
-  { key: '5I', name: '5 Iron', short: '5i', speed: 1.17, launch: 0.62, roll: 0.98, spin: 1.06 },
-  { key: '4I', name: '4 Iron', short: '4i', speed: 1.22, launch: 0.58, roll: 1.03, spin: 1.08 },
-  { key: '3I', name: '3 Iron', short: '3i', speed: 1.27, launch: 0.54, roll: 1.08, spin: 1.1 },
-  { key: '7W', name: '7 Wood', short: '7w', speed: 1.25, launch: 0.64, roll: 1.02, spin: 1.0 },
-  { key: '5W', name: '5 Wood', short: '5w', speed: 1.32, launch: 0.58, roll: 1.08, spin: 0.98 },
-  { key: '3W', name: '3 Wood', short: '3w', speed: 1.4, launch: 0.52, roll: 1.13, spin: 0.96 },
-  { key: 'DR', name: 'Driver', short: 'DR', speed: 1.5, launch: 0.48, roll: 1.18, spin: 0.92 }
+  { key: 'PT', name: 'Putter', short: 'PT', speed: 0.16, launch: 0.03, roll: 0.95, spin: 1.22, carryYards: 20 },
+  { key: 'LW', name: 'Lob Wedge', short: 'LW', speed: 0.44, launch: 1.18, roll: 0.52, spin: 0.82, carryYards: 70 },
+  { key: 'SW', name: 'Sand Wedge', short: 'SW', speed: 0.5, launch: 1.08, roll: 0.56, spin: 0.85, carryYards: 80 },
+  { key: 'GW', name: 'Gap Wedge', short: 'GW', speed: 0.56, launch: 0.98, roll: 0.6, spin: 0.9, carryYards: 90 },
+  { key: 'PW', name: 'Pitching Wedge', short: 'PW', speed: 0.64, launch: 0.9, roll: 0.66, spin: 0.93, carryYards: 105 },
+  { key: '9I', name: '9 Iron', short: '9i', speed: 0.72, launch: 0.82, roll: 0.72, spin: 0.97, carryYards: 120 },
+  { key: '8I', name: '8 Iron', short: '8i', speed: 0.8, launch: 0.76, roll: 0.78, spin: 1, carryYards: 130 },
+  { key: '7I', name: '7 Iron', short: '7i', speed: 0.88, launch: 0.7, roll: 0.84, spin: 1.02, carryYards: 140 },
+  { key: '6I', name: '6 Iron', short: '6i', speed: 0.96, launch: 0.65, roll: 0.9, spin: 1.04, carryYards: 150 },
+  { key: '5I', name: '5 Iron', short: '5i', speed: 1.04, launch: 0.6, roll: 0.96, spin: 1.06, carryYards: 160 },
+  { key: '4I', name: '4 Iron', short: '4i', speed: 1.12, launch: 0.56, roll: 1.02, spin: 1.08, carryYards: 170 },
+  { key: '3I', name: '3 Iron', short: '3i', speed: 1.18, launch: 0.52, roll: 1.06, spin: 1.1, carryYards: 180 },
+  { key: '7W', name: '7 Wood', short: '7w', speed: 1.08, launch: 0.62, roll: 0.98, spin: 1, carryYards: 190 },
+  { key: '5W', name: '5 Wood', short: '5w', speed: 1.18, launch: 0.57, roll: 1.04, spin: 0.98, carryYards: 210 },
+  { key: '3W', name: '3 Wood', short: '3w', speed: 1.3, launch: 0.5, roll: 1.1, spin: 0.96, carryYards: 225 },
+  { key: 'DR', name: 'Driver', short: 'DR', speed: 1.46, launch: 0.46, roll: 1.16, spin: 0.92, carryYards: 250 }
 ];
 
 const SURFACE_PHYSICS = {
@@ -236,7 +236,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'web v0.3.3';
+const BUILD_VERSION = 'web v0.4.0';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -293,11 +293,8 @@ const getSurfaceAtPoint = (hole, point) => {
   return 'rough';
 };
 const estimateStraightDistance = (powerPct, club, strike = { launch: 1, spin: 1 }) => {
-  const shotRatio = clamp(powerPct / 125, 0, 1);
-  const effectiveSpeed = speedFromPower(powerPct, club);
-  const carry = shotRatio * shotRatio * 12 * club.speed + 10 * club.launch * strike.launch;
-  const rollout = Math.max(0, effectiveSpeed - STOP_SPEED) / (PREVIEW_FRICTION * (1.6 / (club.roll / strike.spin)));
-  return carry + rollout * 0.68;
+  const shotRatio = clamp(powerPct / 100, 0, 1.12);
+  return (club.carryYards / YARDS_PER_WORLD) * shotRatio * strike.launch;
 };
 
 export default function App() {
@@ -341,7 +338,7 @@ export default function App() {
   const frameRef = useRef(null);
   const courseRef = useRef(null);
   const courseFrameRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
-  const shotControlStartRef = useRef({ x: 0, y: 0 });
+  const [draggingSpinDot, setDraggingSpinDot] = useState(false);
 
   const currentHole = HOLES[holeIndex];
   const selectedClub = CLUBS[selectedClubIndex];
@@ -839,16 +836,16 @@ export default function App() {
         onStartShouldSetPanResponder: () => !sunk && !ballMoving,
         onStartShouldSetPanResponderCapture: () => !sunk && !ballMoving,
         onPanResponderGrant: (evt) => {
+          if (!shotControlOpen) {
+            return;
+          }
           const dx = evt.nativeEvent.locationX - PAD_CENTER;
           const dy = evt.nativeEvent.locationY - PAD_CENTER;
-          shotControlStartRef.current = { x: dx, y: dy };
-          const distance = Math.hypot(dx, dy);
-          if (distance <= SPIN_DOT_RADIUS + 12) {
-            setShotControlOpen(true);
-          }
+          const distanceFromDot = Math.hypot(dx - spinOffset.x, dy - spinOffset.y);
+          setDraggingSpinDot(distanceFromDot <= SPIN_DOT_RADIUS + 12);
         },
         onPanResponderMove: (evt) => {
-          if (!shotControlOpen) {
+          if (!shotControlOpen || !draggingSpinDot) {
             return;
           }
           const dx = evt.nativeEvent.locationX - PAD_CENTER;
@@ -860,32 +857,14 @@ export default function App() {
           const metrics = getShotControlMetrics(nextOffset);
           setTempoLabel(`${metrics.shapeLabel} • ${metrics.flightLabel}`);
         },
-        onPanResponderRelease: (evt) => {
-          const dx = evt.nativeEvent.locationX - PAD_CENTER;
-          const dy = evt.nativeEvent.locationY - PAD_CENTER;
-          const moveDistance = Math.hypot(dx - shotControlStartRef.current.x, dy - shotControlStartRef.current.y);
-          const tapDistance = Math.hypot(dx, dy);
-
-          if (shotControlOpen && moveDistance < 10 && tapDistance > SPIN_DOT_RADIUS + 18 && tapDistance <= SHOT_PAD_RADIUS) {
-            strikeBall();
-            return;
-          }
-
-          if (!shotControlOpen && tapDistance <= SPIN_DOT_RADIUS + 12) {
-            setShotControlOpen(true);
-            setLastShotNote('Drag the blue dot to add shape, then tap the ball to hit it.');
-            return;
-          }
-
-          if (shotControlOpen && tapDistance > SHOT_PAD_RADIUS + 10) {
-            setShotControlOpen(false);
-          }
+        onPanResponderRelease: () => {
+          setDraggingSpinDot(false);
         },
         onPanResponderTerminate: () => {
-          setShotControlOpen(false);
+          setDraggingSpinDot(false);
         }
       }),
-    [ballMoving, shotControlOpen, sunk, powerPct, selectedClub, aimAngle]
+    [ballMoving, draggingSpinDot, shotControlOpen, sunk, spinOffset.x, spinOffset.y]
   );
 
   const screenBall = toScreen(ball);
@@ -935,33 +914,30 @@ export default function App() {
     return Math.max(0, Math.min(...candidates));
   })();
   const aimGuideWorld = clamp(
-    Math.max(distanceToCupWorld + 12, estimateStraightDistance(100, selectedClub, { launch: shotMetrics.launchAdjust, spin: shotMetrics.spinAdjust }) * 1.1),
+    estimateStraightDistance(100, selectedClub, { launch: shotMetrics.launchAdjust, spin: shotMetrics.spinAdjust }),
     6,
     rayToWorldEdge
   );
 
-  const aimLineDots = [];
-  const previewCurveRad = degToRad(shotMetrics.curveDeg);
-  const previewCurveStrength = previewCurveRad * 0.7;
-  const previewLaunchLift = (shotMetrics.launchAdjust - 1) * 14;
-  for (let worldDist = AIM_DOT_STEP_WORLD; worldDist <= aimGuideWorld; worldDist += AIM_DOT_STEP_WORLD) {
-    const t = worldDist / Math.max(aimGuideWorld, 0.001);
-    const curveOffset = Math.sin(t * Math.PI * 0.95) * aimGuideWorld * previewCurveStrength * t;
-    const loftOffset = -previewLaunchLift * Math.sin(t * Math.PI) * 0.45;
+  const aimLineDots = [0.25, 0.5, 0.75, 1].map((pct) => {
+    const worldDist = aimGuideWorld * pct;
+    const curveOffset = Math.sin(pct * Math.PI * 0.95) * aimGuideWorld * degToRad(shotMetrics.curveDeg) * 0.55 * pct;
+    const loftOffset = -(shotMetrics.launchAdjust - 1) * 10 * Math.sin(pct * Math.PI) * 0.4;
     const point = {
       x: ball.x + aimDir.x * worldDist + aimPerp.x * curveOffset,
       y: ball.y + aimDir.y * worldDist + aimPerp.y * curveOffset + loftOffset
     };
     const screen = toScreen(point);
-    aimLineDots.push({
-      key: `aim-dot-${worldDist.toFixed(2)}`,
+    return {
+      key: `aim-dot-${pct}`,
       x: screen.x,
       y: screen.y,
-      size: clamp(2 + (worldDist / aimGuideWorld) * 2.2, 2, 4.6),
-      opacity: 0.46 + t * 0.4,
-      color: shotControlOpen ? '#78b7ff' : 'rgba(245, 249, 236, 0.8)'
-    });
-  }
+      size: 4 + pct * 3,
+      opacity: 0.5 + pct * 0.35,
+      color: shotControlOpen ? '#78b7ff' : 'rgba(245, 249, 236, 0.82)',
+      label: `${Math.round(pct * 100)}%`
+    };
+  });
 
   const golferAnchorWorld = {
     x: clamp(golferBallAnchor.x - 8.1 + aimPerp.x * 0.6, 2.5, WORLD.w - 2.5),
@@ -1122,21 +1098,34 @@ export default function App() {
           </View>
 
           {!ballMoving && !sunk ? aimLineDots.map((dot) => (
-            <View
-              key={dot.key}
-              style={[
-                styles.aimDot,
-                {
-                  width: dot.size,
-                  height: dot.size,
-                  borderRadius: dot.size / 2,
-                  left: dot.x - dot.size / 2,
-                  top: dot.y - dot.size / 2,
-                  opacity: dot.opacity,
-                  backgroundColor: dot.color
-                }
-              ]}
-            />
+            <View key={dot.key} pointerEvents="none">
+              <View
+                style={[
+                  styles.aimDot,
+                  {
+                    width: dot.size,
+                    height: dot.size,
+                    borderRadius: dot.size / 2,
+                    left: dot.x - dot.size / 2,
+                    top: dot.y - dot.size / 2,
+                    opacity: dot.opacity,
+                    backgroundColor: dot.color
+                  }
+                ]}
+              />
+              <Text
+                style={[
+                  styles.aimDotLabel,
+                  {
+                    left: dot.x - 14,
+                    top: dot.y + dot.size / 2 + 2,
+                    opacity: dot.opacity
+                  }
+                ]}
+              >
+                {dot.label}
+              </Text>
+            </View>
           )) : null}
 
           <View
@@ -1319,18 +1308,30 @@ export default function App() {
             </Pressable>
 
             <View style={styles.swingDock}>
-              <View style={[styles.swingPad, shotControlOpen && styles.swingPadActive]} {...shotControlResponder.panHandlers}>
+              <Pressable
+                style={[styles.swingPad, shotControlOpen && styles.swingPadActive]}
+                onPress={() => {
+                  if (shotControlOpen) {
+                    strikeBall();
+                  } else {
+                    setShotControlOpen(true);
+                    setLastShotNote('Shot shape opened. Drag the blue dot, then tap Hit again to strike it.');
+                  }
+                }}
+              >
                 <View style={styles.swingHaloOuter} />
                 <View style={styles.swingHaloInner}>
-                  <Text style={styles.swingPct}>Hit</Text>
+                  <Text style={styles.swingPct}>{shotControlOpen ? 'Shoot' : 'Hit'}</Text>
                 </View>
                 {shotControlOpen ? (
-                  <View style={styles.shotPadGuideWrap} pointerEvents="none">
-                    <View style={styles.shotPadCrosshairH} />
-                    <View style={styles.shotPadCrosshairV} />
+                  <View style={styles.shotPadGuideWrap} {...shotControlResponder.panHandlers}>
+                    <View style={styles.shotPadCrosshairH} pointerEvents="none" />
+                    <View style={styles.shotPadCrosshairV} pointerEvents="none" />
                     <View
+                      pointerEvents="none"
                       style={[
                         styles.spinDot,
+                        draggingSpinDot && styles.spinDotActive,
                         {
                           left: PAD_CENTER + spinOffset.x - SPIN_DOT_RADIUS,
                           top: PAD_CENTER + spinOffset.y - SPIN_DOT_RADIUS
@@ -1341,7 +1342,7 @@ export default function App() {
                 ) : (
                   <View style={styles.spinDotClosed} pointerEvents="none" />
                 )}
-              </View>
+              </Pressable>
             </View>
           </View>
 
@@ -1376,10 +1377,10 @@ export default function App() {
             {isAiming
               ? 'Adjusting aim...'
               : shotControlOpen
-                ? 'Drag the blue dot for flight and curve, then tap the ball to hit.'
+                ? 'Drag the blue dot, then tap Shoot to hit.'
                 : Platform.OS === 'web'
-                  ? 'Tap Yards to open shot shaping. Drag on the course to pan, tap to aim.'
-                  : 'Tap Yards to open shot shaping. Use two fingers on course to pan camera.'}
+                  ? 'Tap Yards, the club card, or Hit to open shot shaping. Drag on the course to pan, tap to aim.'
+                  : 'Tap Yards, the club card, or Hit to open shot shaping. Use two fingers on course to pan camera.'}
           </Text>
           <Text style={styles.lastShotText}>{lastShotNote}</Text>
 
@@ -1515,6 +1516,14 @@ const styles = StyleSheet.create({
   aimDot: {
     position: 'absolute',
     backgroundColor: 'rgba(245, 249, 236, 0.8)'
+  },
+  aimDotLabel: {
+    position: 'absolute',
+    width: 28,
+    textAlign: 'center',
+    color: 'rgba(245,249,236,0.82)',
+    fontSize: 9,
+    fontWeight: '700'
   },
   cup: {
     position: 'absolute',
@@ -1819,6 +1828,11 @@ const styles = StyleSheet.create({
     shadowColor: '#4b94ff',
     shadowOpacity: 0.55,
     shadowRadius: 10
+  },
+  spinDotActive: {
+    transform: [{ scale: 1.08 }],
+    shadowOpacity: 0.78,
+    shadowRadius: 14
   },
   spinDotClosed: {
     position: 'absolute',
