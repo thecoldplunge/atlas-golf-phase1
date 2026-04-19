@@ -3441,6 +3441,10 @@ export default function App() {
                 </View>
               ) : null}
               <View style={styles.hudItem}>
+                <Text style={styles.hudLabel}>Lie</Text>
+                <Text style={styles.hudValue}>{(SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).emoji} {(SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).label}</Text>
+              </View>
+              <View style={styles.hudItem}>
                 <Text style={styles.hudLabel}>Wind</Text>
                 <Text style={styles.hudValue}>{windLabel}</Text>
               </View>
@@ -3642,17 +3646,6 @@ export default function App() {
           {waterNotice && !sunk && !waterDropMenu ? <Text style={styles.warning}>Water hazard: +1 stroke penalty.</Text> : null}
         </View>
 
-        {/* Ball Lie PiP */}
-        {!sunk && !ballMoving ? (
-          <View style={styles.liePip}>
-            <View style={[styles.lieColorBar, { backgroundColor: (SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).color }]} />
-            <Text style={styles.lieEmoji}>{(SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).emoji}</Text>
-            <Text style={styles.lieLabel}>{(SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).label}</Text>
-            {((SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty[1]) < 1 ? (
-              <Text style={styles.liePenalty}>{Math.round((SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty[0] * 100)}-{Math.round((SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).powerPenalty[1] * 100)}% power</Text>
-            ) : null}
-          </View>
-        ) : null}
 
         {/* Water Drop Menu */}
         {waterDropMenu ? (
