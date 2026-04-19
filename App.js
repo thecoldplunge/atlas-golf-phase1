@@ -3037,7 +3037,7 @@ export default function App() {
 
   const aimDir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
   const aimPerp = { x: -aimDir.y, y: aimDir.x };
-  const previewLaunch = getLaunchData(swingDeviation, { powerPct, aimAngle });
+  const previewLaunch = getLaunchData(0, { powerPct, aimAngle });
   const totalPreviewCurveDeg = previewLaunch.totalCurveDeg;
   const distanceToCupWorld = Math.hypot(currentHole.cup.x - ball.x, currentHole.cup.y - ball.y);
   const yardsToCup = Math.max(0, Math.round(distanceToCupWorld * YARDS_PER_WORLD));
