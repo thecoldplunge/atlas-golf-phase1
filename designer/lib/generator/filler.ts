@@ -112,7 +112,9 @@ function teeCenter(h: Hole): Vec2 {
 
 const SLOPE_DIRS: Slope['dir'][] = ['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW'];
 
-/** Scatter 4–7 small bunkers around the green on the side OPPOSITE the approach. */
+/** Scatter 4–7 small bunkers around the green on the side OPPOSITE the approach.
+ *  Placed OUTSIDE the green edge with safety margin so bunkers never land on
+ *  the putting surface. */
 function addGreensideBunkers(hole: Hole, rand: () => number): number {
   const g = hole.terrain.green;
   const gc = greenCenter(hole);
@@ -123,23 +125,26 @@ function addGreensideBunkers(hole: Hole, rand: () => number): number {
   const alen = Math.hypot(ax, ay) || 1;
   const nx = -ay / alen;
   const ny = ax / alen;
-  const radius = Math.max(g.w, g.h) * 0.55;
+  const greenRadius = Math.max(g.w, g.h) / 2;
   const count = 4 + Math.floor(rand() * 3); // 4-6
   let added = 0;
   for (let i = 0; i < count; i++) {
+    const size = 14 + rand() * 18; // 14-32
+    // Bunker center must be at least this far from green center so it sits
+    // cleanly outside the green even with the bunker's own size.
+    const bunkerRadius = size / 2;
+    const minDistFromCenter = greenRadius + bunkerRadius + 10;
     // Distribute in a fan around the approach-opposite side of the green
     const sideSign = rand() < 0.5 ? -1 : 1;
     const sidedness = 0.35 + rand() * 0.55;
     const angleOffset = (rand() - 0.5) * 1.6;
-    // Base direction opposite to approach, rotated around green
     const dirX = -ax / alen;
     const dirY = -ay / alen;
     const rx = (dirX * Math.cos(angleOffset) - dirY * Math.sin(angleOffset)) + nx * sideSign * sidedness;
     const ry = (dirX * Math.sin(angleOffset) + dirY * Math.cos(angleOffset)) + ny * sideSign * sidedness;
     const rlen = Math.hypot(rx, ry) || 1;
-    const cx = gc.x + (rx / rlen) * radius;
-    const cy = gc.y + (ry / rlen) * radius;
-    const size = 14 + rand() * 18; // 14-32
+    const cx = gc.x + (rx / rlen) * minDistFromCenter;
+    const cy = gc.y + (ry / rlen) * minDistFromCenter;
     hole.hazards.push({
       type: 'sandRect',
       x: cx - size / 2,

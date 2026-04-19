@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { COURSE_JSON_SCHEMA } from '@/lib/generator/schema';
-import { buildSystemPrompt, buildUserPrompt } from '@/lib/generator/prompt';
+import { buildSystemPrompt, buildUserPrompt, computeCorridors } from '@/lib/generator/prompt';
 import { estimateCostUsd } from '@/lib/generator/pricing';
 import { PLANETS, type PlanetId } from '@/lib/generator/planets';
 import { postProcessCourse } from '@/lib/generator/postProcess';
@@ -96,6 +96,9 @@ export async function POST(request: Request) {
   const fallbackModel = 'gpt-4o';
   let model = preferredModel;
 
+  // Allocate non-overlapping per-hole corridors so holes don't cross each other.
+  const corridors = computeCorridors(parsed.holeCount);
+
   // Pin hole count exactly for this request — base schema allows 1–18,
   // but we want the model to produce exactly N for the hole count asked.
   const schema = {
@@ -118,7 +121,7 @@ export async function POST(request: Request) {
       model: modelName,
       messages: [
         { role: 'system' as const, content: buildSystemPrompt() },
-        { role: 'user' as const, content: buildUserPrompt(parsed) },
+        { role: 'user' as const, content: buildUserPrompt(parsed, corridors) },
       ],
       response_format: {
         type: 'json_schema' as const,
@@ -167,8 +170,22 @@ export async function POST(request: Request) {
       );
     }
 
-    // Enforce hard caps (distance, ball-in-tee, cup-in-green) regardless of
-    // what the LLM emitted. Apply routingAngle to rotate whole holes.
+    // Attach per-hole corridors so the post-processor can clamp any stray
+    // geometry back into its allocated box (prevents cross-hole overlaps).
+    try {
+      const c = course as { holes?: Array<Record<string, unknown>> };
+      if (Array.isArray(c.holes)) {
+        c.holes.forEach((h, i) => {
+          if (corridors[i]) h.corridor = corridors[i];
+        });
+      }
+    } catch (e) {
+      console.warn('corridor attach failed:', e);
+    }
+
+    // Enforce hard caps (distance, ball-in-tee, cup-in-green, corridor clamp,
+    // evict hazards/trees from the green) regardless of what the LLM emitted.
+    // Also apply routingAngle to rotate whole holes.
     let postReport: ReturnType<typeof postProcessCourse> | null = null;
     try {
       postReport = postProcessCourse(course as Parameters<typeof postProcessCourse>[0]);

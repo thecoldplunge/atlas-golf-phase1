@@ -99,8 +99,55 @@ function worldDims(holeCount: HoleCount): { width: number; height: number } {
   // Sized so per-hole corridor is ~700-900 units — enough to fit a par 5
   // without overflow, tight enough that the LLM doesn't over-stretch.
   if (holeCount === 3) return { width: 1800, height: 1400 };
-  if (holeCount === 9) return { width: 2600, height: 2000 };
-  return { width: 3800, height: 3000 };
+  if (holeCount === 9) return { width: 2700, height: 2100 };
+  return { width: 3900, height: 3000 };
+}
+
+export interface Corridor {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+function gridForHoleCount(holeCount: HoleCount): { cols: number; rows: number } {
+  if (holeCount === 3) return { cols: 3, rows: 1 };
+  if (holeCount === 9) return { cols: 3, rows: 3 };
+  return { cols: 6, rows: 3 }; // 18 holes as 6x3
+}
+
+/**
+ * Allocate a non-overlapping corridor per hole. Each hole's geometry MUST stay
+ * within its corridor so holes don't cross each other.
+ */
+export function computeCorridors(holeCount: HoleCount): Corridor[] {
+  const dims = worldDims(holeCount);
+  const { cols, rows } = gridForHoleCount(holeCount);
+  const gutter = 40;
+  const cellW = (dims.width - gutter * (cols + 1)) / cols;
+  const cellH = (dims.height - gutter * (rows + 1)) / rows;
+  const corridors: Corridor[] = [];
+  // Routing: left-to-right on even rows, right-to-left on odd rows (snake),
+  // so hole N+1 is adjacent to hole N.
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const col = r % 2 === 0 ? c : cols - 1 - c;
+      const x = gutter + col * (cellW + gutter);
+      const y = gutter + r * (cellH + gutter);
+      corridors.push({ x, y, w: cellW, h: cellH });
+      if (corridors.length >= holeCount) break;
+    }
+    if (corridors.length >= holeCount) break;
+  }
+  return corridors;
+}
+
+function corridorHint(corridors: Corridor[]): string {
+  const lines = corridors.map(
+    (c, i) =>
+      `  Hole ${i + 1}: corridor x=${Math.round(c.x)}..${Math.round(c.x + c.w)}, y=${Math.round(c.y)}..${Math.round(c.y + c.h)} (${Math.round(c.w)} × ${Math.round(c.h)})`,
+  );
+  return lines.join('\n');
 }
 
 function holeCorridorHint(holeCount: HoleCount): string {
@@ -210,7 +257,7 @@ OUTPUT
 - MORE DETAIL > LESS. If the model is tempted to ship a sparse hole, add 3 more bunkers, 2 more rough patches, and a cluster of trees.`;
 }
 
-export function buildUserPrompt(req: GenerateCourseRequest): string {
+export function buildUserPrompt(req: GenerateCourseRequest, corridors: Corridor[]): string {
   const planet = PLANETS[req.planet];
   const dims = worldDims(req.holeCount);
   const allowedTrees = planet.flora.length > 0 ? planet.flora.join(', ') : '(no trees allowed on this planet)';
@@ -228,8 +275,23 @@ COURSE METADATA
 - Wind: ${req.wind}  →  ${WIND_GUIDE[req.wind]}
 - Inspiration (free-form): ${req.inspiration || '(none; use your own creativity)'}
 
-WORLD LAYOUT
-${holeCorridorHint(req.holeCount)}
+WORLD
+- worldWidth = ${dims.width}, worldHeight = ${dims.height}
+
+HOLE CORRIDORS — HARD BOUNDARIES (every hole must stay inside its corridor)
+Each hole has its own exclusive corridor. NOTHING from one hole may cross into another hole's corridor. No shared fairways, no shared greens, no overlapping rough, no shared trees. Tee, green, cup, fairwayPath waypoints, rough/deepRough/desert rects, hazards, and trees ALL must fit inside the hole's corridor below:
+${corridorHint(corridors)}
+
+For routing flow, each hole's tee should sit near its "entry" edge (shared with the previous hole's corridor) and each hole's green near its "exit" edge (shared with the next hole's corridor) — but NEVER outside the corridor itself.
+
+CUP MUST BE ON THE GREEN
+- cup (x, y) MUST sit inside the green rectangle (green.x ≤ cup.x ≤ green.x+green.w AND green.y ≤ cup.y ≤ green.y+green.h).
+- Place the cup near the green center (offset at most 30% of green dimensions from center). Never place the cup on grass, fairway, or outside the green.
+
+NO BUNKERS OR WATER ON THE GREEN
+- Greenside bunkers go OUTSIDE the green, touching or near its edge. NEVER place a hazard (sand or water) on top of the green surface. NEVER overlap a hazard with the green rectangle.
+- Keep all bunker/water centers at least (green width/2 + bunker size/2 + 8) units from the green center.
+- Similarly, do not place TREES on the green. Trees go along fairway edges, never on the putting surface.
 
 Required fields in your response:
 - worldWidth = ${dims.width}
@@ -239,9 +301,9 @@ Required fields in your response:
 For EACH hole:
 - designIntent: one sentence describing the architectural concept (dogleg direction, strategic line, signature feature).
 - routingAngle: a unique-ish degree value per hole so the course doesn't look like a grid. Rotate 30–120° between consecutive holes.
-- terrain.fairwayPath: 4–9 waypoints; USE BENDS for doglegs and natural curves.
+- terrain.fairwayPath: 4–9 waypoints; USE BENDS for doglegs and natural curves. All waypoints inside the corridor.
 - terrain.fairwayWidth: a width per hole (tighter for hard holes, wider for casual).
-- terrain.green: oriented (rotation) to present the deepest target to the aggressive approach line.
+- terrain.green: oriented (rotation) to present the deepest target to the aggressive approach line. Green fully inside the corridor.
 - Rotate bunkers, rough patches, desert rects at varied angles (15°, 30°, 45°, 75°, 105°, etc.). NOTHING axis-aligned by default.
 
 Hit or exceed the per-par DETAIL TARGETS. A course that looks sparse from altitude is unacceptable.

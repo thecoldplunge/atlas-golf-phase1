@@ -111,7 +111,9 @@ function capsuleBetween(params: {
 }
 
 const slopeDirections: SlopeDirection[] = ['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW'];
-const RASTER_STEP = 24;
+// Finer raster = smoother fairway corridors in the game (which renders rects,
+// not vector paths). 12 keeps adjacent cells contiguous for rotated capsules.
+const RASTER_STEP = 12;
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));

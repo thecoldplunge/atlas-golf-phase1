@@ -24,6 +24,7 @@ interface Hole {
   id: number;
   par: 3 | 4 | 5;
   routingAngle?: number;
+  corridor?: { x: number; y: number; w: number; h: number };
   ballStart: Vec2;
   cup: Vec2;
   terrain: {
@@ -137,16 +138,158 @@ function anchorBallStart(hole: Hole) {
 }
 
 /**
- * Ensure cup is inside the green rect after any scaling.
+ * Ensure cup is inside the green. We ALWAYS place the cup inside the
+ * inner 70% of the green bounding box so it's visibly on the green
+ * regardless of the green's shape preset (oval, squircle, etc.) and
+ * regardless of any rotation applied later.
  */
 function anchorCup(hole: Hole) {
   const g = hole.terrain.green;
   const cx = g.x + g.w / 2;
   const cy = g.y + g.h / 2;
-  // If cup is outside green, snap to center
-  if (hole.cup.x < g.x || hole.cup.x > g.x + g.w || hole.cup.y < g.y || hole.cup.y > g.y + g.h) {
-    hole.cup = { x: cx, y: cy };
+  // Target: the cup's original offset from green center, clamped to inner 65% of the green.
+  const dx = hole.cup.x - cx;
+  const dy = hole.cup.y - cy;
+  const maxDx = (g.w / 2) * 0.65;
+  const maxDy = (g.h / 2) * 0.65;
+  const clampedDx = Math.max(-maxDx, Math.min(maxDx, dx));
+  const clampedDy = Math.max(-maxDy, Math.min(maxDy, dy));
+  // If the cup was wildly off-green, just center it.
+  const farOff =
+    Math.abs(dx) > g.w * 0.9 || Math.abs(dy) > g.h * 0.9;
+  hole.cup = farOff
+    ? { x: cx, y: cy }
+    : { x: cx + clampedDx, y: cy + clampedDy };
+}
+
+/** Point-in-axis-aligned-rect test. */
+function pointInRect(p: Vec2, rect: RectWithShape): boolean {
+  return p.x >= rect.x && p.x <= rect.x + rect.w && p.y >= rect.y && p.y <= rect.y + rect.h;
+}
+
+/** Rect overlaps another rect (axis-aligned). */
+function rectsOverlap(a: RectWithShape, b: RectWithShape): boolean {
+  return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
+}
+
+/**
+ * Evict hazards that sit on top of the green. Water is pushed further out than
+ * sand because water on a green is never acceptable; sand may kiss the edge.
+ */
+function evictHazardsFromGreen(hole: Hole): number {
+  const g = hole.terrain.green;
+  const gc: Vec2 = { x: g.x + g.w / 2, y: g.y + g.h / 2 };
+  const greenRadius = Math.max(g.w, g.h) / 2;
+  let moved = 0;
+
+  for (const hz of hole.hazards) {
+    const hc: Vec2 = { x: hz.x + hz.w / 2, y: hz.y + hz.h / 2 };
+    const hazRadius = Math.max(hz.w, hz.h) / 2;
+    const dx = hc.x - gc.x;
+    const dy = hc.y - gc.y;
+    const dist = Math.hypot(dx, dy);
+    const isWater = hz.type === 'waterRect';
+    // Sand may touch green edge lightly. Water must stay clear.
+    const minDist = isWater
+      ? greenRadius + hazRadius + 16
+      : greenRadius + hazRadius * 0.6 + 4;
+    if (dist < minDist) {
+      let ux: number, uy: number;
+      if (dist > 0.5) {
+        ux = dx / dist;
+        uy = dy / dist;
+      } else {
+        ux = 0;
+        uy = 1;
+      }
+      const newCx = gc.x + ux * minDist;
+      const newCy = gc.y + uy * minDist;
+      hz.x = newCx - hz.w / 2;
+      hz.y = newCy - hz.h / 2;
+      moved++;
+    }
   }
+  return moved;
+}
+
+/**
+ * Evict water hazards that overlap any fairway rect. Water should sit
+ * beside the fairway, not on it. For each water rect that touches the
+ * fairway bbox, push it laterally (perpendicular to the tee→green line)
+ * until it clears the fairway.
+ */
+function evictWaterFromFairway(hole: Hole): number {
+  if (!Array.isArray(hole.terrain.fairway) || hole.terrain.fairway.length === 0) return 0;
+  const tc: Vec2 = { x: hole.terrain.tee.x + hole.terrain.tee.w / 2, y: hole.terrain.tee.y + hole.terrain.tee.h / 2 };
+  const gc: Vec2 = { x: hole.terrain.green.x + hole.terrain.green.w / 2, y: hole.terrain.green.y + hole.terrain.green.h / 2 };
+  const ax = gc.x - tc.x;
+  const ay = gc.y - tc.y;
+  const alen = Math.hypot(ax, ay) || 1;
+  // Perpendicular unit vector to the tee→green line
+  const nx = -ay / alen;
+  const ny = ax / alen;
+
+  // Compute fairway bbox (axis-aligned bound of all fairway rects)
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const f of hole.terrain.fairway) {
+    minX = Math.min(minX, f.x);
+    minY = Math.min(minY, f.y);
+    maxX = Math.max(maxX, f.x + f.w);
+    maxY = Math.max(maxY, f.y + f.h);
+  }
+  const fwCx = (minX + maxX) / 2;
+  const fwCy = (minY + maxY) / 2;
+  const fwHalfW = (maxX - minX) / 2;
+  const fwHalfH = (maxY - minY) / 2;
+
+  let moved = 0;
+  for (const hz of hole.hazards) {
+    if (hz.type !== 'waterRect') continue;
+    const hc: Vec2 = { x: hz.x + hz.w / 2, y: hz.y + hz.h / 2 };
+    // Simple overlap check against fairway bbox
+    const overlap =
+      hc.x >= minX - hz.w / 2 &&
+      hc.x <= maxX + hz.w / 2 &&
+      hc.y >= minY - hz.h / 2 &&
+      hc.y <= maxY + hz.h / 2;
+    if (!overlap) continue;
+    // Decide push direction: whichever side of the tee→green line the water
+    // currently leans toward (dot product with perpendicular).
+    const relX = hc.x - fwCx;
+    const relY = hc.y - fwCy;
+    const lateral = relX * nx + relY * ny;
+    const sign = lateral >= 0 ? 1 : -1;
+    // Push far enough that water is fully outside the fairway bbox in the
+    // perpendicular direction.
+    const pushDist = Math.max(fwHalfW, fwHalfH) + Math.max(hz.w, hz.h) / 2 + 20;
+    hz.x = fwCx + nx * sign * pushDist - hz.w / 2;
+    hz.y = fwCy + ny * sign * pushDist - hz.h / 2;
+    moved++;
+  }
+  return moved;
+}
+
+/** Also evict trees that sit on the green. */
+function evictObstaclesFromGreen(hole: Hole): number {
+  const g = hole.terrain.green;
+  const gc: Vec2 = { x: g.x + g.w / 2, y: g.y + g.h / 2 };
+  const greenRadius = Math.max(g.w, g.h) / 2;
+  let moved = 0;
+  for (const o of hole.obstacles) {
+    const dx = o.x - gc.x;
+    const dy = o.y - gc.y;
+    const dist = Math.hypot(dx, dy);
+    const minDist = greenRadius + o.r + 6;
+    if (dist < minDist) {
+      let ux: number, uy: number;
+      if (dist > 0.5) { ux = dx / dist; uy = dy / dist; }
+      else { ux = 0; uy = 1; }
+      o.x = gc.x + ux * minDist;
+      o.y = gc.y + uy * minDist;
+      moved++;
+    }
+  }
+  return moved;
 }
 
 /**
@@ -214,11 +357,21 @@ function normalize360(deg: number): number {
 export interface PostProcessReport {
   holesScaled: number;
   holesRotated: number;
+  hazardsEvicted: number;
+  treesEvicted: number;
+  corridorsClamped: number;
   details: Array<{ id: number; par: number; oldDist: number; newDist: number; routingAngle?: number }>;
 }
 
 export function postProcessCourse(course: Course): PostProcessReport {
-  const report: PostProcessReport = { holesScaled: 0, holesRotated: 0, details: [] };
+  const report: PostProcessReport = {
+    holesScaled: 0,
+    holesRotated: 0,
+    hazardsEvicted: 0,
+    treesEvicted: 0,
+    corridorsClamped: 0,
+    details: [],
+  };
   for (const hole of course.holes) {
     if (!hole.terrain || !hole.terrain.tee || !hole.terrain.green || !hole.cup) continue;
     // Apply routing angle FIRST, then distance cap (distance cap works regardless of rotation)
@@ -229,6 +382,16 @@ export function postProcessCourse(course: Course): PostProcessReport {
     const result = enforceDistanceCap(hole);
     anchorBallStart(hole);
     anchorCup(hole);
+    // Evict any bunker/water/tree that landed on top of the green
+    report.hazardsEvicted += evictHazardsFromGreen(hole);
+    // Evict water sitting on fairway (water should be beside the corridor, not on it)
+    report.hazardsEvicted += evictWaterFromFairway(hole);
+    report.treesEvicted += evictObstaclesFromGreen(hole);
+    // Clamp into allocated corridor (if any)
+    if (hole.corridor) {
+      const clamped = clampHoleToCorridor(hole, hole.corridor);
+      if (clamped) report.corridorsClamped++;
+    }
     if (result.changed) {
       report.holesScaled++;
       report.details.push({
@@ -241,4 +404,55 @@ export function postProcessCourse(course: Course): PostProcessReport {
     }
   }
   return report;
+}
+
+/**
+ * Clamp every geometric element of the hole to stay inside the given corridor
+ * rectangle. For points, hard-clamp. For rects/bboxes, shift inward if their
+ * bounds exceed the corridor.
+ */
+function clampHoleToCorridor(hole: Hole, corridor: { x: number; y: number; w: number; h: number }): boolean {
+  const minX = corridor.x + 8;
+  const minY = corridor.y + 8;
+  const maxX = corridor.x + corridor.w - 8;
+  const maxY = corridor.y + corridor.h - 8;
+  let clamped = false;
+
+  const clampRect = (r: RectWithShape) => {
+    let cx = r.x + r.w / 2;
+    let cy = r.y + r.h / 2;
+    const halfW = Math.min(r.w / 2, (maxX - minX) / 2);
+    const halfH = Math.min(r.h / 2, (maxY - minY) / 2);
+    const nx = Math.max(minX + halfW, Math.min(maxX - halfW, cx));
+    const ny = Math.max(minY + halfH, Math.min(maxY - halfH, cy));
+    if (nx !== cx || ny !== cy) clamped = true;
+    r.x = nx - r.w / 2;
+    r.y = ny - r.h / 2;
+  };
+
+  const clampPoint = (p: Vec2) => {
+    const nx = Math.max(minX, Math.min(maxX, p.x));
+    const ny = Math.max(minY, Math.min(maxY, p.y));
+    if (nx !== p.x || ny !== p.y) clamped = true;
+    p.x = nx;
+    p.y = ny;
+  };
+
+  clampRect(hole.terrain.tee);
+  clampRect(hole.terrain.green);
+  if (Array.isArray(hole.terrain.fairway)) hole.terrain.fairway.forEach(clampRect);
+  if (Array.isArray(hole.terrain.fairwayPath)) hole.terrain.fairwayPath.forEach(clampPoint);
+  hole.terrain.rough.forEach(clampRect);
+  hole.terrain.deepRough.forEach(clampRect);
+  hole.terrain.desert.forEach(clampRect);
+  for (const hz of hole.hazards) clampRect(hz);
+  for (const o of hole.obstacles) {
+    const p = { x: o.x, y: o.y };
+    clampPoint(p);
+    o.x = p.x;
+    o.y = p.y;
+  }
+  clampPoint(hole.cup);
+  clampPoint(hole.ballStart);
+  return clamped;
 }
