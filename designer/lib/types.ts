@@ -14,6 +14,26 @@ export type ToolType =
   | 'slope';
 
 export type TreeType = 'pine' | 'oak' | 'palm' | 'birch' | 'cypress';
+
+// Vertical profile of a tree — the game uses these to decide whether an
+// airborne ball clips the trunk (narrow, full height) or the canopy (wide,
+// only at the top 25% of height). Keep in sync with App.js:getTreePhysics.
+export const TREE_HEIGHT_BY_LOOK: Record<TreeType | 'tree', number> = {
+  pine: 32,
+  oak: 22,
+  palm: 28,
+  birch: 24,
+  cypress: 26,
+  tree: 24,
+};
+export const TREE_CANOPY_FRACTION = 0.25;
+export function getTreePhysics(look: string | undefined, r: number): { h: number; trunkR: number; canopyStart: number } {
+  const k = (look ?? 'tree') as keyof typeof TREE_HEIGHT_BY_LOOK;
+  const h = TREE_HEIGHT_BY_LOOK[k] ?? 20;
+  const trunkR = Math.max(1.2, r * 0.3);
+  const canopyStart = h * (1 - TREE_CANOPY_FRACTION);
+  return { h, trunkR, canopyStart };
+}
 export type SlopeDirection = 'N' | 'S' | 'E' | 'W' | 'NE' | 'NW' | 'SE' | 'SW';
 export type ShapePreset = 'rectangle' | 'circle' | 'oval' | 'squircle' | 'diamond' | 'capsule';
 export type SurfaceKind = 'fairway' | 'green' | 'rough' | 'deepRough' | 'sand' | 'water' | 'desert';

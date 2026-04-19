@@ -1,6 +1,7 @@
 'use client';
 
 import type { HoleData, SlopeDirection, SurfaceKind, TreeType } from '@/lib/types';
+import { getTreePhysics } from '@/lib/types';
 import { shapeBounds, toggleSegmentCurve } from '@/lib/vector';
 
 const slopeDirs: SlopeDirection[] = ['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW'];
@@ -232,6 +233,18 @@ export default function PropertiesPanel({
             <input type="range" min={8} max={24} step={0.5} value={selectedTree.r} className="w-full"
               onChange={(e) => onUpdateTree(selectedTree.id, { r: Number(e.target.value) })} />
           </div>
+          {(() => {
+            const tp = getTreePhysics(selectedTree.look, selectedTree.r);
+            return (
+              <div className="text-xs text-gray-400 border-t border-gray-700 pt-2 space-y-1">
+                <div className="font-medium text-gray-300 mb-1">Collision (auto)</div>
+                <div className="flex justify-between"><span>Height</span><span>{tp.h} yd</span></div>
+                <div className="flex justify-between"><span>Trunk radius</span><span>{tp.trunkR.toFixed(1)}</span></div>
+                <div className="flex justify-between"><span>Canopy from</span><span>{tp.canopyStart.toFixed(1)} yd</span></div>
+                <div className="text-gray-500 pt-1">Ball clips trunk below {tp.canopyStart.toFixed(0)}yd, canopy above. Passes over at {tp.h}yd.</div>
+              </div>
+            );
+          })()}
         </div>
       )}
 

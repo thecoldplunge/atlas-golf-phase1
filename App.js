@@ -1707,6 +1707,27 @@ const SURFACE_PHYSICS = {
   tee: { rollFriction: 3.0, bounce: 0.22, landingDamping: 0.85, wallRestitution: 0.7, powerPenalty: [1.0, 1.0], swingSensitivity: 1.0, label: 'Tee Box', emoji: '🏌️', color: '#5aad42' }
 };
 
+// Tree vertical profile: a narrow trunk (trunkR) extends from the ground up to
+// the canopy. The wider canopy (at radius o.r) only occupies the top 25% of
+// the tree. Shots flown BELOW the canopy must still clear the trunk, but can
+// be punched under the leaves. Shots above the tree height pass over freely.
+const TREE_HEIGHT_BY_LOOK = {
+  pine: 32,
+  oak: 22,
+  palm: 28,
+  birch: 24,
+  cypress: 26,
+  tree: 24, // generic hand-authored
+};
+const TREE_CANOPY_FRACTION = 0.25; // top 25% of height is canopy
+const getTreePhysics = (o) => {
+  const defaultH = TREE_HEIGHT_BY_LOOK[o.look] ?? 20;
+  const h = typeof o.h === 'number' ? o.h : defaultH;
+  const trunkR = typeof o.trunkR === 'number' ? o.trunkR : Math.max(1.2, (o.r ?? 10) * 0.3);
+  const canopyStart = h * (1 - TREE_CANOPY_FRACTION);
+  return { h, trunkR, canopyStart };
+};
+
 const GOLFER_PIXEL_KEY = {
   o: '#10151b',
   n: '#1f4ed8',
@@ -2700,13 +2721,10 @@ export default function App() {
           };
 
           const restitution = surfacePhysics.wallRestitution;
-          if (flight.z <= 1.15) {
-            next = resolveGroundCollisions(tickHole, next, vel, restitution);
-          } else {
-            const radiusWorld = BALL_RADIUS_WORLD;
-            next.x = clamp(next.x, radiusWorld, WORLD.w - radiusWorld);
-            next.y = clamp(next.y, radiusWorld, WORLD.h - radiusWorld);
-          }
+          // Always resolve collisions — trees now have height, so airborne
+          // shots can clip branches/trunk. Rect walls stay ground-only (gated
+          // inside the resolver).
+          next = resolveGroundCollisions(tickHole, next, vel, restitution, flight);
 
           // Track peak height
           if (flight.z > shotPeakHeightRef.current) shotPeakHeightRef.current = flight.z;
@@ -3204,8 +3222,10 @@ export default function App() {
     return { xNorm, yNorm, launchAdjust, spinAdjust, curveDeg, shapeLabel, flightLabel };
   };
 
-  const resolveGroundCollisions = (hole, next, vel, restitution) => {
+  const resolveGroundCollisions = (hole, next, vel, restitution, flight = null) => {
     const radiusWorld = BALL_RADIUS_WORLD;
+    const ballZ = flight ? flight.z : 0;
+    const isAirborne = ballZ > 1.15;
     let adjusted = {
       x: clamp(next.x, radiusWorld, WORLD.w - radiusWorld),
       y: clamp(next.y, radiusWorld, WORLD.h - radiusWorld)
@@ -3213,6 +3233,8 @@ export default function App() {
 
     hole.obstacles.forEach((o) => {
       if (o.type === 'rect') {
+        // Rect obstacles (legacy walls) are ground-only.
+        if (isAirborne) return;
         const nearestX = clamp(adjusted.x, o.x, o.x + o.w);
         const nearestY = clamp(adjusted.y, o.y, o.y + o.h);
         const dx = adjusted.x - nearestX;
@@ -3240,10 +3262,14 @@ export default function App() {
       }
 
       if (o.type === 'circle') {
+        // Tree vertical profile: narrow trunk up to canopy start, wide canopy above.
+        const tp = getTreePhysics(o);
+        if (ballZ >= tp.h) return; // ball is over the tree
+        const effectiveR = ballZ < tp.canopyStart ? tp.trunkR : o.r;
         const dx = adjusted.x - o.x;
         const dy = adjusted.y - o.y;
         const dist = Math.hypot(dx, dy);
-        const minDist = o.r + radiusWorld;
+        const minDist = effectiveR + radiusWorld;
         if (dist < minDist) {
           const normal = dist < 0.001 ? { x: 1, y: 0 } : { x: dx / dist, y: dy / dist };
           adjusted = {
@@ -3251,7 +3277,19 @@ export default function App() {
             y: o.y + normal.y * (minDist + 0.1)
           };
           const vn = vel.x * normal.x + vel.y * normal.y;
-          if (vn < 0) {
+          if (isAirborne) {
+            // Branch/trunk hit in the air: soft restitution, heavy tangential
+            // damping, and kill upward motion so the ball drops into the base.
+            if (vn < 0) {
+              vel.x -= (1 + 0.2) * vn * normal.x;
+              vel.y -= (1 + 0.2) * vn * normal.y;
+            }
+            vel.x *= 0.4;
+            vel.y *= 0.4;
+            if (flight) {
+              flight.vz = Math.min(flight.vz, 0) * 0.3;
+            }
+          } else if (vn < 0) {
             vel.x -= (1 + restitution) * vn * normal.x;
             vel.y -= (1 + restitution) * vn * normal.y;
           }
