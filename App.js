@@ -1947,6 +1947,9 @@ export default function App() {
       if (!green || !pointInRect(target, green)) {
         return;
       }
+      if (puttSimulated) {
+        return;
+      }
       setPuttAimPoint(target);
       setPuttSimulated(false);
       setPuttTargetPowerPct(null);
