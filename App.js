@@ -3407,21 +3407,21 @@ export default function App() {
             </View>
 
             <View style={styles.hudStrip}>
-              <View style={styles.hudItem}>
-                <Text style={styles.hudLabel}>Hole</Text>
-                <Text style={styles.hudValue}>{safeHoleIndex + 1} / {ACTIVE_HOLES.length}</Text>
+              <View style={styles.hudItemCompact}>
+                <Text style={styles.hudLabelCompact}>H</Text>
+                <Text style={styles.hudValueCompact}>{safeHoleIndex + 1}/{ACTIVE_HOLES.length}</Text>
               </View>
-              <View style={styles.hudItem}>
-                <Text style={styles.hudLabel}>Par</Text>
-                <Text style={styles.hudValue}>{currentHole.par}</Text>
+              <View style={styles.hudItemCompact}>
+                <Text style={styles.hudLabelCompact}>P</Text>
+                <Text style={styles.hudValueCompact}>{currentHole.par}</Text>
               </View>
-              <View style={styles.hudItem}>
-                <Text style={styles.hudLabel}>Shot</Text>
-                <Text style={styles.hudValue}>{shotNumber}</Text>
+              <View style={styles.hudItemCompact}>
+                <Text style={styles.hudLabelCompact}>S</Text>
+                <Text style={styles.hudValueCompact}>{shotNumber}</Text>
               </View>
               <Pressable
                 style={[
-                  styles.hudItem,
+                  styles.hudItemCompact,
                   styles.hudItemPressable,
                   shotControlOpen && styles.hudItemActive,
                   puttingMode && styles.disabled
@@ -3432,25 +3432,21 @@ export default function App() {
                   setLastShotNote('Shot shape opened from yardage. Drag the blue dot, then tap the ball to hit.');
                 }}
               >
-                <Text style={styles.hudLabel}>Yards</Text>
-                <Text style={styles.hudValue}>{yardsToCup}</Text>
+                <Text style={styles.hudLabelCompact}>YD</Text>
+                <Text style={styles.hudValueCompact}>{yardsToCup}</Text>
               </Pressable>
               {puttingMode ? (
-                <View style={styles.hudItemPutting}>
-                  <Text style={styles.hudPuttingText}>PUTTING</Text>
+                <View style={styles.hudItemPuttingCompact}>
+                  <Text style={styles.hudPuttingText}>PUTT</Text>
                 </View>
               ) : null}
-              <View style={styles.hudItem}>
-                <Text style={styles.hudLabel}>Lie</Text>
-                <Text style={styles.hudValue}>{(SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).emoji} {(SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).label}</Text>
+              <View style={styles.hudLieBadge}>
+                <View style={[styles.hudLieSwatch, { backgroundColor: (SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).color }]} />
+                <Text style={styles.hudLieEmoji}>{(SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).emoji}</Text>
               </View>
-              <View style={styles.hudItem}>
-                <Text style={styles.hudLabel}>Wind</Text>
-                <Text style={styles.hudValue}>{windLabel}</Text>
-              </View>
-              <View style={styles.hudItemWind}>
-                <Text style={styles.windArrow}>{windArrow}</Text>
-                <Text style={styles.windDirText}>{windDirLabel}</Text>
+              <View style={styles.hudWindCompact}>
+                <Text style={styles.hudWindSpeed}>{windLabel}</Text>
+                <Text style={styles.hudWindDirMini}>{windArrow} {windDirLabel}</Text>
               </View>
             </View>
           </View>
@@ -4169,13 +4165,14 @@ const styles = StyleSheet.create({
   hudStrip: {
     flex: 1,
     flexDirection: 'row',
-    gap: 6,
+    gap: 4,
     backgroundColor: 'rgba(7, 11, 9, 0.64)',
     borderRadius: 15,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.16)',
-    paddingHorizontal: 6,
-    paddingVertical: 6
+    paddingHorizontal: 5,
+    paddingVertical: 5,
+    alignItems: 'stretch'
   },
   hudItem: {
     minWidth: 52,
@@ -4183,6 +4180,79 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.05)'
+  },
+  hudItemCompact: {
+    minWidth: 38,
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+    borderRadius: 9,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  hudLabelCompact: {
+    color: '#9fb59f',
+    fontSize: 9,
+    fontWeight: '700'
+  },
+  hudValueCompact: {
+    color: '#f5fbef',
+    fontSize: 12,
+    fontWeight: '800'
+  },
+  hudItemPuttingCompact: {
+    minWidth: 46,
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+    borderRadius: 9,
+    backgroundColor: 'rgba(114, 186, 84, 0.24)',
+    borderWidth: 1,
+    borderColor: 'rgba(178, 230, 137, 0.62)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  hudLieBadge: {
+    width: 34,
+    paddingVertical: 5,
+    borderRadius: 9,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative'
+  },
+  hudLieSwatch: {
+    position: 'absolute',
+    left: 4,
+    top: 4,
+    width: 6,
+    height: 22,
+    borderRadius: 3,
+    opacity: 0.95
+  },
+  hudLieEmoji: {
+    fontSize: 14,
+    marginLeft: 4
+  },
+  hudWindCompact: {
+    minWidth: 52,
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+    borderRadius: 9,
+    backgroundColor: 'rgba(80, 140, 220, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(111, 174, 255, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  hudWindSpeed: {
+    color: '#f5fbef',
+    fontSize: 12,
+    fontWeight: '800'
+  },
+  hudWindDirMini: {
+    color: '#9fc8ff',
+    fontSize: 8,
+    fontWeight: '700'
   },
   hudItemWind: {
     minWidth: 42,
