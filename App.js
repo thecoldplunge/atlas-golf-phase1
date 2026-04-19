@@ -794,7 +794,7 @@ const hapticDoubleTap = () => {
   } catch (e) { /* silent */ }
 };
 const PUTTING_ZOOM_MULT = 1.8;
-const SLOPE_FORCE = 5.0;
+const SLOPE_FORCE = 7.5;
 const PUTT_PREVIEW_DT = 1 / 120;
 const PUTT_PREVIEW_MAX_TICKS = 1400;
 const PUTT_PREVIEW_SAMPLE_TICKS = 8;
@@ -1513,8 +1513,10 @@ export default function App() {
             vel.x *= dragFactor;
             vel.y *= dragFactor;
             const slopeAccel = getGreenSlopeForce(tickHole, ballRef.current, surfaceNamePre);
-            // Scale slope effect by ball speed — prevents slope from accelerating a stopped ball forever
-            const slopeSpeedCap = Math.min(1.0, speed / 2.0);
+            // Keep slope alive on slower putts so break still shows near the cup
+            const slopeSpeedCap = surfaceNamePre === 'green' || surfaceNamePre === 'fringe'
+              ? clamp(0.45 + speed / 2.5, 0.45, 1.25)
+              : Math.min(1.0, speed / 2.0);
             vel.x += slopeAccel.x * slopeSpeedCap * dt;
             vel.y += slopeAccel.y * slopeSpeedCap * dt;
           } else {
@@ -2136,7 +2138,9 @@ export default function App() {
       vel.y *= dragFactor;
       const slope = getGreenSlopeForce(currentHole, pos, surfaceName);
       const previewSpeed = magnitude(vel);
-      const previewSlopeCap = Math.min(1.0, previewSpeed / 2.0);
+      const previewSlopeCap = surfaceName === 'green' || surfaceName === 'fringe'
+        ? clamp(0.45 + previewSpeed / 2.5, 0.45, 1.25)
+        : Math.min(1.0, previewSpeed / 2.0);
       vel.x += slope.x * previewSlopeCap * PUTT_PREVIEW_DT;
       vel.y += slope.y * previewSlopeCap * PUTT_PREVIEW_DT;
 
