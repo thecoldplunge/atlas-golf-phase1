@@ -2,7 +2,6 @@ const YARDS_PER_WORLD = 4;
 const CURVE_FORCE = 1.35;
 const CURVE_LAUNCH_BLEND = 1.15;
 const WIND_FORCE_SCALE = 0.35;
-const BALL_RADIUS_WORLD = 1.2;
 const CLUBS = [
   { key: 'PT', name: 'Putter', short: 'PT', speed: 0.16, launch: 0.03, roll: 0.95, spin: 1.22, carryYards: 40 },
   { key: 'LW', name: 'Lob Wedge', short: 'LW', speed: 0.44, launch: 1.18, roll: 0.52, spin: 0.82, carryYards: 70 },
@@ -67,15 +66,14 @@ function simulateShot(opts) {
   let vz = (1.05 + club.launch * 1.55) * launch.launchRatio * launch.launchAdjust;
   const wind = WIND_DIRS[opts.windDir || 'N'];
   let apex = 0;
+  let carryForward = 0;
   const dt = 1/60;
-  let airborneFrames = 0;
-  for (let frame = 0; frame < 2000; frame++) {
+  for (let frame = 0; frame < 2400; frame++) {
     const speed = magnitude(vel);
     if (speed < 0.03 && z <= 0.001 && frame > 10) break;
     vel.x += wind.x * (opts.windSpeed || 0) * WIND_FORCE_SCALE * 0.0009 * dt;
     vel.y += wind.y * (opts.windSpeed || 0) * WIND_FORCE_SCALE * 0.0009 * dt;
     if (z > 0.01 || vz > 0.01) {
-      airborneFrames++;
       const aim = launch.finalAngle;
       const fwdDir = { x: Math.cos(aim), y: Math.sin(aim) };
       const perpDir = { x: -Math.sin(aim), y: Math.cos(aim) };
@@ -103,40 +101,58 @@ function simulateShot(opts) {
     }
     pos.x += vel.x * dt * 60;
     pos.y += vel.y * dt * 60;
+    carryForward = Math.max(carryForward, -pos.y * YARDS_PER_WORLD);
   }
-  const carryYards = airborneFrames > 0 ? Math.abs(pos.y) * YARDS_PER_WORLD : 0;
+  const forwardYards = -pos.y * YARDS_PER_WORLD;
   const offlineYards = pos.x * YARDS_PER_WORLD;
   const totalYards = magnitude(pos) * YARDS_PER_WORLD;
-  return { club: club.key, lie: opts.lie, power: opts.powerPct, spinX: opts.spinXNorm, spinY: opts.spinYNorm, swing: opts.swingDeviation, wind: `${opts.windDir || 'N'} ${opts.windSpeed || 0}`, totalCurveDeg: Math.round(launch.totalCurveDeg*10)/10, launchAngleDeg: Math.round(launch.finalAngle * 180 / Math.PI), totalYards: Math.round(totalYards), offlineYards: Math.round(offlineYards), apex: Math.round(apex*10)/10, end:{x:pos.x,y:pos.y} };
+  return { id: opts.id, label: opts.label, club: club.key, lie: opts.lie, power: opts.powerPct, spinX: opts.spinXNorm, spinY: opts.spinYNorm, swing: opts.swingDeviation, wind: `${opts.windDir || 'N'} ${opts.windSpeed || 0}`, totalCurveDeg: Math.round(launch.totalCurveDeg*10)/10, forwardYards: Math.round(forwardYards), carryForward: Math.round(carryForward), totalYards: Math.round(totalYards), offlineYards: Math.round(offlineYards), apex: Math.round(apex*10)/10 };
 }
-function buildScenarios() {
-  const scenarios = [];
-  const clubs = ['DR','3W','5I','7I','PW'];
-  const lies = ['tee','fairway','rough','deepRough','sand'];
-  const powers = [60, 85, 100, 115];
-  const spinXs = [-1,-0.5,0,0.5,1];
-  const swings = [-0.8,-0.3,0,0.3,0.8];
-  for (const clubKey of clubs) {
-    for (const lie of lies) {
-      for (const powerPct of powers) {
-        scenarios.push({ clubKey, lie, powerPct, spinXNorm:0, spinYNorm:0, swingDeviation:0, windDir:'N', windSpeed:0, label:'stock' });
-      }
-    }
+const EXPECTATIONS = {
+  DR: { stock100: { min: 220, max: 310 } },
+  '3W': { stock100: { min: 195, max: 280 } },
+  '5I': { stock100: { min: 135, max: 210 } },
+  '7I': { stock100: { min: 115, max: 185 } },
+  PW: { stock100: { min: 80, max: 135 } }
+};
+function scenario(id, label, clubKey, lie, powerPct, spinXNorm, swingDeviation) {
+  return { id, label, clubKey, lie, powerPct, spinXNorm, spinYNorm: 0, swingDeviation, windDir: 'N', windSpeed: 0 };
+}
+const scenarios = [
+  scenario('stock-dr','stock driver','DR','tee',100,0,0),
+  scenario('stock-3w','stock 3 wood','3W','fairway',100,0,0),
+  scenario('stock-5i','stock 5 iron','5I','fairway',100,0,0),
+  scenario('stock-7i','stock 7 iron','7I','fairway',100,0,0),
+  scenario('stock-pw','stock PW','PW','fairway',100,0,0),
+  scenario('slice-dr-max','max slice driver','DR','tee',100,1,0),
+  scenario('hook-dr-max','max hook driver','DR','tee',100,-1,0),
+  scenario('push-7i','push 7i','7I','fairway',100,0,0.8),
+  scenario('pull-7i','pull 7i','7I','fairway',100,0,-0.8),
+  scenario('rough-slice-5i','rough slice 5i','5I','rough',100,1,0),
+  scenario('deep-rough-stock-7i','deep rough stock 7i','7I','deepRough',100,0,0),
+  scenario('sand-pw','sand PW','PW','sand',100,0,0),
+];
+const results = scenarios.map(simulateShot).map((result) => {
+  const expectation = result.label.startsWith('stock') ? EXPECTATIONS[result.club]?.stock100 : null;
+  let pass = true;
+  let reason = 'ok';
+  if (expectation && (result.forwardYards < expectation.min || result.forwardYards > expectation.max)) {
+    pass = false;
+    reason = `stock-forward ${result.forwardYards} outside ${expectation.min}-${expectation.max}`;
   }
-  clubs.forEach(clubKey => {
-    [-1,-0.5,0.5,1].forEach(spinXNorm => scenarios.push({ clubKey, lie:'fairway', powerPct:100, spinXNorm, spinYNorm:0, swingDeviation:0, windDir:'N', windSpeed:0, label:'shape' }));
-    [-0.8,-0.3,0.3,0.8].forEach(swingDeviation => scenarios.push({ clubKey, lie:'fairway', powerPct:100, spinXNorm:0, spinYNorm:0, swingDeviation, windDir:'N', windSpeed:0, label:'swing' }));
-    scenarios.push({ clubKey, lie:'fairway', powerPct:100, spinXNorm:1, spinYNorm:0, swingDeviation:0.8, windDir:'N', windSpeed:0, label:'max-right-miss' });
-    scenarios.push({ clubKey, lie:'fairway', powerPct:100, spinXNorm:-1, spinYNorm:0, swingDeviation:-0.8, windDir:'N', windSpeed:0, label:'max-left-miss' });
-  });
-  return scenarios;
-}
-const results = buildScenarios().map(simulateShot);
-const flags = results.filter(r => Math.abs(r.offlineYards) > r.totalYards * 0.9 || r.totalYards > 420 || Number.isNaN(r.totalYards));
+  if (Math.abs(result.offlineYards) > Math.max(160, result.forwardYards * 1.1)) {
+    pass = false;
+    reason = `offline too large: ${result.offlineYards}`;
+  }
+  if (result.forwardYards < 0) {
+    pass = false;
+    reason = `negative forward progress: ${result.forwardYards}`;
+  }
+  return { ...result, pass, reason };
+});
 const summary = {
-  totalScenarios: results.length,
-  flagged: flags.length,
-  sampleFlags: flags.slice(0, 20),
-  shapeMatrix: results.filter(r => r.lie === 'fairway' && r.power === 100 && ['DR','3W','5I','7I','PW'].includes(r.club) && [-1, -0.5, 0.5, 1].includes(r.spinX)),
+  passed: results.filter(r => r.pass).length,
+  failed: results.filter(r => !r.pass).length,
+  results
 };
 console.log(JSON.stringify(summary, null, 2));
