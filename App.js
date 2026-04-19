@@ -858,6 +858,439 @@ const CLUBS = [
 ];
 
 // ═══════════════ GOLFER PROFILES ═══════════════
+const GOLFER_AVATAR_PALETTES = {
+  Human: { skin: '#f0c08c', hat: '#263246', shirt: '#3f76c1', pants: '#2e563c' },
+  Voss: { skin: '#9aa6b2', hat: '#5b2c6f', shirt: '#7c3aed', pants: '#334155' },
+  Rill: { skin: '#6ee7b7', hat: '#134e4a', shirt: '#0f766e', pants: '#164e63' },
+  Paxi: { skin: '#f0abfc', hat: '#7e22ce', shirt: '#db2777', pants: '#4c1d95' },
+  'Rill-Paxi Hybrid': { skin: '#a7f3d0', hat: '#831843', shirt: '#9333ea', pants: '#115e59' }
+};
+
+const IMPORTED_GOLFER_DATA = [
+  {
+    id: 'char-1',
+    name: 'Brakka Voln',
+    species: 'Voss',
+    origin: 'Keldara-7 — Voss Hegemony',
+    bio: 'A stocky young Voss monk-in-training whose swing is enormous, whose temper is worse, and whose \'serene enlightenment\' lasts exactly until he hits his first bunker.',
+    power: 70,
+    accuracy: 30,
+    touch: 20,
+    spinControl: 30,
+    putting: 30,
+    recovery: 40,
+    focus: 30,
+    composure: 30,
+    courseManagement: 40
+  },
+  {
+    id: 'char-2',
+    name: 'Thraxa Gorr',
+    species: 'Voss',
+    origin: 'Keldara-7 — Voss Hegemony',
+    bio: 'A proud second-generation Voss warrior-priestess whose breath-control rituals fail approximately every third hole, often in spectacular fashion.',
+    power: 80,
+    accuracy: 50,
+    touch: 30,
+    spinControl: 40,
+    putting: 40,
+    recovery: 50,
+    focus: 50,
+    composure: 40,
+    courseManagement: 50
+  },
+  {
+    id: 'char-3',
+    name: 'Korran Dresh',
+    species: 'Voss',
+    origin: 'Keldara-7 — Voss Hegemony',
+    bio: 'A grizzled Voss tour veteran who actually mastered his breathwork decades ago and only erupts about once a tournament — usually on the 18th when it matters most.',
+    power: 90,
+    accuracy: 60,
+    touch: 50,
+    spinControl: 60,
+    putting: 60,
+    recovery: 60,
+    focus: 70,
+    composure: 60,
+    courseManagement: 70
+  },
+  {
+    id: 'char-4',
+    name: 'Vass Dremmok',
+    species: 'Voss',
+    origin: 'Keldara-7 — Voss Hegemony',
+    bio: 'The reigning Keldaran Masters champion, a once-in-a-generation Voss whose meditation discipline is legendary and whose drives clear horizons without breaking his serene smile.',
+    power: 100,
+    accuracy: 80,
+    touch: 70,
+    spinControl: 80,
+    putting: 80,
+    recovery: 80,
+    focus: 90,
+    composure: 90,
+    courseManagement: 90
+  },
+  {
+    id: 'char-5',
+    name: 'Nyss\'ara Vel',
+    species: 'Rill',
+    origin: 'Rillspire — Rill Consortium',
+    bio: 'A skittish gecko rookie who sticks to walls when startled and can calculate a perfect approach shot but panics and camouflages every time a gallery shows up.',
+    power: 20,
+    accuracy: 60,
+    touch: 50,
+    spinControl: 50,
+    putting: 60,
+    recovery: 30,
+    focus: 60,
+    composure: 40,
+    courseManagement: 50
+  },
+  {
+    id: 'char-6',
+    name: 'Threll Cyrin',
+    species: 'Rill',
+    origin: 'Rillspire — Rill Consortium',
+    bio: 'A calm gecko journeyman with a famously mechanical swing, a tail that counterbalances every stroke, and a reputation for never missing a putt inside six feet.',
+    power: 30,
+    accuracy: 70,
+    touch: 60,
+    spinControl: 70,
+    putting: 70,
+    recovery: 50,
+    focus: 70,
+    composure: 60,
+    courseManagement: 70
+  },
+  {
+    id: 'char-7',
+    name: 'Ys\'the Moran',
+    species: 'Rill',
+    origin: 'Rillspire — Rill Consortium',
+    bio: 'A veteran non-binary Rill strategist whose camouflage-flecked scales read the green before their swing does, and who plays every hole like a chess problem they\'ve already solved.',
+    power: 40,
+    accuracy: 90,
+    touch: 80,
+    spinControl: 80,
+    putting: 90,
+    recovery: 60,
+    focus: 80,
+    composure: 70,
+    courseManagement: 90
+  },
+  {
+    id: 'char-8',
+    name: 'Caerelith Nen\'vax',
+    species: 'Rill',
+    origin: 'Rillspire — Rill Consortium',
+    bio: 'The cold, brilliant Rill grandmaster who holds the all-time Tour scoring record and whose scales never camouflage because her composure never wavers.',
+    power: 50,
+    accuracy: 100,
+    touch: 90,
+    spinControl: 100,
+    putting: 100,
+    recovery: 70,
+    focus: 100,
+    composure: 90,
+    courseManagement: 100
+  },
+  {
+    id: 'char-9',
+    name: 'Avani Pel',
+    species: 'Paxi',
+    origin: 'Paxa Prime — Paxi Collective',
+    bio: 'An eager young octopus-girl who reads the wind better than half the tour but overthinks every club selection while her tentacles nervously re-grip her bag.',
+    power: 30,
+    accuracy: 50,
+    touch: 70,
+    spinControl: 40,
+    putting: 50,
+    recovery: 40,
+    focus: 50,
+    composure: 40,
+    courseManagement: 40
+  },
+  {
+    id: 'char-10',
+    name: 'Miri Thaen-Oss',
+    species: 'Paxi',
+    origin: 'Paxa Prime — Paxi Collective',
+    bio: 'A quietly observant Paxi mid-tier pro whose chip shots seem to curl around obstacles, and who wears a soft hat on top of his mantle because he thinks it looks dignified.',
+    power: 40,
+    accuracy: 60,
+    touch: 80,
+    spinControl: 60,
+    putting: 60,
+    recovery: 60,
+    focus: 60,
+    composure: 50,
+    courseManagement: 70
+  },
+  {
+    id: 'char-11',
+    name: 'Pael Orrin-Vax',
+    species: 'Paxi',
+    origin: 'Paxa Prime — Paxi Collective',
+    bio: 'A soft-spoken Paxi elder whose tentacles move in slow meditative arcs, and who routinely carves impossible shots through crosswinds that ground the rest of the field.',
+    power: 50,
+    accuracy: 70,
+    touch: 90,
+    spinControl: 80,
+    putting: 80,
+    recovery: 70,
+    focus: 80,
+    composure: 70,
+    courseManagement: 90
+  },
+  {
+    id: 'char-12',
+    name: 'Sira Vennai',
+    species: 'Paxi',
+    origin: 'Paxa Prime — Paxi Collective',
+    bio: 'A legendary Paxi champion whose six tentacles move in impossibly coordinated precision and who is said to hear atmospheric shifts minutes before they arrive.',
+    power: 60,
+    accuracy: 90,
+    touch: 100,
+    spinControl: 100,
+    putting: 90,
+    recovery: 90,
+    focus: 100,
+    composure: 90,
+    courseManagement: 100
+  },
+  {
+    id: 'char-13',
+    name: 'Danny Ochoa',
+    species: 'Human',
+    origin: 'Earth — Sol System',
+    bio: 'A scrappy Earth-qualifier rookie who grinds out pars through sheer stubbornness and carries a tiny pet fold-hamster in his chest pocket for good luck.',
+    power: 50,
+    accuracy: 40,
+    touch: 40,
+    spinControl: 40,
+    putting: 40,
+    recovery: 50,
+    focus: 40,
+    composure: 60,
+    courseManagement: 40
+  },
+  {
+    id: 'char-14',
+    name: 'Lena Kowalski',
+    species: 'Human',
+    origin: 'Earth — Sol System',
+    bio: 'A mid-tier human pro with a metronome-steady game who loves putting, hates wind, and has exactly one party trick — holing out from forty feet when the crowd is holding its breath.',
+    power: 60,
+    accuracy: 60,
+    touch: 50,
+    spinControl: 50,
+    putting: 60,
+    recovery: 60,
+    focus: 60,
+    composure: 70,
+    courseManagement: 60
+  },
+  {
+    id: 'char-15',
+    name: 'Marcus Reyes',
+    species: 'Human',
+    origin: 'Earth — Sol System',
+    bio: 'A charismatic media darling who thrives on pressure, wears at least four sponsor logos at all times, and has won three majors while never quite closing the Grand Slam deal.',
+    power: 70,
+    accuracy: 70,
+    touch: 70,
+    spinControl: 70,
+    putting: 80,
+    recovery: 70,
+    focus: 70,
+    composure: 90,
+    courseManagement: 70
+  },
+  {
+    id: 'char-16',
+    name: 'Jordan Halston',
+    species: 'Human',
+    origin: 'Earth — Sol System',
+    bio: 'The current #1 human on tour, a three-time major champion with nerves of steel and a habit of destroying rivals in the final round with surgical precision.',
+    power: 80,
+    accuracy: 80,
+    touch: 80,
+    spinControl: 80,
+    putting: 90,
+    recovery: 80,
+    focus: 90,
+    composure: 100,
+    courseManagement: 90
+  },
+  {
+    id: 'char-17',
+    name: 'Kaelen Vosh-Tannik',
+    species: 'Voss',
+    origin: 'Keldara-7 — Tanaka Industries',
+    bio: 'A young Voss superstar groomed by Tanaka\'s sponsorship machine, with a crest so polished you could shave in it and a serene enlightened smile that cracks the moment he misses a green.',
+    power: 95,
+    accuracy: 85,
+    touch: 70,
+    spinControl: 75,
+    putting: 75,
+    recovery: 80,
+    focus: 85,
+    composure: 75,
+    courseManagement: 80
+  },
+  {
+    id: 'char-18',
+    name: 'Iris Vennai-Corr',
+    species: 'Paxi',
+    origin: 'Paxa Prime — Helion-9 Fuels',
+    bio: 'A second-generation Paxi phenom signed to Helion-9 Fuels before she could fold-jump alone, heir to a legendary name and privately crumbling under her mother\'s shadow.',
+    power: 65,
+    accuracy: 85,
+    touch: 95,
+    spinControl: 90,
+    putting: 85,
+    recovery: 80,
+    focus: 85,
+    composure: 80,
+    courseManagement: 90
+  },
+  {
+    id: 'char-19',
+    name: 'Zephyros Threll-Kai',
+    species: 'Rill',
+    origin: 'Aeris Station — Aeris Compact',
+    bio: 'A mathematically precise young non-binary Rill protégé bankrolled by the Aeris Compact itself, marketed as the future of the Tour and quietly cracking under the political weight of being a symbol.',
+    power: 45,
+    accuracy: 95,
+    touch: 85,
+    spinControl: 95,
+    putting: 95,
+    recovery: 70,
+    focus: 90,
+    composure: 65,
+    courseManagement: 95
+  },
+  {
+    id: 'char-20',
+    name: 'Briggs Halloran',
+    species: 'Human',
+    origin: 'Earth — Keldaran Syndicate',
+    bio: 'A cocky human signed by a Voss corporate bloc to prove humans can be \'properly developed\' — every other human on tour quietly hates him for strutting around in mystic-Voss drag.',
+    power: 85,
+    accuracy: 75,
+    touch: 70,
+    spinControl: 75,
+    putting: 70,
+    recovery: 80,
+    focus: 80,
+    composure: 70,
+    courseManagement: 75
+  },
+  {
+    id: 'char-21',
+    name: 'Orry Drenn',
+    species: 'Human',
+    origin: 'Unknown — Betting Underlayer',
+    bio: 'A washed-out former tour regular who now plays underground matches for criminal syndicates, with a tired smirk, an old leather glove he never takes off, and the unsettling habit of always knowing exactly what you\'re going to do.',
+    power: 60,
+    accuracy: 80,
+    touch: 85,
+    spinControl: 85,
+    putting: 80,
+    recovery: 90,
+    focus: 90,
+    composure: 95,
+    courseManagement: 95
+  },
+  {
+    id: 'char-22',
+    name: 'Madame Vex Chronne',
+    species: 'Rill-Paxi Hybrid',
+    origin: 'The Velvet Fold — Betting Underlayer',
+    bio: 'A Rill-Paxi hybrid bookmaker and occasional underground player who controls half the galactic side-betting market from a floating casino-yacht and plays every match like a chess opening she memorized a decade ago.',
+    power: 50,
+    accuracy: 75,
+    touch: 80,
+    spinControl: 80,
+    putting: 85,
+    recovery: 85,
+    focus: 95,
+    composure: 100,
+    courseManagement: 100
+  },
+  {
+    id: 'char-23',
+    name: 'Thorn Gax',
+    species: 'Voss',
+    origin: 'Keldara-7 — Betting Underlayer',
+    bio: 'A Voss ex-military enforcer whose \'enlightened calm\' comes from the fact that he genuinely does not care what happens to you, whose drives are weaponized, and whose debts get collected in person.',
+    power: 100,
+    accuracy: 60,
+    touch: 40,
+    spinControl: 50,
+    putting: 50,
+    recovery: 85,
+    focus: 75,
+    composure: 95,
+    courseManagement: 70
+  },
+  {
+    id: 'char-24',
+    name: 'Sil "Quicksilver" Mareth',
+    species: 'Paxi',
+    origin: 'Paxa Prime — Betting Underlayer',
+    bio: 'A fast-talking Paxi hustler who deliberately tanks her Tour ranking so she can clean up in underground matches, and who might be your best friend, your worst rival, or your exit strategy depending on the day.',
+    power: 70,
+    accuracy: 85,
+    touch: 90,
+    spinControl: 85,
+    putting: 90,
+    recovery: 85,
+    focus: 80,
+    composure: 85,
+    courseManagement: 90
+  },
+  {
+    id: 'char-25',
+    name: 'Kraal the Debtkeeper',
+    species: 'Voss',
+    origin: 'Unknown — Betting Underlayer',
+    bio: 'The legendary never-photographed head of the galactic betting underworld, a Voss of mythic skill who surfaces once a decade to challenge a single player to a match — and who has never lost.',
+    power: 90,
+    accuracy: 95,
+    touch: 90,
+    spinControl: 95,
+    putting: 95,
+    recovery: 95,
+    focus: 100,
+    composure: 100,
+    courseManagement: 100
+  }
+];
+
+const createGolferProfile = (player) => ({
+  id: player.id,
+  name: player.name,
+  species: player.species,
+  origin: player.origin,
+  bio: player.bio,
+  avatar: { ...(GOLFER_AVATAR_PALETTES[player.species] || GOLFER_AVATAR_PALETTES.Human) },
+  stats: {
+    power: player.power,
+    accuracy: player.accuracy,
+    touch: player.touch,
+    spinControl: player.spinControl,
+    putting: player.putting,
+    recovery: player.recovery
+  },
+  mental: {
+    focus: player.focus,
+    composure: player.composure,
+    courseManagement: player.courseManagement
+  }
+});
+
 const GOLFERS = [
   {
     id: 'mike_g',
@@ -881,7 +1314,8 @@ const GOLFERS = [
       composure: 50,
       courseManagement: 50
     }
-  }
+  },
+  ...IMPORTED_GOLFER_DATA.map(createGolferProfile)
 ];
 
 // ═══════════════ EQUIPMENT CATALOG ═══════════════
@@ -2848,6 +3282,33 @@ export default function App() {
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
           <Text style={styles.spaceMenuSubtitle}>SELECT GOLFER</Text>
 
+          <ScrollView
+            horizontal
+            nestedScrollEnabled
+            style={styles.golferRosterScroll}
+            contentContainerStyle={styles.golferRosterContent}
+            showsHorizontalScrollIndicator={false}
+          >
+            {GOLFERS.map((golfer) => {
+              const isSelected = golfer.id === g.id;
+              return (
+                <Pressable
+                  key={golfer.id}
+                  style={[styles.golferRosterCard, isSelected && styles.golferRosterCardSelected]}
+                  onPress={() => setSelectedGolfer(JSON.parse(JSON.stringify(golfer)))}
+                >
+                  <View style={styles.golferRosterAvatar}>
+                    <View style={[styles.golferRosterAvatarBlock, { backgroundColor: golfer.avatar.hat }]} />
+                    <View style={[styles.golferRosterAvatarBlock, { backgroundColor: golfer.avatar.skin }]} />
+                    <View style={[styles.golferRosterAvatarBlock, { backgroundColor: golfer.avatar.shirt }]} />
+                  </View>
+                  <Text style={[styles.golferRosterName, isSelected && styles.golferRosterNameSelected]} numberOfLines={1}>{golfer.name}</Text>
+                  <Text style={styles.golferRosterSpecies} numberOfLines={1}>{golfer.species}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
           <View style={styles.golferCard}>
             {/* Avatar */}
             <View style={styles.golferAvatarWrap}>
@@ -4682,6 +5143,54 @@ const styles = StyleSheet.create({
     fontWeight: '800'
   },
   // Golfer select styles
+  golferRosterScroll: {
+    marginBottom: 12
+  },
+  golferRosterContent: {
+    gap: 8,
+    paddingRight: 4
+  },
+  golferRosterCard: {
+    width: 118,
+    minHeight: 104,
+    backgroundColor: 'rgba(255,255,255,0.055)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 8,
+    padding: 8,
+    justifyContent: 'space-between'
+  },
+  golferRosterCardSelected: {
+    backgroundColor: 'rgba(74,158,63,0.24)',
+    borderColor: '#88F8BB'
+  },
+  golferRosterAvatar: {
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2
+  },
+  golferRosterAvatarBlock: {
+    width: 22,
+    height: 10,
+    borderRadius: 3
+  },
+  golferRosterName: {
+    color: 'rgba(245,251,239,0.84)',
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: 6
+  },
+  golferRosterNameSelected: {
+    color: '#f5fbef'
+  },
+  golferRosterSpecies: {
+    color: 'rgba(136,248,187,0.72)',
+    fontSize: 10,
+    textAlign: 'center',
+    marginTop: 2
+  },
   golferCard: {
     flexDirection: 'row',
     backgroundColor: 'rgba(255,255,255,0.06)',
