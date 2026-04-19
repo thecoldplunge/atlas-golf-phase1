@@ -1494,7 +1494,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.4';
+const BUILD_VERSION = 'IGT v3.5';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -3363,9 +3363,15 @@ export default function App() {
           </View>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
           <Text style={styles.spaceMenuSubtitle}>SELECT GOLFER</Text>
-          <Text style={styles.golferRosterHint}>{GOLFERS.length} golfers — tap a thumbnail to view stats</Text>
+          <Text style={styles.golferRosterHint}>{GOLFERS.length} golfers — swipe to browse, tap to view stats</Text>
 
-          <View style={styles.golferRosterGrid}>
+          <ScrollView
+            horizontal
+            nestedScrollEnabled
+            style={styles.golferRosterScroll}
+            contentContainerStyle={styles.golferRosterContent}
+            showsHorizontalScrollIndicator={false}
+          >
             {GOLFERS.map((golfer) => {
               const isSelected = golfer.id === g.id;
               return (
@@ -3384,7 +3390,7 @@ export default function App() {
                 </Pressable>
               );
             })}
-          </View>
+          </ScrollView>
 
           <View style={styles.golferCard}>
             {/* Avatar */}
@@ -5266,15 +5272,16 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     letterSpacing: 0.5
   },
-  golferRosterGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  golferRosterScroll: {
     marginBottom: 16
   },
+  golferRosterContent: {
+    gap: 8,
+    paddingRight: 4
+  },
   golferRosterCard: {
-    width: '31.5%',
-    minHeight: 96,
+    width: 118,
+    minHeight: 104,
     backgroundColor: 'rgba(255,255,255,0.055)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
