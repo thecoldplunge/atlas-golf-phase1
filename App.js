@@ -1118,13 +1118,11 @@ export default function App() {
     }));
   }, [viewWidth, viewHeight]);
   const [gameScreen, setGameScreen] = useState('menu'); // 'menu' | 'golfer-select' | 'club-select' | 'courses' | 'editor' | 'playing'
-  const [createdGolfers, setCreatedGolfers] = useState(JSON.parse(JSON.stringify(GOLFERS)));
   const [selectedGolfer, setSelectedGolfer] = useState(JSON.parse(JSON.stringify(GOLFERS[0])));
   const [selectedBag, setSelectedBag] = useState([...DEFAULT_BAG]);
   const [bagPickerCategory, setBagPickerCategory] = useState('drivers');
   const [editorTab, setEditorTab] = useState('golfer');
   const [equipmentCatalog, setEquipmentCatalog] = useState(JSON.parse(JSON.stringify(EQUIPMENT_CATALOG)));
-  const [createdClubs, setCreatedClubs] = useState([]);
   const [editorClubId, setEditorClubId] = useState(DEFAULT_BAG[0]);
   const [activeCourseIndex, setActiveCourseIndex] = useState(0);
   const [selectedCourseIndex, setSelectedCourseIndex] = useState(0);
@@ -2913,155 +2911,6 @@ export default function App() {
     );
   }
 
-  if (gameScreen === 'editor') {
-    const clubCategories = [
-      { key: 'drivers', label: 'Drivers' },
-      { key: 'fairwayWoods', label: 'Woods' },
-      { key: 'irons', label: 'Irons' },
-      { key: 'wedges', label: 'Wedges' },
-      { key: 'putters', label: 'Putters' }
-    ];
-    const activeClubList = equipmentCatalog[bagPickerCategory] || [];
-    const updateGolferStat = (group, key, value) => {
-      setSelectedGolfer(prev => ({
-        ...prev,
-        [group]: { ...prev[group], [key]: clamp(value, 0, 100) }
-      }));
-    };
-    const avatarPresets = {
-      skin: ['#f0c08c', '#d7a070', '#8d5524', '#c68642'],
-      hat: ['#263246', '#1f2937', '#7c2d12', '#14532d'],
-      shirt: ['#3f76c1', '#2563eb', '#b91c1c', '#7c3aed'],
-      pants: ['#2e563c', '#365314', '#1f2937', '#7c2d12']
-    };
-    const updateAvatar = (key, value) => {
-      setSelectedGolfer(prev => ({ ...prev, avatar: { ...prev.avatar, [key]: value } }));
-    };
-    const cycleAvatar = (key) => {
-      const palette = avatarPresets[key] || [];
-      const idx = Math.max(0, palette.indexOf(selectedGolfer.avatar[key]));
-      updateAvatar(key, palette[(idx + 1) % palette.length] || selectedGolfer.avatar[key]);
-    };
-    const addNewGolfer = () => {
-      const next = {
-        id: `golfer_${Date.now()}`,
-        name: `New Golfer ${createdGolfers.length + 1}`,
-        species: 'Human',
-        origin: 'Earth — Sol System',
-        bio: 'New custom golfer asset.',
-        avatar: { skin: '#d7a070', hat: '#1f2937', shirt: '#2563eb', pants: '#365314' },
-        stats: { power: 50, accuracy: 50, touch: 50, spinControl: 50, putting: 50, recovery: 50 },
-        mental: { focus: 50, composure: 50, courseManagement: 50 },
-        value: 500
-      };
-      setCreatedGolfers(prev => [...prev, next]);
-      setSelectedGolfer(next);
-    };
-    const addNewClubAsset = () => {
-      const next = {
-        id: `club_${Date.now()}`,
-        name: `New ${bagPickerCategory} Asset`,
-        brand: 'Atlas Foundry',
-        clubKey: (bagPickerCategory === 'putters' ? 'PT' : bagPickerCategory === 'drivers' ? 'DR' : '7I'),
-        value: 750,
-        rarity: 'Common',
-        nftKey: `asset-${Date.now()}`,
-        stats: { distance: 50, accuracy: 50, forgiveness: 50, spin: 50 }
-      };
-      setEquipmentCatalog(prev => ({ ...prev, [bagPickerCategory]: [...(prev[bagPickerCategory] || []), next] }));
-      setCreatedClubs(prev => [...prev, next]);
-      setEditorClubId(next.id);
-    };
-    const updateClubMeta = (itemId, patch) => {
-      setEquipmentCatalog(prev => ({
-        ...prev,
-        [bagPickerCategory]: prev[bagPickerCategory].map(item => item.id === itemId ? { ...item, ...patch } : item)
-      }));
-    };
-    const updateClubStat = (itemId, statKey, value) => {
-      setEquipmentCatalog(prev => ({
-        ...prev,
-        [bagPickerCategory]: prev[bagPickerCategory].map(item =>
-          item.id === itemId ? { ...item, stats: { ...item.stats, [statKey]: clamp(value, 0, 100) } } : item
-        )
-      }));
-    };
-    const activeEditorClub = activeClubList.find(item => item.id === editorClubId) || activeClubList[0];
-    return (
-      <SafeAreaView style={styles.root}>
-        <StatusBar style="light" />
-        <View style={styles.spaceMenuScreen}>
-          <View style={styles.menuStarsLayer} pointerEvents="none">
-            {starField.map((star) => (
-              <View key={`${star.key}-editor`} style={[styles.menuStar, { left: star.left, top: star.top, width: star.size, height: star.size, backgroundColor: star.color, opacity: star.opacity }]} />
-            ))}
-          </View>
-          <View style={styles.menuGreenGlow} pointerEvents="none" />
-          <View style={styles.coursesContentWrap}>
-            <Text style={styles.menuDataBar}>◂ COURSE + PLAYER + CLUB EDITOR ▸</Text>
-            <Text style={styles.coursesTitle}>EDITOR</Text>
-            <View style={styles.editorTabRow}>
-              <Pressable style={[styles.editorTabBtn, editorTab === 'golfer' && styles.editorTabBtnActive]} onPress={() => setEditorTab('golfer')}><Text style={styles.editorTabText}>Golfer</Text></Pressable>
-              <Pressable style={[styles.editorTabBtn, editorTab === 'clubs' && styles.editorTabBtnActive]} onPress={() => setEditorTab('clubs')}><Text style={styles.editorTabText}>Clubs</Text></Pressable>
-              <Pressable style={[styles.editorTabBtn, editorTab === 'course' && styles.editorTabBtnActive]} onPress={() => setEditorTab('course')}><Text style={styles.editorTabText}>Course</Text></Pressable>
-            </View>
-            <ScrollView style={styles.editorScroll} showsVerticalScrollIndicator={false}>
-              {editorTab === 'golfer' ? (
-                <View style={styles.editorPanel}>
-                  <View style={styles.editorHeaderRow}><Text style={styles.editorSectionTitle}>Character Creator</Text><Pressable style={styles.editorAddBtn} onPress={addNewGolfer}><Text style={styles.editorAddBtnText}>+ New Character</Text></Pressable></View>
-                  <View style={styles.golferCard}>
-                    <View style={styles.golferAvatarWrapLarge}>
-                      <View style={[styles.golferAvatarHat, { backgroundColor: selectedGolfer.avatar.hat }]} />
-                      <View style={[styles.golferAvatarHead, { backgroundColor: selectedGolfer.avatar.skin }]} />
-                      <View style={[styles.golferAvatarTorso, { backgroundColor: selectedGolfer.avatar.shirt }]} />
-                      <View style={[styles.golferAvatarLegs, { backgroundColor: selectedGolfer.avatar.pants }]} />
-                    </View>
-                    <View style={styles.golferInfo}><Text style={styles.golferName}>{selectedGolfer.name}</Text><Text style={styles.golferBio}>{selectedGolfer.bio}</Text><Text style={styles.spaceCourseDesigner}>{selectedGolfer.species.toUpperCase()} · {selectedGolfer.origin.toUpperCase()}</Text><Text style={styles.clubItemMeta}>Value • ${selectedGolfer.value || 500}</Text></View>
-                  </View>
-                  <Text style={styles.editorSectionTitle}>Style</Text>
-                  {['skin','hat','shirt','pants'].map(key => (
-                    <View key={key} style={styles.editorRow}><Text style={styles.editorLabel}>{key}</Text><Pressable style={styles.editorColorChip} onPress={() => cycleAvatar(key)}><Text style={styles.editorColorText}>cycle color</Text></Pressable><View style={[styles.editorSwatch, { backgroundColor: selectedGolfer.avatar[key] }]} /></View>
-                  ))}
-                  <Text style={styles.editorSectionTitle}>Golfer Stats</Text>
-                  {Object.entries(selectedGolfer.stats).map(([key, val]) => (
-                    <View key={key} style={styles.editorRow}><Text style={styles.editorLabel}>{key}</Text><Pressable style={styles.editorStepper} onPress={() => updateGolferStat('stats', key, val - 5)}><Text style={styles.editorStepperText}>-</Text></Pressable><Text style={styles.editorValue}>{val}</Text><Pressable style={styles.editorStepper} onPress={() => updateGolferStat('stats', key, val + 5)}><Text style={styles.editorStepperText}>+</Text></Pressable></View>
-                  ))}
-                  <Text style={styles.editorSectionTitle}>Mental</Text>
-                  {Object.entries(selectedGolfer.mental).map(([key, val]) => (
-                    <View key={key} style={styles.editorRow}><Text style={styles.editorLabel}>{key}</Text><Pressable style={styles.editorStepper} onPress={() => updateGolferStat('mental', key, val - 5)}><Text style={styles.editorStepperText}>-</Text></Pressable><Text style={styles.editorValue}>{val}</Text><Pressable style={styles.editorStepper} onPress={() => updateGolferStat('mental', key, val + 5)}><Text style={styles.editorStepperText}>+</Text></Pressable></View>
-                  ))}
-                </View>
-              ) : null}
-              {editorTab === 'clubs' ? (
-                <View style={styles.editorPanel}>
-                  <View style={styles.editorHeaderRow}><Text style={styles.editorSectionTitle}>Club Creator</Text><Pressable style={styles.editorAddBtn} onPress={addNewClubAsset}><Text style={styles.editorAddBtnText}>+ New Club</Text></Pressable></View>
-                  <View style={styles.clubCategoryTabs}>{clubCategories.map(cat => <Pressable key={cat.key} style={[styles.clubCategoryTab, bagPickerCategory === cat.key && styles.clubCategoryTabActive]} onPress={() => { setBagPickerCategory(cat.key); setEditorClubId((equipmentCatalog[cat.key] || [])[0]?.id || null); }}><Text style={[styles.clubCategoryTabText, bagPickerCategory === cat.key && styles.clubCategoryTabTextActive]}>{cat.label}</Text></Pressable>)}</View>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                    <View style={styles.editorClubPickerRow}>{activeClubList.map(item => <Pressable key={item.id} style={[styles.editorClubPickerPill, editorClubId === item.id && styles.editorClubPickerPillActive]} onPress={() => setEditorClubId(item.id)}><Text style={styles.editorClubPickerText}>{item.clubKey}</Text></Pressable>)}</View>
-                  </ScrollView>
-                  {activeEditorClub ? <View style={styles.editorClubCard}>
-                    <Text style={styles.clubItemName}>{activeEditorClub.name}</Text>
-                    <Text style={styles.clubItemMeta}>{activeEditorClub.brand} • {activeEditorClub.clubKey} • {activeEditorClub.rarity || 'Common'}</Text>
-                    <View style={styles.editorRow}><Text style={styles.editorLabel}>Asset ID</Text><Text style={styles.editorValueWide}>{activeEditorClub.nftKey || activeEditorClub.id}</Text></View>
-                    <View style={styles.editorRow}><Text style={styles.editorLabel}>Value</Text><Pressable style={styles.editorStepper} onPress={() => updateClubMeta(activeEditorClub.id, { value: Math.max(0, (activeEditorClub.value || 0) - 100) })}><Text style={styles.editorStepperText}>-</Text></Pressable><Text style={styles.editorValue}>{activeEditorClub.value || 0}</Text><Pressable style={styles.editorStepper} onPress={() => updateClubMeta(activeEditorClub.id, { value: (activeEditorClub.value || 0) + 100 })}><Text style={styles.editorStepperText}>+</Text></Pressable></View>
-                    <View style={styles.editorRow}><Text style={styles.editorLabel}>Rarity</Text><Pressable style={styles.editorColorChip} onPress={() => updateClubMeta(activeEditorClub.id, { rarity: activeEditorClub.rarity === 'Common' ? 'Rare' : activeEditorClub.rarity === 'Rare' ? 'Epic' : activeEditorClub.rarity === 'Epic' ? 'Legendary' : 'Common' })}><Text style={styles.editorColorText}>{activeEditorClub.rarity || 'Common'}</Text></Pressable></View>
-                    {Object.entries(activeEditorClub.stats).map(([statKey, statVal]) => (
-                      <View key={statKey} style={styles.editorRow}><Text style={styles.editorLabel}>{statKey}</Text><Pressable style={styles.editorStepper} onPress={() => updateClubStat(activeEditorClub.id, statKey, statVal - 5)}><Text style={styles.editorStepperText}>-</Text></Pressable><Text style={styles.editorValue}>{statVal}</Text><Pressable style={styles.editorStepper} onPress={() => updateClubStat(activeEditorClub.id, statKey, statVal + 5)}><Text style={styles.editorStepperText}>+</Text></Pressable></View>
-                    ))}
-                  </View> : null}
-                </View>
-              ) : null}
-              {editorTab === 'course' ? (
-                <View style={styles.editorPanel}><Text style={styles.editorSectionTitle}>Course Editor Linkage</Text><Text style={styles.golferBio}>This editor is now connected to the course flow entry. Next step is wiring these values directly into the separate course-shaping controls and save/load presets.</Text><Text style={styles.spaceCourseDesigner}>ACTIVE COURSE · {COURSES[selectedCourseIndex]?.name?.toUpperCase()}</Text></View>
-              ) : null}
-            </ScrollView>
-            <Pressable style={styles.coursesPlayButton} onPress={() => setGameScreen('courses')}><Text style={styles.coursesPlayButtonText}>DONE</Text></Pressable>
-          </View>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   if (gameScreen === 'settings') {
     return (
       <SafeAreaView style={styles.root}>
@@ -3077,14 +2926,6 @@ export default function App() {
             <Text style={styles.menuDataBar}>◂ INTERGALACTIC GOLF TOUR ▸</Text>
             <Text style={styles.coursesTitle}>SETTINGS</Text>
             <View style={{ gap: 12, marginTop: 20 }}>
-              <Pressable style={styles.spaceMenuBtnActive} onPress={() => setGameScreen('editor')}>
-                <Text style={styles.spaceMenuBtnLeft}>🛠️ DEV EDITOR</Text>
-                <Text style={styles.spaceMenuBtnRight}>&gt;</Text>
-                <View style={[styles.lCorner, styles.lCornerTopLeft]} />
-                <View style={[styles.lCorner, styles.lCornerTopRight]} />
-                <View style={[styles.lCorner, styles.lCornerBottomLeft]} />
-                <View style={[styles.lCorner, styles.lCornerBottomRight]} />
-              </Pressable>
               <Pressable style={styles.spaceMenuBtnActive} onPress={() => setGameScreen('backstory-read')}>
                 <Text style={styles.spaceMenuBtnLeft}>📜 READ BACKSTORY</Text>
                 <Text style={styles.spaceMenuBtnRight}>&gt;</Text>
