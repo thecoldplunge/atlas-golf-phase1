@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Atlas Golf Physics Guide</title>
+  <style>
+    body{font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#0b1410;color:#eef6ea;margin:0;padding:24px;line-height:1.45}
+    .wrap{max-width:980px;margin:0 auto}
+    h1,h2{margin:0 0 12px}
+    h1{font-size:34px} h2{font-size:22px;margin-top:28px}
+    p{color:#c8d7c6} .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+    .card{background:#132018;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px}
+    .name{font-weight:800;color:#fff}.val{color:#8ef0ad;font-weight:800}.small{font-size:13px;color:#aab8a8}
+    code{background:#1e2b21;padding:2px 6px;border-radius:6px;color:#ffe08a}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Atlas Golf, Physics + Mechanics Guide</h1>
+  <p>This page explains the main tuning knobs in plain English, so Michael can understand what makes the game feel the way it does.</p>
+
+  <h2>1. World + Camera</h2>
+  <div class="grid">
+    <div class="card"><div class="name">World size</div><div class="val">1040 × 1100</div><div class="small">How big the playable course world is.</div></div>
+    <div class="card"><div class="name">Camera zoom</div><div class="val">3.2</div><div class="small">Higher = more zoomed in during normal shots.</div></div>
+    <div class="card"><div class="name">Putting zoom multiplier</div><div class="val">1.8</div><div class="small">Extra zoom when putting.</div></div>
+    <div class="card"><div class="name">Yards per world unit</div><div class="val">1.3</div><div class="small">Core scale conversion between physics world and golf distance.</div></div>
+  </div>
+
+  <h2>2. Ball Flight</h2>
+  <div class="grid">
+    <div class="card"><div class="name">Gravity</div><div class="val">30</div><div class="small">Higher = lower ball flight, faster drop.</div></div>
+    <div class="card"><div class="name">Curve force</div><div class="val">0.12</div><div class="small">How much draw/fade bends the ball during flight.</div></div>
+    <div class="card"><div class="name">Curve launch blend</div><div class="val">0.3</div><div class="small">How much curve is applied immediately at launch vs during flight.</div></div>
+    <div class="card"><div class="name">Wind force scale</div><div class="val">0.35</div><div class="small">Overall impact of wind on shots.</div></div>
+  </div>
+
+  <h2>3. Greens + Putting</h2>
+  <div class="grid">
+    <div class="card"><div class="name">Slope force</div><div class="val">7.5</div><div class="small">How strongly green slopes move rolling putts.</div></div>
+    <div class="card"><div class="name">Green roll friction</div><div class="val">2.6</div><div class="small">Higher = putts slow down faster.</div></div>
+    <div class="card"><div class="name">Putt preview tick rate</div><div class="val">1/120</div><div class="small">How finely the preview sim steps through the putt line.</div></div>
+    <div class="card"><div class="name">Putt base speed factor</div><div class="val">2.8</div><div class="small">How strong putter power translates into roll speed.</div></div>
+  </div>
+
+  <h2>4. Swing + Tempo</h2>
+  <div class="grid">
+    <div class="card"><div class="name">Perfect tempo window</div><div class="val">85–165 ms</div><div class="small">Brief pause at the top. Too short = rushed, too long = frozen.</div></div>
+    <div class="card"><div class="name">Rushed penalty</div><div class="val">1.55× deviation</div><div class="small">No pause at the top makes accuracy worse.</div></div>
+    <div class="card"><div class="name">Frozen penalty</div><div class="val">1.45× deviation</div><div class="small">Holding too long at the top also hurts.</div></div>
+    <div class="card"><div class="name">Acceleration checks</div><div class="val">Decel or yank punished</div><div class="small">Too lazy through impact or too violent both reduce control.</div></div>
+  </div>
+
+  <h2>5. Overpower Risk</h2>
+  <div class="grid">
+    <div class="card"><div class="name">100%</div><div class="val">Baseline</div><div class="small">Normal risk and deviation.</div></div>
+    <div class="card"><div class="name">110%</div><div class="val">Noticeably riskier</div><div class="small">Tempo strictness and deviation penalties start stacking.</div></div>
+    <div class="card"><div class="name">120%</div><div class="val">High risk</div><div class="small">Clean swing required. Bad swing can exceed 2.5× deviation penalty.</div></div>
+    <div class="card"><div class="name">Overpower curve</div><div class="val">Exponential</div><div class="small">The miss penalty ramps up faster the further above 100% you go.</div></div>
+  </div>
+
+  <h2>6. Surfaces / Lies</h2>
+  <div class="grid">
+    <div class="card"><div class="name">Fairway</div><div class="small">Baseline roll and clean contact.</div></div>
+    <div class="card"><div class="name">Rough</div><div class="small">More drag and less clean strike.</div></div>
+    <div class="card"><div class="name">Sand</div><div class="small">Heavy power penalty, weak launch, ugly contact.</div></div>
+    <div class="card"><div class="name">Green / Fringe</div><div class="small">Roll physics + slope break dominate.</div></div>
+  </div>
+
+  <h2>7. Clubs</h2>
+  <p>Every club has a few core values: <code>carryYards</code>, <code>speed</code>, <code>launch</code>, <code>roll</code>, and <code>spin</code>. These define how far it flies, how high it launches, how much it releases, and how much it curves/holds.</p>
+
+  <h2>8. Best knobs to tune first</h2>
+  <div class="grid">
+    <div class="card"><div class="name">If ball flight feels too floaty</div><div class="small">Increase <code>GRAVITY</code> or reduce club launch values.</div></div>
+    <div class="card"><div class="name">If putts don’t break enough</div><div class="small">Increase <code>SLOPE_FORCE</code>.</div></div>
+    <div class="card"><div class="name">If tempo feels too easy</div><div class="small">Tighten the tempo windows and raise rushed/frozen penalties.</div></div>
+    <div class="card"><div class="name">If 120% is too safe</div><div class="small">Raise overpower penalty multipliers.</div></div>
+  </div>
+</div>
+</body>
+</html>

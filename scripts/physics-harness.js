@@ -1,4 +1,4 @@
-const YARDS_PER_WORLD = 4;
+const YARDS_PER_WORLD = 1.3;
 const CURVE_FORCE = 1.35;
 const CURVE_LAUNCH_BLEND = 1.15;
 const WIND_FORCE_SCALE = 0.35;
