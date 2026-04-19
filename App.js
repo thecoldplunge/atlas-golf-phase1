@@ -3360,7 +3360,7 @@ export default function App() {
               <Text style={styles.menuBottomLeft}>
                 <Text style={styles.menuBottomDot}>●</Text> FOLD DRIVE · ONLINE
               </Text>
-              <Text style={styles.menuBottomRight}>V.2187.4 ■</Text>
+              <Text style={styles.menuBottomRight}>{BUILD_VERSION} ■</Text>
             </View>
           </View>
         </View>
