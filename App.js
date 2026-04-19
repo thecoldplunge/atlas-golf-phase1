@@ -1226,7 +1226,7 @@ export default function App() {
     magnitude(velocityRef.current) > 0.3 ||
     flightRef.current.z > 0.04 ||
     Math.abs(flightRef.current.vz) > 0.35;
-  const cameraAnchorY = (!ballMoving && !puttingMode && !shotControlOpen) ? viewHeight * 0.74 : viewHeight / 2;
+  const cameraAnchorY = (!ballMoving && !puttingMode) ? viewHeight * 0.74 : viewHeight / 2;
 
   const syncCourseFrame = () => {
     if (!courseRef.current || typeof courseRef.current.measureInWindow !== 'function') {
