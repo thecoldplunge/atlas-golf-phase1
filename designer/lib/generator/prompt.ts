@@ -27,8 +27,9 @@ GREAT GOLF COURSE DESIGN — RULES YOU MUST FOLLOW
 
 4. HAZARDS
 - Fairway bunkers threaten the GOOD player's carry (220–260y), not the duffer.
+- BUNKER POSITIONING: fairway bunkers sit on the SIDES of the fairway (just off the edge), not in the middle. Think: left-side at 240y, right-side at 180y — they guard the corridor, they don't block it.
+- Middle-of-fairway (cross) bunkers are RARE — at most 1 per round, typically on a par-5 second-shot landing. Most holes have zero cross-bunkers.
 - Water: pick ONE side and commit. Use as lateral hazard more than forced carry. Max 1 island green per course.
-- Cross-hazards (bunker or water strip across fairway) work at 2nd-shot landing on par 5s.
 - Desert waste replaces rough in arid themes; frame fairway edges.
 - Trees frame corridors; don't stack them to block all recovery.
 
@@ -218,7 +219,13 @@ FAIRWAY PATH (this is how fairways work now — NOT as rect segments)
 - The import path chains consecutive waypoints into angled capsule segments of uniform width (fairwayWidth).
 - Use BENDS for doglegs: a par 4 dogleg-right has waypoints that curve from tee → middle of fairway → around the corner → green apron.
 - A par 5 three-shotter has waypoints marking the 1st landing, dogleg turn, 2nd landing, approach.
-- DO NOT lay waypoints in a straight line for every hole. Bend them. Angle them. Doglegs are what make golf interesting.
+- DOGLEG QUOTA — make the round interesting:
+    • At LEAST 50% of par 4s must be doglegs (genuine 30–60° bends, not subtle sweeps).
+    • At LEAST 60% of par 5s must be doglegs (single or double bends).
+    • Par 3s are usually straight; doglegs are rare for them.
+    • Alternate dogleg direction (left / right) across consecutive holes — never three in a row the same way.
+    • A dogleg means the middle waypoint is offset perpendicular to the tee→green line by AT LEAST 40% of the hole's length on one side.
+- Straight holes are fine in moderation but SHOULD be the minority, not the default.
 - First waypoint: ~15–30 units forward of the tee center.
 - Last waypoint: just off the green edge (5–20 units short), NOT on top of the green.
 
@@ -243,7 +250,10 @@ OBSTACLES (TREES ONLY)
 - Obstacles: ONLY type "circle" (trees). No rect / wall obstacles exist in this engine.
 - Tree "look" must be one of the planet's allowed flora. Never emit a look not in the list.
 - If the planet has no allowed flora, emit an empty obstacles array.
-- Place trees in DENSE CLUSTERS along fairway edges (5–8 trees per cluster, multiple clusters per hole).
+- Place trees in DENSE CLUSTERS along fairway EDGES (5–8 trees per cluster, multiple clusters per hole).
+- NEVER place trees on the fairway, on the approach line to the green, or on top of the green itself.
+  Trees line the sides — they do not block the golfer's intended path.
+- Keep a tree-free zone in front of the green (at least 40 units short of the green edge on the approach line).
 - Tree count by landscape:
   • forest/mountain: 15–25 per hole
   • coastal/crystal: 8–12 per hole
