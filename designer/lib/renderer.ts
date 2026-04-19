@@ -10,8 +10,10 @@ import type {
 import { anchorHit, handleHit, pointInShape, shapeBounds } from '@/lib/vector';
 import { WORLD_HEIGHT, WORLD_WIDTH } from '@/lib/world';
 // Shared visual theme — single source of truth for colors + tree art
-// shared across the designer and the React Native game (App.js).
-import { TREES as SHARED_TREES } from '../../shared/theme';
+// shared across the designer and the React Native game (App.js). The
+// `designer/shared` folder is a symlink to `../shared` at repo root so
+// Vercel (which uses `designer/` as the Root Directory) can resolve it.
+import { TREES as SHARED_TREES } from '@/shared/theme';
 
 type TreePrim =
   | { kind: 'circle'; dx?: number; dy?: number; r: number; fill: string }
