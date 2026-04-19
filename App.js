@@ -1628,7 +1628,7 @@ export default function App() {
                 trail.shift();
               }
               trail.push({ x: next.x, y: next.y, z: flight.z });
-              if (trail.length % 3 === 0) setShotTracer([...trail]);
+              setShotTracer([...trail]);
             }
           }
 
@@ -3302,11 +3302,11 @@ export default function App() {
           </View>
 
           {/* Shot Tracer */}
-          {shotTracer.length > 2 ? shotTracer.map((pt, i) => {
-            if (i === 0) return null;
+          {shotTracer.length > 1 ? shotTracer.map((pt, i) => {
             const sx = (pt.x - cameraRef.current.x) * pixelsPerWorld + viewWidth / 2;
             const sy = (pt.y - cameraRef.current.y) * pixelsPerWorld + viewHeight / 2 - (pt.z || 0) * pixelsPerWorld * 0.35;
-            const opacity = Math.max(0.05, (i / shotTracer.length) * 0.9);
+            const age = (shotTracer.length - 1 - i) / Math.max(1, shotTracer.length - 1);
+            const opacity = Math.max(0.06, 0.95 - age * 0.9);
             return (
               <View
                 key={i}
