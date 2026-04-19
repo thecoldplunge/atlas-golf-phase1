@@ -1899,6 +1899,7 @@ export default function App() {
   const [swingPhase, setSwingPhase] = useState('idle'); // idle | backswing | forward
   const [swingDeviation, setSwingDeviation] = useState(0); // -1 to 1, how far off center on forward swing
   const swingDeviationRef = useRef(0);
+  const peakForwardDevRef = useRef(0); // signed forward-swing deviation with largest magnitude (prevents late recovery from erasing mid-swing wobble)
   const swingStartRef = useRef({ x: 0, y: 0 });
   const swingLowestRef = useRef({ x: 0, y: 0 });
   const swingTrailRef = useRef([]); // [{x,y}] trail of forward swing path
@@ -3224,6 +3225,7 @@ export default function App() {
     setSwingDeviation(0);
     swingDeviationRef.current = 0;
     backDeviationRef.current = 0;
+    peakForwardDevRef.current = 0;
     if (puttingMode) {
       const swingPower = Math.round(launch.effectivePower);
       const targetText = typeof puttTargetPowerPct === 'number' ? ` (Target: ${puttTargetPowerPct}%)` : '';
@@ -3293,6 +3295,7 @@ export default function App() {
           setSwingPhase('backswing');
           powerRef.current = 0;
           peakPowerRef.current = 0;
+          peakForwardDevRef.current = 0;
           swingLockedRef.current = false;
           setPowerPct(0);
           setSwingDeviation(0);
@@ -3334,10 +3337,18 @@ export default function App() {
             const centerX = swingLowestRef.current.x;
             const devPx = currentX - centerX;
             const forwardDev = clamp(devPx / 45, -1, 1); // tighter threshold (was 60)
-            // Combine back + forward deviation (back contributes ~40%)
-            const combinedDev = clamp(forwardDev + backDeviationRef.current * 0.4, -1, 1);
-            setSwingDeviation(combinedDev);
-            swingDeviationRef.current = combinedDev;
+            // Peak-track forward deviation by absolute magnitude, preserving sign.
+            // Why: latching last-sample lets a late recovery erase a mid-swing wobble,
+            // so a visibly-wonky path still scores as straight. Peak keeps the worst moment.
+            if (Math.abs(forwardDev) > Math.abs(peakForwardDevRef.current)) {
+              peakForwardDevRef.current = forwardDev;
+            }
+            // Combine back + forward deviation (back contributes ~40%).
+            // UI shows live pointer; scoring ref uses peak forward dev.
+            const liveCombined = clamp(forwardDev + backDeviationRef.current * 0.4, -1, 1);
+            const scoringCombined = clamp(peakForwardDevRef.current + backDeviationRef.current * 0.4, -1, 1);
+            setSwingDeviation(liveCombined);
+            swingDeviationRef.current = scoringCombined;
           }
         },
         onPanResponderRelease: (evt) => {
@@ -4172,6 +4183,22 @@ export default function App() {
               }
             ]}
           >
+            {/* Layer 1: water hazards (background — fairway paints over them) */}
+            {currentHole.hazards?.filter((h) => h.type === 'waterRect').map((h, i) => (
+              <View
+                key={`water-${i}`}
+                style={[
+                  styles.water,
+                  {
+                    left: h.x * scaleX,
+                    top: h.y * scaleY,
+                    width: h.w * scaleX,
+                    height: h.h * scaleY
+                  }
+                ]}
+              />
+            ))}
+
             {currentHole.terrain?.fairway?.map((f, i) => (
               <View
                 key={`fair-${i}`}
@@ -4290,24 +4317,21 @@ export default function App() {
                 })
               : null}
 
-            {currentHole.hazards.map((h, i) => {
-              const common = {
-                left: h.x * scaleX,
-                top: h.y * scaleY,
-                width: h.w * scaleX,
-                height: h.h * scaleY
-              };
-
-              if (h.type === 'sandRect') {
-                return <View key={`haz-${i}`} style={[styles.sand, common]} />;
-              }
-
-              if (h.type === 'waterRect') {
-                return <View key={`haz-${i}`} style={[styles.water, common]} />;
-              }
-
-              return null;
-            })}
+            {/* Layer 4: sand bunkers (on top of fairway/green — bunkers are surface features) */}
+            {currentHole.hazards?.filter((h) => h.type === 'sandRect').map((h, i) => (
+              <View
+                key={`sand-${i}`}
+                style={[
+                  styles.sand,
+                  {
+                    left: h.x * scaleX,
+                    top: h.y * scaleY,
+                    width: h.w * scaleX,
+                    height: h.h * scaleY
+                  }
+                ]}
+              />
+            ))}
 
             {currentHole.obstacles.map((o, i) => {
               if (o.type === 'rect') {
