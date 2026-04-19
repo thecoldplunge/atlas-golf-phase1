@@ -747,8 +747,48 @@ const GRAVITY = 30;
 const GROUND_EPSILON = 0.05;
 const FRINGE_BUFFER = 8;
 const MIN_BOUNCE_VZ = 3.2;
-const CURVE_FORCE = 1.35;
-const CURVE_LAUNCH_BLEND = 1.15;
+const PHYSICS_CONFIG = {
+  speedScale: 1,
+  launchScale: 1,
+  gravity: 0.028,
+  airDrag: 0.14,
+  windForceScale: 0.35,
+  apexHangFactor: 1,
+  curveForce: 1.35,
+  curveLaunchBlend: 1.15,
+  sideSpinCap: 0.65,
+  sideSpinDecay: 0.018,
+  previewCurveMultiplier: 1,
+  pushPullInfluence: 40,
+  lieMissAmplification: 1,
+  fairwayFriction: 3.3,
+  roughFriction: 4.2,
+  deepRoughFriction: 7,
+  sandFriction: 6.5,
+  greenFriction: 2.3,
+  fairwayBounce: 0.24,
+  roughBounce: 0.18,
+  sandBounce: 0.1,
+  fairwayLandingDamping: 0.8,
+  roughLandingDamping: 0.72,
+  sandLandingDamping: 0.54,
+  rolloutScale: 1,
+  backswingPowerCurve: 0.8,
+  tempoPerfectMinMs: 50,
+  tempoPerfectMaxMs: 80,
+  straightnessSensitivity: 60,
+  overpowerPenalty: 1.24,
+  mishitSeverity: 1,
+  clubForgivenessScale: 1,
+  puttLaunchScale: 2.8,
+  chipRolloutScale: 1,
+  greenSlopeInfluence: 1.61,
+  lineSampleCount: 16,
+  lineSmoothing: 0.95,
+  previewLiveCalibration: 1,
+};
+const CURVE_FORCE = PHYSICS_CONFIG.curveForce;
+const CURVE_LAUNCH_BLEND = PHYSICS_CONFIG.curveLaunchBlend;
 
 // Haptic feedback: vibrate on Android/Chrome, audio tick on iOS Safari
 const hapticBuzz = (pattern = 30) => {
@@ -910,14 +950,14 @@ const getEquipmentById = (id) => getAllEquipment().find(e => e.id === id);
 
 const SURFACE_PHYSICS = {
   // powerPenalty: [min, max] for random range per shot. swingSensitivity: multiplier on swing deviation (1.0 = normal)
-  rough: { rollFriction: 4.2, bounce: 0.18, landingDamping: 0.72, wallRestitution: 0.62, powerPenalty: [0.8, 0.9], swingSensitivity: 1.4, label: 'Rough', emoji: '🌿', color: '#3a6b2a' },
-  deepRough: { rollFriction: 5.8, bounce: 0.12, landingDamping: 0.6, wallRestitution: 0.55, powerPenalty: [0.65, 0.75], swingSensitivity: 1.8, label: 'Deep Rough', emoji: '🌾', color: '#2d5420' },
-  secondCut: { rollFriction: 3.8, bounce: 0.2, landingDamping: 0.76, wallRestitution: 0.63, powerPenalty: [0.88, 0.92], swingSensitivity: 1.2, label: 'Second Cut', emoji: '🌱', color: '#4a8535' },
-  fairway: { rollFriction: 3.3, bounce: 0.24, landingDamping: 0.8, wallRestitution: 0.66, powerPenalty: [0.95, 0.95], swingSensitivity: 1.0, label: 'Fairway', emoji: '🏌️', color: '#5aad42' },
-  fringe: { rollFriction: 3.8, bounce: 0.2, landingDamping: 0.76, wallRestitution: 0.64, powerPenalty: [0.95, 0.95], swingSensitivity: 1.1, label: 'Fringe', emoji: '🟢', color: '#4d9940' },
-  sand: { rollFriction: 6.5, bounce: 0.1, landingDamping: 0.54, wallRestitution: 0.52, powerPenalty: [0.6, 0.65], swingSensitivity: 2.0, label: 'Bunker', emoji: '⛱️', color: '#d4b96a' },
-  pluggedSand: { rollFriction: 8.0, bounce: 0.05, landingDamping: 0.4, wallRestitution: 0.4, powerPenalty: [0.35, 0.45], swingSensitivity: 2.4, label: 'Plugged Lie', emoji: '🥚', color: '#c9a84e' },
-  green: { rollFriction: 2.6, bounce: 0.14, landingDamping: 0.82, wallRestitution: 0.68, powerPenalty: [1.0, 1.0], swingSensitivity: 1.0, label: 'Green', emoji: '⛳', color: '#3dba4a' },
+  rough: { rollFriction: PHYSICS_CONFIG.roughFriction, bounce: PHYSICS_CONFIG.roughBounce, landingDamping: PHYSICS_CONFIG.roughLandingDamping, wallRestitution: 0.62, powerPenalty: [0.8, 0.9], swingSensitivity: 1.4 * PHYSICS_CONFIG.lieMissAmplification, label: 'Rough', emoji: '🌿', color: '#3a6b2a' },
+  deepRough: { rollFriction: PHYSICS_CONFIG.deepRoughFriction, bounce: 0.12, landingDamping: 0.6, wallRestitution: 0.55, powerPenalty: [0.65, 0.75], swingSensitivity: 1.8 * PHYSICS_CONFIG.lieMissAmplification, label: 'Deep Rough', emoji: '🌾', color: '#2d5420' },
+  secondCut: { rollFriction: 3.8, bounce: 0.2, landingDamping: 0.76, wallRestitution: 0.63, powerPenalty: [0.88, 0.92], swingSensitivity: 1.2 * PHYSICS_CONFIG.lieMissAmplification, label: 'Second Cut', emoji: '🌱', color: '#4a8535' },
+  fairway: { rollFriction: PHYSICS_CONFIG.fairwayFriction, bounce: PHYSICS_CONFIG.fairwayBounce, landingDamping: PHYSICS_CONFIG.fairwayLandingDamping, wallRestitution: 0.66, powerPenalty: [0.95, 0.95], swingSensitivity: 1.0 * PHYSICS_CONFIG.lieMissAmplification, label: 'Fairway', emoji: '🏌️', color: '#5aad42' },
+  fringe: { rollFriction: 3.8, bounce: 0.2, landingDamping: 0.76, wallRestitution: 0.64, powerPenalty: [0.95, 0.95], swingSensitivity: 1.1 * PHYSICS_CONFIG.lieMissAmplification, label: 'Fringe', emoji: '🟢', color: '#4d9940' },
+  sand: { rollFriction: PHYSICS_CONFIG.sandFriction, bounce: PHYSICS_CONFIG.sandBounce, landingDamping: PHYSICS_CONFIG.sandLandingDamping, wallRestitution: 0.52, powerPenalty: [0.6, 0.65], swingSensitivity: 2.0 * PHYSICS_CONFIG.lieMissAmplification, label: 'Bunker', emoji: '⛱️', color: '#d4b96a' },
+  pluggedSand: { rollFriction: 8.0, bounce: 0.05, landingDamping: 0.4, wallRestitution: 0.4, powerPenalty: [0.35, 0.45], swingSensitivity: 2.4 * PHYSICS_CONFIG.lieMissAmplification, label: 'Plugged Lie', emoji: '🥚', color: '#c9a84e' },
+  green: { rollFriction: PHYSICS_CONFIG.greenFriction, bounce: 0.14, landingDamping: 0.82, wallRestitution: 0.68, powerPenalty: [1.0, 1.0], swingSensitivity: 1.0, label: 'Green', emoji: '⛳', color: '#3dba4a' },
   tee: { rollFriction: 3.0, bounce: 0.22, landingDamping: 0.85, wallRestitution: 0.7, powerPenalty: [1.0, 1.0], swingSensitivity: 1.0, label: 'Tee Box', emoji: '🏌️', color: '#5aad42' }
 };
 
@@ -966,7 +1006,7 @@ const generateWind = (holes = HOLES) => {
     return { speed: roundSpeed, dir };
   });
 };
-const WIND_FORCE_SCALE = 0.35;
+const WIND_FORCE_SCALE = PHYSICS_CONFIG.windForceScale;
 const SHOT_SHAPE_HINTS = {
   PT: 'Low roll',
   LW: 'High soft',
