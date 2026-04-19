@@ -14,9 +14,9 @@ This wiki has two jobs:
 | Page | What it's for |
 | --- | --- |
 | **[Current State](./Current-State)** | Live snapshot of what's in the build right now. Check this first. |
+| **[Roadmap](./Roadmap)** | **The plan.** Staged path from Current State → Grand Vision. Phase 1 (foundation + stats + character visuals + animations), Phase 2 (AI course generation), then career → economy → galaxy → sponsors → Grand Slam. |
 | **[Grand Vision](./Grand-Vision)** | The full game design. Career ladder, economy, gambling, sponsors, property, caddie mini-game — the whole pitch. |
 | **[Backstory](./Backstory)** | The World Bible. Year 2187, the Tanaka Fold, the species, the Tour, the Majors. |
-| **[Roadmap](./Roadmap)** | How we get from Current State → Grand Vision. Phased. |
 | **[Glossary](./Glossary)** | Quick reference for terms like IGT, Fold, Voss, Rill, Paxi, Helion-9, Grand Slam. |
 
 ---
