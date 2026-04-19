@@ -1494,7 +1494,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.8';
+const BUILD_VERSION = 'IGT v3.9';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1571,57 +1571,81 @@ const evaluateTempo = (samples, { focus = 50, composure = 50 } = {}) => {
   const peakBack = Math.max(0.001, ...backSpeeds.map((s) => s.v));
   const peakForward = Math.max(0.001, ...forwardSpeeds.map((s) => s.v));
 
-  const jerkScore = (phaseSpeeds, peak) => {
+  // Two complementary jerk signals:
+  //   (a) coefficient of variation of ACTIVE-motion speeds (samples > 20%
+  //       of phase peak). Ignores near-zero samples so a pause doesn't
+  //       fake a jerky reading. Smooth swings sit around 0.30, realistic
+  //       stop-start finger motion pushes past 0.40.
+  //   (b) direction reversals in the phase's dominant axis (back = y+,
+  //       forward = y-). A brief mid-phase flip adds 0.5 outright — a
+  //       clear giveaway even if touch sampling smooths the CoV.
+  const coeffVariation = (phaseSpeeds) => {
     if (phaseSpeeds.length < 3) return 0;
-    let sum = 0;
-    let count = 0;
-    for (let i = 2; i < phaseSpeeds.length; i++) {
-      const a0 = phaseSpeeds[i - 1].v - phaseSpeeds[i - 2].v;
-      const a1 = phaseSpeeds[i].v - phaseSpeeds[i - 1].v;
-      sum += Math.abs(a1 - a0);
-      count++;
-    }
-    return count > 0 ? (sum / count) / peak : 0;
+    const pk = Math.max(...phaseSpeeds.map((s) => s.v));
+    if (pk < 0.01) return 0;
+    const active = phaseSpeeds.filter((s) => s.v > pk * 0.20);
+    if (active.length < 3) return 0;
+    const mean = active.reduce((a, b) => a + b.v, 0) / active.length;
+    if (mean < 0.01) return 0;
+    const variance = active.reduce((a, b) => a + (b.v - mean) ** 2, 0) / active.length;
+    return Math.sqrt(variance) / mean;
   };
-  const backJerk = jerkScore(backSpeeds, peakBack);
-  const forwardJerk = jerkScore(forwardSpeeds, peakForward);
+  const countReversals = (phaseSamples) => {
+    if (phaseSamples.length < 4) return 0;
+    let reversals = 0;
+    let lastSign = 0;
+    for (let i = 1; i < phaseSamples.length; i++) {
+      const d = phaseSamples[i].y - phaseSamples[i - 1].y;
+      if (Math.abs(d) < 1.2) continue;
+      const sign = d > 0 ? 1 : -1;
+      if (lastSign !== 0 && sign !== lastSign) reversals++;
+      lastSign = sign;
+    }
+    return reversals;
+  };
+  const backJerk = coeffVariation(backSpeeds) + countReversals(back) * 0.5;
+  const forwardJerk = coeffVariation(forwardSpeeds) + countReversals(forward) * 0.5;
 
-  const pauseThresh = peakBack * 0.12;
+  // Pause detection uses an ABSOLUTE speed threshold (0.08 px/ms ≈ finger
+  // essentially not moving) within ±220ms of the transition, minus a
+  // 35ms natural-reversal floor. Tight so real touchscreen holds get
+  // caught even when sparse move events merge a pause into one big gap.
+  const pauseThreshAbs = 0.08;
   const transitionT = samples[transitionIndex].t;
   let pauseMsRaw = 0;
   for (let i = 1; i < samples.length; i++) {
     const mid = (samples[i].t + samples[i - 1].t) / 2;
-    if (Math.abs(mid - transitionT) > 200) continue;
+    if (Math.abs(mid - transitionT) > 220) continue;
     const dt = Math.max(0, samples[i].t - samples[i - 1].t);
     if (dt <= 0) continue;
     const v = Math.hypot(samples[i].x - samples[i - 1].x, samples[i].y - samples[i - 1].y) / dt;
-    if (v < pauseThresh) pauseMsRaw += dt;
+    if (v < pauseThreshAbs) pauseMsRaw += dt;
   }
-  const pauseMs = Math.max(0, pauseMsRaw - 30);
+  const pauseMs = Math.max(0, pauseMsRaw - 35);
 
   let peakIdx = 0;
   for (let i = 0; i < forwardSpeeds.length; i++) {
     if (forwardSpeeds[i].v > forwardSpeeds[peakIdx].v) peakIdx = i;
   }
-  const releaseV = forwardSpeeds.length > 0 ? forwardSpeeds[forwardSpeeds.length - 1].v : 0;
-  const decelFrac = peakForward > 0 ? clamp(1 - releaseV / peakForward, 0, 1) : 0;
   const followThrough = forwardSpeeds.length > 1 ? clamp(peakIdx / (forwardSpeeds.length - 1), 0, 1) : 0.5;
 
   let mult = 1.0;
   const tags = [];
   const focusBias = clamp((focus - 50) / 100, -0.5, 0.5);
 
-  const pauseTolerance = 20 * (1 - focusBias * 0.4);
+  // Pause: natural reversal is ~35ms; anything past 10ms extra is taxed.
+  // 100ms pause → ~1.5×, 200ms → ~2.0×, 300ms clamped.
+  const pauseTolerance = 10 * (1 - focusBias * 0.4);
   if (pauseMs > pauseTolerance) {
-    mult *= 1 + clamp((pauseMs - pauseTolerance) / 100, 0, 0.9);
+    mult *= 1 + clamp((pauseMs - pauseTolerance) / 130, 0, 1.2);
     tags.push('Paused');
   }
-  if (backJerk > 0.18) {
-    mult *= 1 + clamp((backJerk - 0.18) * 2.0, 0, 0.5);
+  if (backJerk > 0.38) {
+    mult *= 1 + clamp((backJerk - 0.38) * 2.0, 0, 0.7);
     tags.push('Jerky Back');
   }
-  if (forwardJerk > 0.30) {
-    mult *= 1 + clamp((forwardJerk - 0.30) * 1.8, 0, 0.5);
+  if (forwardJerk > 0.50) {
+    mult *= 1 + clamp((forwardJerk - 0.50) * 2.0, 0, 0.7);
     tags.push('Jerky Fwd');
   }
   // Forward-motion scoring via peak POSITION in the forward swing.
@@ -1643,7 +1667,7 @@ const evaluateTempo = (samples, { focus = 50, composure = 50 } = {}) => {
   }
 
   const pureBonus = tags.length === 1 && tags[0] === 'Committed'
-    && backJerk < 0.12 && forwardJerk < 0.22 && pauseMs < 10 && followThrough >= 0.75;
+    && backJerk < 0.35 && forwardJerk < 0.48 && pauseMs < 10 && followThrough >= 0.75;
   if (pureBonus) {
     mult = 0.75;
     tags.length = 0;
@@ -1653,7 +1677,7 @@ const evaluateTempo = (samples, { focus = 50, composure = 50 } = {}) => {
   return {
     tempoMult: +mult.toFixed(3),
     tempoTag: tags.length ? tags.join(' + ') : 'Smooth',
-    metrics: { backJerk, forwardJerk, pauseMs, decelFrac, followThrough, peakBack, peakForward },
+    metrics: { backJerk, forwardJerk, pauseMs, followThrough, peakBack, peakForward },
   };
 };
 

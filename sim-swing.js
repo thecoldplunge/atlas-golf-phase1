@@ -68,44 +68,74 @@ function evaluateTempo(samples, { focus = 50, composure = 50 } = {}) {
   const peakForward = Math.max(0.001, ...forwardSpeeds.map((s) => s.v));
 
   // --- 3. Jerk (smoothness) ---------------------------------------------
-  // Jerk = mean abs change in accel between adjacent samples, normalised
-  // by the peak speed in that phase so slow swings aren't unfairly hit.
-  function jerkScore(phaseSpeeds, peak) {
+  // Two complementary signals:
+  //   (a) speedCV  = coefficient of variation (stddev / mean) of speeds
+  //                  within the phase. A smooth accel ramp is low CoV
+  //                  (~0.3–0.5); stop-start motion is high (~0.7+).
+  //   (b) reversals = number of direction reversals in the phase's
+  //                  dominant axis. Backswing should be monotonically
+  //                  down; forward should be monotonically up. Any
+  //                  mid-phase direction flip = 1 reversal.
+  // A phase is "jerky" if EITHER signal trips, whichever the human is
+  // doing. CoV catches speed oscillation; reversals catch path wobble.
+  function coeffVariation(phaseSpeeds) {
+    // Filter to samples that are actually in motion (> 20% of phase peak).
+    // Near-zero samples from a pause or from the natural reversal dip
+    // would otherwise inflate CoV and produce false "jerky" readings.
     if (phaseSpeeds.length < 3) return 0;
-    let sum = 0;
-    let count = 0;
-    for (let i = 2; i < phaseSpeeds.length; i++) {
-      const a0 = phaseSpeeds[i - 1].v - phaseSpeeds[i - 2].v;
-      const a1 = phaseSpeeds[i].v - phaseSpeeds[i - 1].v;
-      sum += Math.abs(a1 - a0);
-      count++;
-    }
-    return count > 0 ? (sum / count) / peak : 0;
+    const peak = Math.max(...phaseSpeeds.map((s) => s.v));
+    if (peak < 0.01) return 0;
+    const active = phaseSpeeds.filter((s) => s.v > peak * 0.20);
+    if (active.length < 3) return 0;
+    const mean = active.reduce((a, b) => a + b.v, 0) / active.length;
+    if (mean < 0.01) return 0;
+    const variance = active.reduce((a, b) => a + (b.v - mean) ** 2, 0) / active.length;
+    return Math.sqrt(variance) / mean;
   }
-  const backJerk = jerkScore(backSpeeds, peakBack);
-  const forwardJerk = jerkScore(forwardSpeeds, peakForward);
+  function countReversals(phaseSamples, axis /* 'y' */, expectedSign /* 1 down, -1 up */) {
+    if (phaseSamples.length < 4) return 0;
+    let reversals = 0;
+    let lastSign = 0;
+    for (let i = 1; i < phaseSamples.length; i++) {
+      const d = phaseSamples[i][axis] - phaseSamples[i - 1][axis];
+      if (Math.abs(d) < 1.2) continue; // ignore micro-jitter
+      const sign = d > 0 ? 1 : -1;
+      // Reversal against the expected direction counts extra
+      if (lastSign !== 0 && sign !== lastSign) reversals++;
+      lastSign = sign;
+    }
+    return reversals;
+  }
+  const backCV = coeffVariation(backSpeeds);
+  const forwardCV = coeffVariation(forwardSpeeds);
+  const backReversals = countReversals(back, 'y', 1);      // back = moving +y (down)
+  const forwardReversals = countReversals(forward, 'y', -1); // fwd = moving -y (up)
+  // Merge into single jerk scores. Reversals are weighted heavily — a
+  // single clear direction flip mid-phase is a strong jerky signal even
+  // when CoV is otherwise OK.
+  const backJerk = backCV + backReversals * 0.5;
+  const forwardJerk = forwardCV + forwardReversals * 0.5;
 
   // --- 4. Pause at top ---------------------------------------------------
-  // Look for a window around the transition where pointer speed stays
-  // near zero. Pause = total duration (ms) where speed is below 12% of
-  // peak backswing speed within ±200ms of the transition. This catches
-  // long held pauses as their full length, ignores the unavoidable
-  // ~30ms natural reversal dip.
-  const pauseThresh = peakBack * 0.12;
+  // Count ms where pointer speed is near-zero in absolute terms (finger
+  // essentially not moving) within ±220ms of the transition. Using an
+  // ABSOLUTE threshold (0.08 px/ms ≈ ~5 px over a 60ms stretch) avoids
+  // the relative-threshold trap where a slow backswing sets a low bar.
+  // Subtract a 55ms natural-reversal floor: even a smooth swing has
+  // ~25ms of near-zero speed on each side of the top as the finger
+  // reverses direction.
+  const pauseThreshAbs = 0.08;
   const transitionT = samples[transitionIndex].t;
   let pauseMsRaw = 0;
   for (let i = 1; i < samples.length; i++) {
     const mid = (samples[i].t + samples[i - 1].t) / 2;
-    if (Math.abs(mid - transitionT) > 200) continue;
+    if (Math.abs(mid - transitionT) > 220) continue;
     const dt = Math.max(0, samples[i].t - samples[i - 1].t);
     if (dt <= 0) continue;
-    const dx = samples[i].x - samples[i - 1].x;
-    const dy = samples[i].y - samples[i - 1].y;
-    const v = Math.hypot(dx, dy) / dt;
-    if (v < pauseThresh) pauseMsRaw += dt;
+    const v = Math.hypot(samples[i].x - samples[i - 1].x, samples[i].y - samples[i - 1].y) / dt;
+    if (v < pauseThreshAbs) pauseMsRaw += dt;
   }
-  // Subtract ~30ms natural reversal floor so a smooth swing reads 0.
-  const pauseMs = Math.max(0, pauseMsRaw - 30);
+  const pauseMs = Math.max(0, pauseMsRaw - 35);
 
   // --- 5. Forward deceleration ------------------------------------------
   // Find peak forward speed, then measure how much speed drops from the
@@ -136,28 +166,28 @@ function evaluateTempo(samples, { focus = 50, composure = 50 } = {}) {
   const focusBias = clamp((focus - 50) / 100, -0.5, 0.5);
   const composureSoften = clamp(1 - (composure - 50) * 0.003, 0.85, 1.15);
 
-  // Pause penalty — the marquee change. Pre-subtracted ~30ms natural
-  // reversal floor. Any remaining pause > 20ms starts biting, ramps hard
-  // past 120ms. Focus tightens this window.
-  const pauseTolerance = 20 * (1 - focusBias * 0.4);
+  // Pause penalty. Natural reversal is ~35ms; anything beyond that is
+  // a deliberate hold. 100ms pause → ~1.45×, 200ms → ~1.95×, 300ms capped.
+  const pauseTolerance = 10 * (1 - focusBias * 0.4);
   if (pauseMs > pauseTolerance) {
-    const over = pauseMs - pauseTolerance;
-    mult *= 1 + clamp(over / 100, 0, 0.9);
+    mult *= 1 + clamp((pauseMs - pauseTolerance) / 130, 0, 1.2);
     tags.push('Paused');
   }
 
-  // Backswing jerk penalty. Threshold tuned so a clean 300ms pull stays
-  // under it, and a rattled yank-back trips it.
-  if (backJerk > 0.18) {
-    mult *= 1 + clamp((backJerk - 0.18) * 2.0, 0, 0.5);
+  // Backswing jerk penalty. backJerk = coeffVariation(active samples)
+  // + 0.5 × direction reversals. Smooth swings register ~0.30 CoV;
+  // any deliberate stop-start pushes it past 0.38, and a reversal alone
+  // is a dead giveaway worth 0.5.
+  if (backJerk > 0.38) {
+    mult *= 1 + clamp((backJerk - 0.38) * 2.0, 0, 0.7);
     tags.push('Jerky Back');
   }
 
-  // Forward jerk penalty. Forward swing is short, so slightly more
-  // tolerant — it's a fast, accelerating motion.
-  if (forwardJerk > 0.30) {
-    mult *= 1 + clamp((forwardJerk - 0.30) * 1.8, 0, 0.5);
-    tags.push('Jerky Forward');
+  // Forward jerk penalty. Forward motion is shorter / punchier, so CoV
+  // runs a touch higher.
+  if (forwardJerk > 0.50) {
+    mult *= 1 + clamp((forwardJerk - 0.50) * 2.0, 0, 0.7);
+    tags.push('Jerky Fwd');
   }
 
   // Forward-motion scoring via peak POSITION in the forward swing.
@@ -190,7 +220,7 @@ function evaluateTempo(samples, { focus = 50, composure = 50 } = {}) {
   // "Pure" upgrade: a Committed swing that is ALSO very smooth (low jerk
   // on both phases) and has essentially zero pause. Rare and rewarded.
   const pureBonus = tags.length === 1 && tags[0] === 'Committed'
-    && backJerk < 0.12 && forwardJerk < 0.22 && pauseMs < 10 && followThrough >= 0.75;
+    && backJerk < 0.45 && forwardJerk < 0.60 && pauseMs < 15 && followThrough >= 0.75;
   if (pureBonus) {
     mult = 0.75;
     tags.length = 0;
@@ -241,8 +271,14 @@ function makeSwing({
     let progress;
     switch (backProfile) {
       case 'jerky':
-        // Random juddery motion
+        // Extreme rattled motion (stress test)
         progress = u + Math.sin(u * 40) * 0.08;
+        break;
+      case 'humanJerky':
+        // Realistic "try to be jerky" — small stop-start steps that a
+        // human finger can actually produce: ~3-4 speed changes over
+        // the phase, milder amplitude than the synthetic jerky profile.
+        progress = u + Math.sin(u * 10) * 0.05 + Math.sin(u * 22) * 0.02;
         break;
       case 'easeIn':
         progress = u * u;
@@ -304,6 +340,9 @@ function makeSwing({
       case 'jerky':
         speedScale = 0.5 + Math.sin(u * 15) * 0.3;
         break;
+      case 'humanJerky':
+        speedScale = 0.5 + Math.sin(u * 10) * 0.25 + Math.sin(u * 22) * 0.1;
+        break;
       case 'smooth':
       default:
         // Symmetric peak at middle
@@ -336,6 +375,7 @@ function integrateProfile(profile, u, steps) {
       case 'coast':     s = 1.0 - x * 0.6;   break;
       case 'decel':     s = x < 0.3 ? x / 0.3 : Math.max(0.05, 1 - (x - 0.3) * 1.3); break;
       case 'jerky':     s = 0.5 + Math.sin(x * 15) * 0.3; break;
+      case 'humanJerky': s = 0.5 + Math.sin(x * 10) * 0.25 + Math.sin(x * 22) * 0.1; break;
       case 'smooth':
       default:          s = Math.sin(x * Math.PI);
     }
@@ -353,12 +393,18 @@ const SCENARIOS = [
     opts: { backMs: 380, pauseMs: 0, forwardMs: 160, backProfile: 'smooth', forwardProfile: 'committed' } },
   { name: 'Smooth        (smooth back, no pause, symmetric fwd)',
     opts: { backMs: 380, pauseMs: 0, forwardMs: 150, backProfile: 'smooth', forwardProfile: 'smooth' } },
+  { name: 'Slight Pause  (smooth back, 60ms pause — realistic hold)',
+    opts: { backMs: 380, pauseMs: 60, forwardMs: 150, backProfile: 'smooth', forwardProfile: 'smooth' } },
   { name: 'Paused        (smooth back, 100ms pause, smooth fwd)',
     opts: { backMs: 380, pauseMs: 100, forwardMs: 150, backProfile: 'smooth', forwardProfile: 'smooth' } },
   { name: 'Long Pause    (smooth back, 250ms pause, smooth fwd)',
     opts: { backMs: 380, pauseMs: 250, forwardMs: 150, backProfile: 'smooth', forwardProfile: 'smooth' } },
-  { name: 'Jerky Back    (rattled back, no pause, smooth fwd)',
+  { name: 'Human Jerky   (realistic human-jerky back, smooth fwd)',
+    opts: { backMs: 380, pauseMs: 0, forwardMs: 150, backProfile: 'humanJerky', forwardProfile: 'smooth' } },
+  { name: 'Jerky Back    (very rattled back, no pause, smooth fwd)',
     opts: { backMs: 380, pauseMs: 0, forwardMs: 150, backProfile: 'jerky', forwardProfile: 'smooth' } },
+  { name: 'Human Yank Fwd (smooth back, humanly-jerky forward)',
+    opts: { backMs: 380, pauseMs: 0, forwardMs: 150, backProfile: 'smooth', forwardProfile: 'humanJerky' } },
   { name: 'Decel Forward (smooth back, no pause, slows before release)',
     opts: { backMs: 380, pauseMs: 0, forwardMs: 200, backProfile: 'smooth', forwardProfile: 'decel' } },
   { name: 'Coast Forward (smooth back, no pause, peak early then fade)',
@@ -367,7 +413,7 @@ const SCENARIOS = [
     opts: { backMs: 180, pauseMs: 0, forwardMs: 80,  backProfile: 'easeIn', forwardProfile: 'smooth' } },
   { name: 'Slow Smooth   (very slow smooth back + fwd)',
     opts: { backMs: 700, pauseMs: 0, forwardMs: 260, backProfile: 'smooth', forwardProfile: 'smooth' } },
-  { name: 'Paused+Decel  (worst — pause AND decel AND jerky)',
+  { name: 'Paused+Jerky  (worst — long pause + jerky back + decel)',
     opts: { backMs: 380, pauseMs: 140, forwardMs: 180, backProfile: 'jerky', forwardProfile: 'decel' } },
 ];
 
