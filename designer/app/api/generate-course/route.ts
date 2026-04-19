@@ -84,6 +84,20 @@ export async function POST(request: Request) {
   const client = new OpenAI({ apiKey });
   const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
 
+  // Pin hole count exactly for this request — base schema allows 1–18,
+  // but we want the model to produce exactly N for the hole count asked.
+  const schema = {
+    ...COURSE_JSON_SCHEMA,
+    properties: {
+      ...COURSE_JSON_SCHEMA.properties,
+      holes: {
+        ...COURSE_JSON_SCHEMA.properties.holes,
+        minItems: parsed.holeCount,
+        maxItems: parsed.holeCount,
+      },
+    },
+  };
+
   try {
     const completion = await client.chat.completions.create({
       model,
@@ -96,7 +110,7 @@ export async function POST(request: Request) {
         json_schema: {
           name: 'course',
           strict: true,
-          schema: COURSE_JSON_SCHEMA,
+          schema,
         },
       },
       temperature: 0.8,
