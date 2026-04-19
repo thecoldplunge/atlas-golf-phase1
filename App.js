@@ -11,7 +11,17 @@ import {
   Platform
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import Svg, { Path as SvgPath } from 'react-native-svg';
+import Svg, {
+  Path as SvgPath,
+  G as SvgG,
+  Defs as SvgDefs,
+  Pattern as SvgPattern,
+  Rect as SvgRect,
+  Circle as SvgCircle,
+  Ellipse as SvgEllipse,
+  Line as SvgLine,
+} from 'react-native-svg';
+import { SURFACE_COLORS, PATTERNS, TREES, GENERIC_TREE } from './shared/theme';
 import testCourseData from './courses/test-course.json';
 import test2CourseData from './courses/test-2.json';
 import test4CourseData from './courses/test-4.json';
@@ -58,6 +68,203 @@ const expandPointsFromCentroid = (points, px) => {
     const op = grow(p.outX, p.outY);
     return { x: a.x, y: a.y, inX: ip.x, inY: ip.y, outX: op.x, outY: op.y };
   });
+};
+
+// ---- SVG pattern definitions built from shared/theme.js specs -------------
+// Each kind compiles to a small set of SVG children inside <pattern>. The
+// game uses the same numeric params as the designer's Canvas 2D patterns so
+// the two look identical.
+const PATTERN_ID = {
+  rough: 'pat-rough',
+  fairway: 'pat-fairway',
+  fringe: 'pat-fringe',
+  green: 'pat-green',
+  sand: 'pat-sand',
+  water: 'pat-water',
+};
+
+const renderPatternChildren = (spec) => {
+  const children = [];
+  // Base fill
+  children.push(
+    <SvgRect key="base" x={0} y={0} width={spec.size} height={spec.size} fill={spec.base} />,
+  );
+  const ov = spec.overlay;
+  if (!ov) return children;
+
+  if (ov.kind === 'diagonalLines') {
+    // Draw diagonal hairlines across the tile; extend beyond edges to keep the
+    // repeat seamless.
+    const s = spec.size;
+    const step = ov.spacing;
+    const angleRad = (ov.angle * Math.PI) / 180;
+    // For negative angle (-45), start with a family that runs bottom-left → top-right
+    // Draw long lines at regular spacing along the perpendicular axis.
+    // Simple implementation: render lines with slope = tan(angle).
+    for (let off = -s; off <= s * 2; off += step) {
+      const x1 = off;
+      const y1 = s;
+      const x2 = off + s * Math.tan(Math.abs(angleRad));
+      const y2 = 0;
+      const [X1, Y1, X2, Y2] = ov.angle < 0
+        ? [x1 - s, y1 + s, x2 + s, y2 - s]
+        : [x1 - s, y2 - s, x2 + s, y1 + s];
+      children.push(
+        <SvgLine
+          key={`dl-${off}`}
+          x1={X1}
+          y1={Y1}
+          x2={X2}
+          y2={Y2}
+          stroke={ov.stroke}
+          strokeWidth={ov.strokeWidth}
+        />,
+      );
+    }
+    return children;
+  }
+
+  if (ov.kind === 'stripes') {
+    for (let i = 0; i < ov.bands.length; i++) {
+      const b = ov.bands[i];
+      children.push(
+        <SvgRect
+          key={`st-${i}`}
+          x={b.offsetX}
+          y={0}
+          width={b.width}
+          height={spec.size}
+          fill={b.color}
+        />,
+      );
+    }
+    return children;
+  }
+
+  if (ov.kind === 'stipple') {
+    const { grid, dotRadius, fill } = ov;
+    for (let y = grid.rowStep / 2; y < spec.size; y += grid.rowStep) {
+      const rowIdx = Math.round((y - grid.rowStep / 2) / grid.rowStep);
+      const startX = grid.rowOffset[rowIdx % grid.rowOffset.length];
+      for (let x = startX; x < spec.size; x += grid.colStep) {
+        children.push(
+          <SvgCircle key={`sp-${x}-${y}`} cx={x} cy={y} r={dotRadius} fill={fill} />,
+        );
+      }
+    }
+    return children;
+  }
+
+  if (ov.kind === 'waves') {
+    // Wavy horizontal lines every rowStep pixels, built as cubic-bezier path.
+    for (let y = ov.rowStart; y <= spec.size - ov.rowStart; y += ov.rowStep) {
+      const amp = ov.amplitude;
+      const sw = ov.segmentWidth;
+      let d = `M 0 ${y}`;
+      let toggle = -1;
+      for (let x = 0; x < spec.size; x += sw) {
+        const midX = x + sw / 2;
+        const midY = y + toggle * amp;
+        d += ` Q ${midX} ${midY} ${x + sw} ${y}`;
+        toggle = -toggle;
+      }
+      children.push(
+        <SvgPath
+          key={`w-${y}`}
+          d={d}
+          fill="none"
+          stroke={ov.stroke}
+          strokeWidth={ov.strokeWidth}
+        />,
+      );
+    }
+    return children;
+  }
+
+  return children;
+};
+
+// Build <pattern> definitions for every surface. Lives in a single <Defs>.
+const renderPatternDefs = () => (
+  <SvgDefs>
+    {Object.entries(PATTERNS).map(([key, spec]) => (
+      <SvgPattern
+        key={key}
+        id={PATTERN_ID[key]}
+        x={0}
+        y={0}
+        width={spec.size}
+        height={spec.size}
+        patternUnits="userSpaceOnUse"
+      >
+        {renderPatternChildren(spec)}
+      </SvgPattern>
+    ))}
+  </SvgDefs>
+);
+
+// ---- Tree rendering (species-aware, matches designer drawTree exactly) ----
+const renderTreePrims = (x, y, r, look) => {
+  const prims = TREES[look] || GENERIC_TREE;
+  const children = [];
+  for (let i = 0; i < prims.length; i++) {
+    const p = prims[i];
+    if (p.kind === 'circle') {
+      children.push(
+        <SvgCircle
+          key={`c${i}`}
+          cx={x + (p.dx || 0) * r}
+          cy={y + (p.dy || 0) * r}
+          r={p.r * r}
+          fill={p.fill}
+        />,
+      );
+    } else if (p.kind === 'circleStroke') {
+      children.push(
+        <SvgCircle
+          key={`cs${i}`}
+          cx={x + (p.dx || 0) * r}
+          cy={y + (p.dy || 0) * r}
+          r={p.r * r}
+          fill="none"
+          stroke={p.stroke}
+          strokeWidth={p.strokeWidth}
+        />,
+      );
+    } else if (p.kind === 'ellipse') {
+      children.push(
+        <SvgEllipse
+          key={`e${i}`}
+          cx={x + (p.dx || 0) * r}
+          cy={y + (p.dy || 0) * r}
+          rx={p.rx * r}
+          ry={p.ry * r}
+          fill={p.fill}
+        />,
+      );
+    } else if (p.kind === 'ellipseFan') {
+      // Rotated ellipse fan for palm fronds.
+      const { count, orbitR, rx, ry, fill } = p;
+      for (let j = 0; j < count; j++) {
+        const angle = (j / count) * Math.PI * 2;
+        const cx = x + Math.cos(angle) * orbitR * r;
+        const cy = y + Math.sin(angle) * orbitR * r;
+        const deg = (angle * 180) / Math.PI;
+        children.push(
+          <SvgEllipse
+            key={`ef${i}-${j}`}
+            cx={cx}
+            cy={cy}
+            rx={rx * r}
+            ry={ry * r}
+            fill={fill}
+            transform={`rotate(${deg} ${cx} ${cy})`}
+          />,
+        );
+      }
+    }
+  }
+  return children;
 };
 
 // All holes are centered in a 700x700 region of the world starting at offset (170, 200)
@@ -4306,91 +4513,92 @@ export default function App() {
                 viewBox={`0 0 ${WORLD.w} ${WORLD.h}`}
                 style={{ position: 'absolute', left: 0, top: 0 }}
               >
-                {/* water (background) */}
-                {currentHole.editorVectors?.hazards?.water?.map((shape, i) => (
-                  <SvgPath
-                    key={`vw-${i}`}
-                    d={pointsToSvgD(shape.points)}
-                    fill="#3879c5"
-                    stroke="#1c4a85"
-                    strokeWidth={1}
-                  />
-                ))}
-                {/* desert / deepRough / rough (background surface patches) */}
-                {currentHole.terrain?.desert?.map((s, i) => (
-                  <SvgPath
-                    key={`vd-${i}`}
-                    d={`M ${s.x} ${s.y} h ${s.w} v ${s.h} h ${-s.w} Z`}
-                    fill="#d8b57b"
-                  />
-                )) || null}
-                {currentHole.terrain?.deepRough?.map((s, i) => (
-                  <SvgPath
-                    key={`vdr-${i}`}
-                    d={`M ${s.x} ${s.y} h ${s.w} v ${s.h} h ${-s.w} Z`}
-                    fill="#193818"
-                  />
-                )) || null}
-                {currentHole.terrain?.rough?.map((s, i) => (
-                  <SvgPath
-                    key={`vr-${i}`}
-                    d={`M ${s.x} ${s.y} h ${s.w} v ${s.h} h ${-s.w} Z`}
-                    fill="#3f6f2f"
-                  />
-                )) || null}
-                {/* fairway */}
-                {currentHole.editorVectors?.terrain?.fairway?.map((shape, i) => (
-                  <SvgPath
-                    key={`vf-${i}`}
-                    d={pointsToSvgD(shape.points)}
-                    fill="#5aad42"
-                  />
-                ))}
-                {/* fringe + green.
-                    First pass: rect-based green from terrain.green as a
-                    visibility safety net — guarantees the putting surface
-                    renders even if the vector path below fails on some
-                    platforms or the designer exported mismatched data.
-                    Second pass: vector fringe + green from editorVectors,
-                    which matches the designer canvas when available. */}
-                {currentHole.terrain?.green ? (
-                  <>
-                    <SvgPath
-                      key="rect-fringe"
-                      d={`M ${currentHole.terrain.green.x - FRINGE_BUFFER} ${currentHole.terrain.green.y - FRINGE_BUFFER} h ${currentHole.terrain.green.w + FRINGE_BUFFER * 2} v ${currentHole.terrain.green.h + FRINGE_BUFFER * 2} h ${-(currentHole.terrain.green.w + FRINGE_BUFFER * 2)} Z`}
-                      fill="#3f8a3a"
-                    />
-                    <SvgPath
-                      key="rect-green"
-                      d={`M ${currentHole.terrain.green.x} ${currentHole.terrain.green.y} h ${currentHole.terrain.green.w} v ${currentHole.terrain.green.h} h ${-currentHole.terrain.green.w} Z`}
-                      fill="#89d95a"
-                    />
-                  </>
-                ) : null}
+                {/* Pattern defs shared across all surface paths. */}
+                {renderPatternDefs()}
+
+                {/* Helper: render each surface as (base fill) + (pattern overlay)
+                    matching the designer's fillShape(): solid color first, then
+                    the tile pattern painted on top at its own opacity. */}
+
+                {/* Water (background) — base + wave pattern. */}
+                {currentHole.editorVectors?.hazards?.water?.map((shape, i) => {
+                  const d = pointsToSvgD(shape.points);
+                  return (
+                    <SvgG key={`vw-${i}`}>
+                      <SvgPath d={d} fill={SURFACE_COLORS.water} stroke={SURFACE_COLORS.waterStroke} strokeWidth={1} />
+                      <SvgPath d={d} fill={`url(#${PATTERN_ID.water})`} />
+                    </SvgG>
+                  );
+                })}
+
+                {/* Desert / deepRough / rough surface patches — base + rough pattern where appropriate. */}
+                {currentHole.terrain?.desert?.map((s, i) => {
+                  const d = `M ${s.x} ${s.y} h ${s.w} v ${s.h} h ${-s.w} Z`;
+                  return <SvgPath key={`vd-${i}`} d={d} fill={SURFACE_COLORS.desert} />;
+                }) || null}
+                {currentHole.terrain?.deepRough?.map((s, i) => {
+                  const d = `M ${s.x} ${s.y} h ${s.w} v ${s.h} h ${-s.w} Z`;
+                  return (
+                    <SvgG key={`vdr-${i}`}>
+                      <SvgPath d={d} fill={SURFACE_COLORS.deepRough} />
+                      <SvgPath d={d} fill={`url(#${PATTERN_ID.rough})`} />
+                    </SvgG>
+                  );
+                }) || null}
+                {currentHole.terrain?.rough?.map((s, i) => {
+                  const d = `M ${s.x} ${s.y} h ${s.w} v ${s.h} h ${-s.w} Z`;
+                  return (
+                    <SvgG key={`vr-${i}`}>
+                      <SvgPath d={d} fill={SURFACE_COLORS.rough} />
+                      <SvgPath d={d} fill={`url(#${PATTERN_ID.rough})`} />
+                    </SvgG>
+                  );
+                }) || null}
+
+                {/* Fairway — base bright green + mowing-stripe pattern overlay. */}
+                {currentHole.editorVectors?.terrain?.fairway?.map((shape, i) => {
+                  const d = pointsToSvgD(shape.points);
+                  return (
+                    <SvgG key={`vf-${i}`}>
+                      <SvgPath d={d} fill={SURFACE_COLORS.fairway} />
+                      <SvgPath d={d} fill={`url(#${PATTERN_ID.fairway})`} />
+                    </SvgG>
+                  );
+                })}
+
+                {/* Fringe + green. Fringe is the green path expanded outward by
+                    FRINGE_BUFFER world units. Each gets its own pattern overlay. */}
                 {currentHole.editorVectors?.terrain?.green?.points?.length >= 2 ? (
-                  <>
-                    <SvgPath
-                      key="vec-fringe"
-                      d={pointsToSvgD(expandPointsFromCentroid(currentHole.editorVectors.terrain.green.points, FRINGE_BUFFER))}
-                      fill="#3f8a3a"
-                    />
-                    <SvgPath
-                      key="vec-green"
-                      d={pointsToSvgD(currentHole.editorVectors.terrain.green.points)}
-                      fill="#89d95a"
-                    />
-                  </>
+                  <SvgG key="vg">
+                    {(() => {
+                      const fringePts = expandPointsFromCentroid(
+                        currentHole.editorVectors.terrain.green.points,
+                        FRINGE_BUFFER,
+                      );
+                      const dFringe = pointsToSvgD(fringePts);
+                      const dGreen = pointsToSvgD(currentHole.editorVectors.terrain.green.points);
+                      return (
+                        <>
+                          <SvgPath d={dFringe} fill={SURFACE_COLORS.fringe} />
+                          <SvgPath d={dFringe} fill={`url(#${PATTERN_ID.fringe})`} />
+                          <SvgPath d={dGreen} fill={SURFACE_COLORS.green} />
+                          <SvgPath d={dGreen} fill={`url(#${PATTERN_ID.green})`} />
+                        </>
+                      );
+                    })()}
+                  </SvgG>
                 ) : null}
-                {/* sand bunkers (on top of green surface) */}
-                {currentHole.editorVectors?.hazards?.sand?.map((shape, i) => (
-                  <SvgPath
-                    key={`vs-${i}`}
-                    d={pointsToSvgD(shape.points)}
-                    fill="#e6d2a1"
-                    stroke="#b59b6a"
-                    strokeWidth={1}
-                  />
-                ))}
+
+                {/* Sand bunkers — on top of green surface. */}
+                {currentHole.editorVectors?.hazards?.sand?.map((shape, i) => {
+                  const d = pointsToSvgD(shape.points);
+                  return (
+                    <SvgG key={`vs-${i}`}>
+                      <SvgPath d={d} fill={SURFACE_COLORS.sand} stroke={SURFACE_COLORS.sandStroke} strokeWidth={1} />
+                      <SvgPath d={d} fill={`url(#${PATTERN_ID.sand})`} />
+                    </SvgG>
+                  );
+                })}
               </Svg>
             ) : (
               <>
@@ -4550,46 +4758,62 @@ export default function App() {
               />
             ))}
 
-            {currentHole.obstacles.map((o, i) => {
-              if (o.type === 'rect') {
-                return (
-                  <View
-                    key={`obs-${i}`}
-                    style={[
-                      styles.wall,
-                      {
-                        left: o.x * scaleX,
-                        top: o.y * scaleY,
-                        width: o.w * scaleX,
-                        height: o.h * scaleY
-                      }
-                    ]}
-                  />
-                );
-              }
+            {/* Trees + rock bumpers — species-aware SVG art matching the
+                designer's drawTree() exactly. Any `look` that's in the TREES
+                table renders as a multi-primitive canopy; unknown looks
+                (legacy 'rock' / missing) render as a brown bumper circle. */}
+            {currentHole.obstacles?.some((o) => o.type === 'circle') ? (
+              <Svg
+                pointerEvents="none"
+                width={WORLD.w * scaleX}
+                height={WORLD.h * scaleY}
+                viewBox={`0 0 ${WORLD.w} ${WORLD.h}`}
+                style={{ position: 'absolute', left: 0, top: 0 }}
+              >
+                {currentHole.obstacles.map((o, i) => {
+                  if (o.type !== 'circle') return null;
+                  const isTree = o.look && Object.prototype.hasOwnProperty.call(TREES, o.look);
+                  if (isTree) {
+                    return (
+                      <SvgG key={`tree-${i}`}>
+                        {renderTreePrims(o.x, o.y, o.r, o.look)}
+                      </SvgG>
+                    );
+                  }
+                  // Fallback for unknown / rock looks: brown bumper circle.
+                  return (
+                    <SvgCircle
+                      key={`rock-${i}`}
+                      cx={o.x}
+                      cy={o.y}
+                      r={o.r}
+                      fill="#6e5a46"
+                      stroke="#4f3f31"
+                      strokeWidth={1}
+                    />
+                  );
+                })}
+              </Svg>
+            ) : null}
 
-              if (o.type === 'circle') {
-                const size = o.r * scaleX * 2;
-                return (
-                  <View
-                    key={`obs-${i}`}
-                    style={[
-                      o.look === 'tree' ? styles.tree : styles.bumper,
-                      {
-                        width: size,
-                        height: size,
-                        borderRadius: size / 2,
-                        left: (o.x - o.r) * scaleX,
-                        top: (o.y - o.r) * scaleY
-                      }
-                    ]}
-                  >
-                    {o.look === 'tree' ? <View style={styles.treeCore} /> : null}
-                  </View>
-                );
-              }
-
-              return null;
+            {/* Legacy rect obstacles (walls). Kept for hand-authored courses
+                that still have them. */}
+            {currentHole.obstacles?.map((o, i) => {
+              if (o.type !== 'rect') return null;
+              return (
+                <View
+                  key={`obs-rect-${i}`}
+                  style={[
+                    styles.wall,
+                    {
+                      left: o.x * scaleX,
+                      top: o.y * scaleY,
+                      width: o.w * scaleX,
+                      height: o.h * scaleY
+                    }
+                  ]}
+                />
+              );
             })}
 
             {puttingMode && puttAimPoint ? (

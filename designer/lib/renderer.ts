@@ -9,6 +9,15 @@ import type {
 } from '@/lib/types';
 import { anchorHit, handleHit, pointInShape, shapeBounds } from '@/lib/vector';
 import { WORLD_HEIGHT, WORLD_WIDTH } from '@/lib/world';
+// Shared visual theme — single source of truth for colors + tree art
+// shared across the designer and the React Native game (App.js).
+import { TREES as SHARED_TREES } from '../../shared/theme';
+
+type TreePrim =
+  | { kind: 'circle'; dx?: number; dy?: number; r: number; fill: string }
+  | { kind: 'circleStroke'; dx?: number; dy?: number; r: number; stroke: string; strokeWidth: number }
+  | { kind: 'ellipse'; dx?: number; dy?: number; rx: number; ry: number; fill: string }
+  | { kind: 'ellipseFan'; count: number; orbitR: number; rx: number; ry: number; fill: string };
 
 export const GREEN_FRINGE = 10;
 
@@ -171,87 +180,46 @@ function fillShape(
   }
 }
 
+// Iterates the shared TREES[type] primitive list so the designer canvas and
+// the game's SVG layer draw the exact same tree art. Changing shared/theme.js
+// updates both.
 function drawTree(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, type: TreeType) {
+  const prims = (SHARED_TREES as Record<string, TreePrim[]>)[type];
+  if (!prims) return;
   ctx.save();
-  switch (type) {
-    case 'pine': {
-      ctx.fillStyle = '#2f6e3e';
-      for (const [dx, dy, rr] of [
-        [0, -r * 0.2, r * 0.74],
-        [-r * 0.4, r * 0.2, r * 0.58],
-        [r * 0.4, r * 0.2, r * 0.58],
-      ]) {
-        ctx.beginPath();
-        ctx.arc(x + dx, y + dy, rr, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.fillStyle = '#214e2b';
+  for (const p of prims) {
+    if (p.kind === 'circle') {
+      ctx.fillStyle = p.fill;
       ctx.beginPath();
-      ctx.arc(x, y, r * 0.32, 0, Math.PI * 2);
+      ctx.arc(x + (p.dx ?? 0) * r, y + (p.dy ?? 0) * r, p.r * r, 0, Math.PI * 2);
       ctx.fill();
-      break;
-    }
-    case 'oak': {
-      ctx.fillStyle = '#2f6e3e';
+    } else if (p.kind === 'circleStroke') {
+      ctx.strokeStyle = p.stroke;
+      ctx.lineWidth = p.strokeWidth;
       ctx.beginPath();
-      ctx.arc(x, y, r * 0.9, 0, Math.PI * 2);
+      ctx.arc(x + (p.dx ?? 0) * r, y + (p.dy ?? 0) * r, p.r * r, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (p.kind === 'ellipse') {
+      ctx.fillStyle = p.fill;
+      ctx.beginPath();
+      ctx.ellipse(x + (p.dx ?? 0) * r, y + (p.dy ?? 0) * r, p.rx * r, p.ry * r, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#1f4c28';
-      for (const [dx, dy] of [
-        [-r * 0.22, -r * 0.14],
-        [r * 0.18, -r * 0.2],
-        [0, r * 0.2],
-      ]) {
-        ctx.beginPath();
-        ctx.arc(x + dx, y + dy, r * 0.25, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      break;
-    }
-    case 'palm': {
-      ctx.fillStyle = '#2f6e3e';
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
+    } else if (p.kind === 'ellipseFan') {
+      ctx.fillStyle = p.fill;
+      for (let i = 0; i < p.count; i++) {
+        const a = (i / p.count) * Math.PI * 2;
         ctx.beginPath();
         ctx.ellipse(
-          x + Math.cos(a) * r * 0.18,
-          y + Math.sin(a) * r * 0.18,
-          r * 0.72,
-          r * 0.22,
+          x + Math.cos(a) * p.orbitR * r,
+          y + Math.sin(a) * p.orbitR * r,
+          p.rx * r,
+          p.ry * r,
           a,
           0,
           Math.PI * 2,
         );
         ctx.fill();
       }
-      ctx.fillStyle = '#214e2b';
-      ctx.beginPath();
-      ctx.arc(x, y, r * 0.24, 0, Math.PI * 2);
-      ctx.fill();
-      break;
-    }
-    case 'birch': {
-      ctx.fillStyle = '#86bf6a';
-      ctx.beginPath();
-      ctx.arc(x, y, r * 0.88, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#edf1ea';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.arc(x, y, r * 0.42, 0, Math.PI * 2);
-      ctx.stroke();
-      break;
-    }
-    case 'cypress': {
-      ctx.fillStyle = '#214e2b';
-      ctx.beginPath();
-      ctx.ellipse(x, y, r * 0.55, r * 0.95, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#2f6e3e';
-      ctx.beginPath();
-      ctx.ellipse(x, y - r * 0.08, r * 0.38, r * 0.68, 0, 0, Math.PI * 2);
-      ctx.fill();
-      break;
     }
   }
   ctx.restore();
