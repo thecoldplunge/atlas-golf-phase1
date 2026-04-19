@@ -3284,14 +3284,9 @@ export default function App() {
           </View>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
           <Text style={styles.spaceMenuSubtitle}>SELECT GOLFER</Text>
+          <Text style={styles.golferRosterHint}>{GOLFERS.length} golfers — tap a thumbnail to view stats</Text>
 
-          <ScrollView
-            horizontal
-            nestedScrollEnabled
-            style={styles.golferRosterScroll}
-            contentContainerStyle={styles.golferRosterContent}
-            showsHorizontalScrollIndicator={false}
-          >
+          <View style={styles.golferRosterGrid}>
             {GOLFERS.map((golfer) => {
               const isSelected = golfer.id === g.id;
               return (
@@ -3310,7 +3305,7 @@ export default function App() {
                 </Pressable>
               );
             })}
-          </ScrollView>
+          </View>
 
           <View style={styles.golferCard}>
             {/* Avatar */}
@@ -5146,16 +5141,21 @@ const styles = StyleSheet.create({
     fontWeight: '800'
   },
   // Golfer select styles
-  golferRosterScroll: {
-    marginBottom: 12
+  golferRosterHint: {
+    color: 'rgba(245,251,239,0.55)',
+    fontSize: 11,
+    marginBottom: 10,
+    letterSpacing: 0.5
   },
-  golferRosterContent: {
+  golferRosterGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
-    paddingRight: 4
+    marginBottom: 16
   },
   golferRosterCard: {
-    width: 118,
-    minHeight: 104,
+    width: '31.5%',
+    minHeight: 96,
     backgroundColor: 'rgba(255,255,255,0.055)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
