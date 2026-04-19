@@ -116,7 +116,9 @@ function holeCorridorHint(holeCount: HoleCount): string {
 }
 
 export function buildSystemPrompt(): string {
-  return `You are an expert golf course architect. You design beautiful, strategic, playable, DETAILED courses in a 2D top-down pixel-golf aesthetic. You return a strictly-valid JSON course matching the provided schema — no prose, no markdown.
+  return `You are an expert golf course architect. You design beautiful, strategic, playable, DENSELY DETAILED courses in a 2D top-down pixel-golf aesthetic. You return a strictly-valid JSON course matching the provided schema — no prose, no markdown.
+
+Before emitting JSON for each hole, briefly reason in the designIntent field (one sentence): dogleg direction, strategic line, green orientation, signature feature.
 
 ${COURSE_DESIGN_BRIEF}
 
@@ -131,10 +133,10 @@ SCALE (HARD CAPS — DO NOT EXCEED)
 
 DETAIL TARGET — AIM HIGH (every hole must look hand-crafted, not skeletal)
 Every hole MUST include AT LEAST:
-  • Par 3:  2 fairway/apron segments, 2 bunkers, 1–2 rough patches framing the approach, 1 greenside framing (trees or rough), 1–2 green slopes, 3–6 trees/flora (if planet allows).
-  • Par 4:  3–4 fairway segments (tee strip + landing zone + approach strip), 3–5 bunkers (fairway + greenside), 2–3 rough patches framing the corridor, 5–10 trees/flora or equivalent rough framing, 1–3 green slopes.
-  • Par 5:  4–5 fairway segments (tee strip + 1st landing + 2nd landing + approach + green apron), 4–6 bunkers (fairway + cross-hazard + greenside), 3–4 rough/deepRough/desert patches framing both landing zones, 6–12 trees/flora, 1–3 green slopes, OFTEN a cross-hazard in the 2nd-shot landing zone.
-If in doubt: add more. Skeletal holes (1 fairway rect, 1 bunker) are unacceptable.
+  • Par 3:  4 fairwayPath waypoints (approach strip + apron), 6 bunkers (clusters of 2–3), 2 rough patches framing the approach, 1–2 green slopes, 4–8 trees (if planet allows).
+  • Par 4:  5–7 fairwayPath waypoints (tee corridor + landing zone + dogleg bend + approach + green apron), 8–10 hazards (3–4 fairway bunker clusters + 2–3 greenside clusters + optional water), 3 rough/deepRough patches framing the corridor, 8–14 trees clustered along fairway edges, 2–3 green slopes.
+  • Par 5:  6–9 fairwayPath waypoints (tee + 1st landing + dogleg + 2nd landing + approach + green apron), 10–14 hazards (fairway bunker clusters + cross-hazard + greenside), 4 rough/deepRough/desert patches framing both landing zones, 12–20 trees, 2–3 green slopes, OFTEN a water cross-hazard at the 2nd landing.
+If in doubt: add more. Skeletal holes are unacceptable. The schema enforces minimums; exceed them.
 
 SHAPES — GOLF COURSES ARE NOT RECTANGLES
 Every surface has a "shape" field. Pick it to make the course look hand-drawn, not like a wireframe:
@@ -164,11 +166,27 @@ You MUST set "background" on every hole to match the landscape, AND populate amb
       → Rough strips framing the fairway. Trees dense along the corridor edge.
 Background is not decorative — it determines what a ball LIES IN if it misses the hole. Matching landscape is mandatory.
 
+FAIRWAY PATH (this is how fairways work now — NOT as rect segments)
+- Emit an ORDERED list of (x, y) waypoints from tee to just short of green.
+- The import path chains consecutive waypoints into angled capsule segments of uniform width (fairwayWidth).
+- Use BENDS for doglegs: a par 4 dogleg-right has waypoints that curve from tee → middle of fairway → around the corner → green apron.
+- A par 5 three-shotter has waypoints marking the 1st landing, dogleg turn, 2nd landing, approach.
+- DO NOT lay waypoints in a straight line for every hole. Bend them. Angle them. Doglegs are what make golf interesting.
+- First waypoint: ~15–30 units forward of the tee center.
+- Last waypoint: just off the green edge (5–20 units short), NOT on top of the green.
+
+ROTATION — BREAK THE GRID
+- Every hole has routingAngle (multiples of 15°). Rotate this field across holes so consecutive holes are NEVER at the same angle. Example sequence: 30°, 105°, 225°, 60°, 195°, 345°, 75°, 210°, 15°.
+- Every rect surface (tee, green, rough, deepRough, desert, hazards) has its own local rotation (0/15/30/…/345).
+- Vary rotations. DO NOT leave everything at rotation=0. Real courses have features at every angle.
+- Greens: rotate so the long axis runs roughly perpendicular to the approach angle (reward aggressive line with deepest target).
+
 GEOMETRY RULES
 - (0,0) is top-left of the world canvas. x grows right, y grows down.
 - All coordinates are ABSOLUTE within the world canvas.
 - Each hole lives in its own corridor; holes must not overlap.
-- ballStart MUST be inside the tee box (between tee.x..tee.x+tee.w and tee.y..tee.y+tee.h). Use the tee center.
+- The routingAngle is applied by the post-processor around the hole's centroid AFTER you emit geometry. Lay out the hole at any natural orientation and set routingAngle to add extra rotation if you want more variety across the course.
+- ballStart is auto-snapped to the tee center during post-processing.
 - cup MUST be inside the green rectangle.
 - slope cx/cy are 0-1 fractions within the green bounding box.
 - tee size: width 18–30, height 12–20 typical.
@@ -178,8 +196,13 @@ OBSTACLES (TREES ONLY)
 - Obstacles: ONLY type "circle" (trees). No rect / wall obstacles exist in this engine.
 - Tree "look" must be one of the planet's allowed flora. Never emit a look not in the list.
 - If the planet has no allowed flora, emit an empty obstacles array.
-- Place trees in CLUSTERS along fairway edges (3–6 trees per cluster) — not in single isolated lonely trees.
-- In forest landscapes, use many trees (6–12 per hole). In links, very few (0–3). In desert, almost none.
+- Place trees in DENSE CLUSTERS along fairway edges (5–8 trees per cluster, multiple clusters per hole).
+- Tree count by landscape:
+  • forest/mountain: 15–25 per hole
+  • coastal/crystal: 8–12 per hole
+  • links/tundra: 0–4 per hole
+  • desert/canyon/volcanic: 3–6 per hole (palms, cypress)
+  • lunar-basin: 0 per hole
 
 OUTPUT
 - Do NOT output markdown code fences. Output only the JSON object.
@@ -213,5 +236,15 @@ Required fields in your response:
 - worldHeight = ${dims.height}
 - holes array of exactly ${req.holeCount} holes, ids 1..${req.holeCount} in play order.
 
-Remember the routing, par-mix, and green-size rules. Make it playable and memorable.`;
+For EACH hole:
+- designIntent: one sentence describing the architectural concept (dogleg direction, strategic line, signature feature).
+- routingAngle: a unique-ish degree value per hole so the course doesn't look like a grid. Rotate 30–120° between consecutive holes.
+- terrain.fairwayPath: 4–9 waypoints; USE BENDS for doglegs and natural curves.
+- terrain.fairwayWidth: a width per hole (tighter for hard holes, wider for casual).
+- terrain.green: oriented (rotation) to present the deepest target to the aggressive approach line.
+- Rotate bunkers, rough patches, desert rects at varied angles (15°, 30°, 45°, 75°, 105°, etc.). NOTHING axis-aligned by default.
+
+Hit or exceed the per-par DETAIL TARGETS. A course that looks sparse from altitude is unacceptable.
+
+Make it playable, memorable, and architecturally coherent.`;
 }

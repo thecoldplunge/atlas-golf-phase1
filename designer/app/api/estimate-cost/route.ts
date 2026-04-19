@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     const inspirationLength = typeof body.inspiration === 'string' ? body.inspiration.length : 0;
     const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
 
-    const { promptTokens, completionTokens } = estimateTokens(holeCount, inspirationLength);
+    const { promptTokens, completionTokens } = estimateTokens(holeCount, inspirationLength, model);
     const estimatedUsd = estimateCostUsd(promptTokens, completionTokens, model);
 
     return NextResponse.json({

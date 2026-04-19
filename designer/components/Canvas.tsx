@@ -225,23 +225,108 @@ export default function Canvas({ onSelectObject }: CanvasProps) {
     }
   }, [state.selectedObjectId, hole]);
 
+  const fitCourse = useMemo(
+    () => () => {
+      if (size.width < 320 || size.height < 320) return;
+      const margin = 60;
+      const zx = (size.width - margin * 2) / Math.max(1, extent.w);
+      const zy = (size.height - margin * 2) / Math.max(1, extent.h);
+      const fitZoom = Math.max(0.12, Math.min(4, Math.min(zx, zy)));
+      const panX = (size.width - extent.w * fitZoom) / 2;
+      const panY = (size.height - extent.h * fitZoom) / 2;
+      dispatch({ type: 'SET_ZOOM', payload: fitZoom });
+      dispatch({ type: 'SET_PAN', payload: { x: panX, y: panY } });
+    },
+    [extent, size.width, size.height, dispatch],
+  );
+
   // Auto-fit when course extent grows significantly (e.g. newly generated course loads).
   const lastFittedExtentRef = useRef<{ w: number; h: number } | null>(null);
   useEffect(() => {
-    if (size.width < 320 || size.height < 320) return;
     const prev = lastFittedExtentRef.current;
     const grew = !prev || Math.abs(prev.w - extent.w) > 400 || Math.abs(prev.h - extent.h) > 400;
     if (!grew) return;
     lastFittedExtentRef.current = extent;
-    const margin = 40;
-    const zx = (size.width - margin * 2) / Math.max(1, extent.w);
-    const zy = (size.height - margin * 2) / Math.max(1, extent.h);
-    const fitZoom = Math.max(0.12, Math.min(4, Math.min(zx, zy)));
-    const panX = (size.width - extent.w * fitZoom) / 2;
-    const panY = (size.height - extent.h * fitZoom) / 2;
-    dispatch({ type: 'SET_ZOOM', payload: fitZoom });
+    fitCourse();
+  }, [extent, fitCourse]);
+
+  // Listen for toolbar Fit button
+  useEffect(() => {
+    const handler = () => fitCourse();
+    window.addEventListener('atlas-golf:fit-course', handler);
+    return () => window.removeEventListener('atlas-golf:fit-course', handler);
+  }, [fitCourse]);
+
+  // Center & zoom on the active hole when the user switches holes via the side panel
+  const lastActiveHoleRef = useRef(state.activeHoleIndex);
+  useEffect(() => {
+    if (lastActiveHoleRef.current === state.activeHoleIndex) return;
+    lastActiveHoleRef.current = state.activeHoleIndex;
+    const h = state.holes[state.activeHoleIndex];
+    if (!h || !h.terrain.tee || !h.terrain.green) return;
+    const tee = h.terrain.tee;
+    const greenBounds = shapeBounds(h.terrain.green);
+    const minX = Math.min(tee.x, greenBounds.x) - 80;
+    const minY = Math.min(tee.y, greenBounds.y) - 80;
+    const maxX = Math.max(tee.x + tee.w, greenBounds.x + greenBounds.w) + 80;
+    const maxY = Math.max(tee.y + tee.h, greenBounds.y + greenBounds.h) + 80;
+    const holeW = Math.max(1, maxX - minX);
+    const holeH = Math.max(1, maxY - minY);
+    if (size.width < 320 || size.height < 320) return;
+    const zx = size.width / holeW;
+    const zy = size.height / holeH;
+    const targetZoom = Math.max(0.12, Math.min(3, Math.min(zx, zy)));
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const panX = size.width / 2 - cx * targetZoom;
+    const panY = size.height / 2 - cy * targetZoom;
+    dispatch({ type: 'SET_ZOOM', payload: targetZoom });
     dispatch({ type: 'SET_PAN', payload: { x: panX, y: panY } });
-  }, [extent, size.width, size.height, dispatch]);
+  }, [state.activeHoleIndex, state.holes, size.width, size.height, dispatch]);
+
+  // Mouse wheel zoom (ctrl/trackpad pinch)
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      // Only zoom on wheel inside the canvas container
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const delta = e.deltaY;
+      const factor = delta > 0 ? 1 / 1.12 : 1.12;
+      const newZoom = Math.max(0.12, Math.min(4, state.zoom * factor));
+      // Keep mouse point fixed under cursor
+      const worldX = (mx - state.panOffset.x) / state.zoom;
+      const worldY = (my - state.panOffset.y) / state.zoom;
+      const newPanX = mx - worldX * newZoom;
+      const newPanY = my - worldY * newZoom;
+      dispatch({ type: 'SET_ZOOM', payload: newZoom });
+      dispatch({ type: 'SET_PAN', payload: { x: newPanX, y: newPanY } });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [state.zoom, state.panOffset.x, state.panOffset.y, dispatch]);
+
+  // Arrow-key panning
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA' || t?.isContentEditable) return;
+      const step = e.shiftKey ? 120 : 40;
+      let dx = 0, dy = 0;
+      if (e.key === 'ArrowLeft') dx = step;
+      else if (e.key === 'ArrowRight') dx = -step;
+      else if (e.key === 'ArrowUp') dy = step;
+      else if (e.key === 'ArrowDown') dy = -step;
+      else return;
+      e.preventDefault();
+      dispatch({ type: 'SET_PAN', payload: { x: state.panOffset.x + dx, y: state.panOffset.y + dy } });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [state.panOffset.x, state.panOffset.y, dispatch]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -679,7 +764,7 @@ export default function Canvas({ onSelectObject }: CanvasProps) {
   }, [state.activeTool]);
 
   return (
-    <div ref={containerRef} className="flex-1 min-h-0 bg-gray-700 p-2">
+    <div ref={containerRef} className="flex-1 min-h-0 bg-gray-700 p-2 relative">
       <canvas
         ref={canvasRef}
         className={`w-full h-full rounded border border-gray-600 ${cursor}`}
@@ -690,7 +775,9 @@ export default function Canvas({ onSelectObject }: CanvasProps) {
         onDoubleClick={handleDoubleClick}
         onWheel={handleWheel}
       />
-      <div className="sr-only">Canvas world is 700 by 700 per hole.</div>
+      <div className="absolute bottom-3 left-4 text-[11px] text-gray-300/80 bg-gray-900/60 px-2 py-1 rounded pointer-events-none select-none">
+        Scroll to zoom · hold Space + drag to pan · arrow keys pan · click a hole in the side panel to frame it
+      </div>
     </div>
   );
 }

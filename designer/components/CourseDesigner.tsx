@@ -208,13 +208,42 @@ export default function CourseDesigner() {
           Grid Snap {state.snapToGrid ? 'On' : 'Off'}
         </button>
 
-        <div className="ml-auto flex items-center gap-3 text-sm text-gray-300">
-          {holeDistance !== null && <span>Hole length {holeDistance}</span>}
-          <span>Zoom {state.zoom.toFixed(2)}x</span>
+        <div className="ml-auto flex items-center gap-2 text-sm text-gray-300">
+          {holeDistance !== null && <span className="mr-2">Hole length {holeDistance}</span>}
+          <div className="flex items-center rounded overflow-hidden border border-gray-600">
+            <button
+              type="button"
+              className="h-8 px-2 bg-gray-700 hover:bg-gray-600 border-r border-gray-600 text-base leading-none"
+              onClick={() => dispatch({ type: 'SET_ZOOM', payload: Math.max(0.12, state.zoom / 1.25) })}
+              title="Zoom out"
+            >
+              −
+            </button>
+            <span className="h-8 px-3 bg-gray-800 flex items-center font-mono text-xs">{state.zoom.toFixed(2)}x</span>
+            <button
+              type="button"
+              className="h-8 px-2 bg-gray-700 hover:bg-gray-600 border-l border-gray-600 text-base leading-none"
+              onClick={() => dispatch({ type: 'SET_ZOOM', payload: Math.min(4, state.zoom * 1.25) })}
+              title="Zoom in"
+            >
+              +
+            </button>
+          </div>
+          <button
+            type="button"
+            className="h-8 px-3 rounded bg-gray-700 hover:bg-gray-600 text-sm"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('atlas-golf:fit-course'));
+            }}
+            title="Fit whole course in view"
+          >
+            Fit
+          </button>
           <button
             type="button"
             className="h-8 px-2 rounded bg-gray-700 hover:bg-gray-600 text-sm"
             onClick={() => dispatch({ type: 'RESET_VIEW' })}
+            title="Reset view (zoom 1x, pan 0)"
           >
             Reset
           </button>

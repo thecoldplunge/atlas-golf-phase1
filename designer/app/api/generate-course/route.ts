@@ -5,10 +5,19 @@ import { buildSystemPrompt, buildUserPrompt } from '@/lib/generator/prompt';
 import { estimateCostUsd } from '@/lib/generator/pricing';
 import { PLANETS, type PlanetId } from '@/lib/generator/planets';
 import { postProcessCourse } from '@/lib/generator/postProcess';
+import { procedurallyEnrich } from '@/lib/generator/filler';
 import type { GenerateCourseRequest } from '@/lib/generator/types';
 
 export const runtime = 'nodejs';
-export const maxDuration = 120;
+// gpt-5 is a reasoning model — a full 18-hole course with reasoning_tokens
+// can take 2–5 minutes. 300s is the Vercel Pro max.
+export const maxDuration = 300;
+
+/** Reasoning models (gpt-5 / o3 / o1 family) use max_completion_tokens and
+ *  don't accept custom temperature. */
+function isReasoningModel(model: string): boolean {
+  return /^gpt-5|^o[13]/.test(model);
+}
 
 const VALID_PLANETS = Object.keys(PLANETS) as PlanetId[];
 const VALID_LANDSCAPES = [
@@ -83,7 +92,9 @@ export async function POST(request: Request) {
   }
 
   const client = new OpenAI({ apiKey });
-  const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
+  const preferredModel = process.env.OPENAI_MODEL ?? 'gpt-5';
+  const fallbackModel = 'gpt-4o';
+  let model = preferredModel;
 
   // Pin hole count exactly for this request — base schema allows 1–18,
   // but we want the model to produce exactly N for the hole count asked.
@@ -99,23 +110,47 @@ export async function POST(request: Request) {
     },
   };
 
-  try {
-    const completion = await client.chat.completions.create({
-      model,
+  const callModel = async (modelName: string) => {
+    const reasoning = isReasoningModel(modelName);
+    // Big budget — reasoning tokens + JSON output for 18 holes can easily
+    // hit 20k+ tokens.
+    const base = {
+      model: modelName,
       messages: [
-        { role: 'system', content: buildSystemPrompt() },
-        { role: 'user', content: buildUserPrompt(parsed) },
+        { role: 'system' as const, content: buildSystemPrompt() },
+        { role: 'user' as const, content: buildUserPrompt(parsed) },
       ],
       response_format: {
-        type: 'json_schema',
+        type: 'json_schema' as const,
         json_schema: {
           name: 'course',
           strict: true,
           schema,
         },
       },
-      temperature: 0.8,
-    });
+    };
+    if (reasoning) {
+      return client.chat.completions.create({
+        ...base,
+        max_completion_tokens: 32000,
+      });
+    }
+    return client.chat.completions.create({ ...base, temperature: 0.8 });
+  };
+
+  try {
+    let completion;
+    try {
+      completion = await callModel(preferredModel);
+    } catch (err) {
+      // Fall back if model is unavailable (404 / model_not_found)
+      const msg = err instanceof Error ? err.message : String(err);
+      const isModelErr = /model_not_found|does not exist|invalid.*model|unsupported.*model|404/i.test(msg);
+      if (!isModelErr) throw err;
+      console.warn(`Preferred model ${preferredModel} unavailable (${msg.slice(0, 160)}); falling back to ${fallbackModel}`);
+      model = fallbackModel;
+      completion = await callModel(fallbackModel);
+    }
 
     const content = completion.choices[0]?.message?.content ?? '';
     if (!content) {
@@ -133,12 +168,20 @@ export async function POST(request: Request) {
     }
 
     // Enforce hard caps (distance, ball-in-tee, cup-in-green) regardless of
-    // what the LLM emitted.
+    // what the LLM emitted. Apply routingAngle to rotate whole holes.
     let postReport: ReturnType<typeof postProcessCourse> | null = null;
     try {
       postReport = postProcessCourse(course as Parameters<typeof postProcessCourse>[0]);
     } catch (e) {
       console.warn('postProcessCourse failed:', e);
+    }
+
+    // Procedurally enrich with bunker clusters, tree clusters, slope padding.
+    let fillerReport: ReturnType<typeof procedurallyEnrich> | null = null;
+    try {
+      fillerReport = procedurallyEnrich(course as Parameters<typeof procedurallyEnrich>[0], parsed);
+    } catch (e) {
+      console.warn('procedurallyEnrich failed:', e);
     }
 
     const usage = completion.usage;
@@ -156,6 +199,7 @@ export async function POST(request: Request) {
         wind: parsed.wind,
         inspiration: parsed.inspiration,
         postProcess: postReport,
+        filler: fillerReport,
       },
       usage: {
         promptTokens,

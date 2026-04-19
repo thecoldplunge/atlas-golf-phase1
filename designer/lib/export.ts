@@ -5,6 +5,7 @@ import {
   createRectVectorShape,
   fromExportVectorShape,
   pointInShape,
+  rotateShape,
   shapeBounds,
   toExportVectorShape,
 } from '@/lib/vector';
@@ -55,12 +56,58 @@ function createShapeFromRect(params: {
   w: number;
   h: number;
   shape?: ShapePreset;
+  rotation?: number;
   jitter?: boolean;
 }): SurfaceShape {
-  const { id, kind, x, y, w, h, shape, jitter = true } = params;
+  const { id, kind, x, y, w, h, shape, rotation, jitter = true } = params;
   const preset: ShapePreset = shape ?? 'rectangle';
-  const result = createPresetVectorShape({ id, kind, x, y, w, h, preset });
+  let result = createPresetVectorShape({ id, kind, x, y, w, h, preset });
+  if (rotation && Number.isFinite(rotation) && rotation !== 0) {
+    result = rotateShape(result, rotation);
+  }
   return jitter ? jitterShape(result) : result;
+}
+
+/** Build a fairway capsule between two waypoints, oriented along the segment. */
+function capsuleBetween(params: {
+  id: string;
+  a: { x: number; y: number };
+  b: { x: number; y: number };
+  width: number;
+}): SurfaceShape {
+  const { id, a, b, width } = params;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 1) {
+    // Degenerate; emit a small circle
+    return createShapeFromRect({
+      id,
+      kind: 'fairway',
+      x: a.x - width / 2,
+      y: a.y - width / 2,
+      w: width,
+      h: width,
+      shape: 'circle',
+    });
+  }
+  // Base capsule horizontal along +x, length = distance(a,b), height = width
+  const cx = (a.x + b.x) / 2;
+  const cy = (a.y + b.y) / 2;
+  const baseX = cx - length / 2;
+  const baseY = cy - width / 2;
+  const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+  let shape = createPresetVectorShape({
+    id,
+    kind: 'fairway',
+    x: baseX,
+    y: baseY,
+    w: length,
+    h: width,
+    preset: 'capsule',
+  });
+  if (angleDeg !== 0) shape = rotateShape(shape, angleDeg);
+  return jitterShape(shape, 0.04);
 }
 
 const slopeDirections: SlopeDirection[] = ['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW'];
@@ -332,26 +379,49 @@ function normalizeHole(raw: unknown, index: number): HoleData {
       w: asNumber(tee.w, 20),
       h: asNumber(tee.h, 14),
       r: asNumber(tee.r, 3),
+      rotation: asNumber(tee.rotation, 0),
     };
   }
 
   const usedVectors = parseEditorVectors(hole, data);
 
   if (!usedVectors) {
-    hole.terrain.fairway = fairway
-      .map((segment, segmentIndex) => {
-        const item = (segment ?? {}) as Record<string, unknown>;
-        return createShapeFromRect({
-          id: getDefaultEntityId(`fairway-${segmentIndex}`),
-          kind: 'fairway',
-          x: asNumber(item.x),
-          y: asNumber(item.y),
-          w: asNumber(item.w),
-          h: asNumber(item.h),
-          shape: asShape(item.shape, 'capsule'),
-        });
-      })
-      .filter((shape) => shape.path.points.length >= 3);
+    // Prefer fairwayPath waypoints (new v3 schema) over legacy fairway rects.
+    const fairwayPath = Array.isArray(terrain?.fairwayPath) ? terrain?.fairwayPath : null;
+    const fairwayWidth = asNumber(terrain?.fairwayWidth, 40);
+    if (fairwayPath && fairwayPath.length >= 2) {
+      const pts = fairwayPath
+        .map((p) => (p ?? {}) as Record<string, unknown>)
+        .map((p) => ({ x: asNumber(p.x), y: asNumber(p.y) }));
+      const segments: SurfaceShape[] = [];
+      for (let i = 0; i < pts.length - 1; i++) {
+        segments.push(
+          capsuleBetween({
+            id: getDefaultEntityId(`fairway-${i}`),
+            a: pts[i],
+            b: pts[i + 1],
+            width: Math.max(24, Math.min(80, fairwayWidth)),
+          }),
+        );
+      }
+      hole.terrain.fairway = segments;
+    } else {
+      hole.terrain.fairway = fairway
+        .map((segment, segmentIndex) => {
+          const item = (segment ?? {}) as Record<string, unknown>;
+          return createShapeFromRect({
+            id: getDefaultEntityId(`fairway-${segmentIndex}`),
+            kind: 'fairway',
+            x: asNumber(item.x),
+            y: asNumber(item.y),
+            w: asNumber(item.w),
+            h: asNumber(item.h),
+            shape: asShape(item.shape, 'capsule'),
+            rotation: asNumber(item.rotation, 0),
+          });
+        })
+        .filter((shape) => shape.path.points.length >= 3);
+    }
 
     const readSurfaceArray = (raw: unknown, kind: 'rough' | 'deepRough' | 'desert'): SurfaceShape[] => {
       const items = Array.isArray(raw) ? raw : [];
@@ -367,6 +437,7 @@ function normalizeHole(raw: unknown, index: number): HoleData {
             w: asNumber(item.w),
             h: asNumber(item.h),
             shape: asShape(item.shape, defaultShape),
+            rotation: asNumber(item.rotation, 0),
           });
         })
         .filter((shape) => shape.path.points.length >= 3);
@@ -390,6 +461,7 @@ function normalizeHole(raw: unknown, index: number): HoleData {
           w: asNumber(green.w, 60),
           h: asNumber(green.h, 60),
           shape: asShape(green.shape, 'oval'),
+          rotation: asNumber(green.rotation, 0),
         })
       : null;
 
@@ -407,6 +479,7 @@ function normalizeHole(raw: unknown, index: number): HoleData {
             w: asNumber(item.w),
             h: asNumber(item.h),
             shape: asShape(item.shape, 'oval'),
+            rotation: asNumber(item.rotation, 0),
           }),
         );
       }
@@ -420,6 +493,7 @@ function normalizeHole(raw: unknown, index: number): HoleData {
             w: asNumber(item.w),
             h: asNumber(item.h),
             shape: asShape(item.shape, 'squircle'),
+            rotation: asNumber(item.rotation, 0),
           }),
         );
       }

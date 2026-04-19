@@ -17,22 +17,26 @@ interface RectWithShape {
   h: number;
   r?: number;
   shape?: string;
+  rotation?: number;
 }
 
 interface Hole {
   id: number;
   par: 3 | 4 | 5;
+  routingAngle?: number;
   ballStart: Vec2;
   cup: Vec2;
   terrain: {
     tee: RectWithShape;
-    fairway: RectWithShape[];
+    fairway?: RectWithShape[];
+    fairwayPath?: Vec2[];
+    fairwayWidth?: number;
     green: RectWithShape;
     rough: RectWithShape[];
     deepRough: RectWithShape[];
     desert: RectWithShape[];
   };
-  hazards: Array<{ type: string; x: number; y: number; w: number; h: number; shape?: string }>;
+  hazards: Array<{ type: string; x: number; y: number; w: number; h: number; shape?: string; rotation?: number }>;
   obstacles: Array<{ type: string; x: number; y: number; r: number; look?: string }>;
   slopes: Array<{ cx: number; cy: number; strength: number; dir: string }>;
   [k: string]: unknown;
@@ -96,10 +100,15 @@ function enforceDistanceCap(hole: Hole): { changed: boolean; oldDist: number; ne
       r.y = nc.y - r.h / 2;
     }
   };
-  scaleRectArray(hole.terrain.fairway);
+  if (Array.isArray(hole.terrain.fairway)) scaleRectArray(hole.terrain.fairway);
   scaleRectArray(hole.terrain.rough);
   scaleRectArray(hole.terrain.deepRough);
   scaleRectArray(hole.terrain.desert);
+
+  // Also scale fairwayPath waypoints inward
+  if (Array.isArray(hole.terrain.fairwayPath)) {
+    hole.terrain.fairwayPath = hole.terrain.fairwayPath.map((p) => scalePointAroundPivot(p, pivot, factor));
+  }
 
   // Scale hazards
   for (const h of hole.hazards) {
@@ -140,15 +149,83 @@ function anchorCup(hole: Hole) {
   }
 }
 
+/**
+ * Rotate every geometric element of a hole around the hole's centroid.
+ */
+function rotatePointBy(p: Vec2, pivot: Vec2, rad: number): Vec2 {
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return {
+    x: pivot.x + (p.x - pivot.x) * cos - (p.y - pivot.y) * sin,
+    y: pivot.y + (p.x - pivot.x) * sin + (p.y - pivot.y) * cos,
+  };
+}
+
+function holeCentroid(hole: Hole): Vec2 {
+  // Use midpoint of tee-center and cup
+  const t = hole.terrain.tee;
+  const tc: Vec2 = { x: t.x + t.w / 2, y: t.y + t.h / 2 };
+  return { x: (tc.x + hole.cup.x) / 2, y: (tc.y + hole.cup.y) / 2 };
+}
+
+function applyRoutingAngle(hole: Hole) {
+  const angle = hole.routingAngle ?? 0;
+  if (!Number.isFinite(angle) || angle === 0) return;
+  const rad = (angle * Math.PI) / 180;
+  const pivot = holeCentroid(hole);
+
+  const rotateRect = (r: RectWithShape) => {
+    const c = rotatePointBy({ x: r.x + r.w / 2, y: r.y + r.h / 2 }, pivot, rad);
+    r.x = c.x - r.w / 2;
+    r.y = c.y - r.h / 2;
+    // Stack per-surface rotation on top of routing rotation
+    r.rotation = normalize360(((r.rotation as number | undefined) ?? 0) + angle);
+  };
+
+  rotateRect(hole.terrain.tee);
+  rotateRect(hole.terrain.green);
+  if (Array.isArray(hole.terrain.fairway)) hole.terrain.fairway.forEach(rotateRect);
+  if (Array.isArray(hole.terrain.fairwayPath)) {
+    hole.terrain.fairwayPath = hole.terrain.fairwayPath.map((p) => rotatePointBy(p, pivot, rad));
+  }
+  hole.terrain.rough.forEach(rotateRect);
+  hole.terrain.deepRough.forEach(rotateRect);
+  hole.terrain.desert.forEach(rotateRect);
+
+  for (const hz of hole.hazards) {
+    const c = rotatePointBy({ x: hz.x + hz.w / 2, y: hz.y + hz.h / 2 }, pivot, rad);
+    hz.x = c.x - hz.w / 2;
+    hz.y = c.y - hz.h / 2;
+    hz.rotation = normalize360((hz.rotation ?? 0) + angle);
+  }
+  for (const o of hole.obstacles) {
+    const c = rotatePointBy({ x: o.x, y: o.y }, pivot, rad);
+    o.x = c.x;
+    o.y = c.y;
+  }
+  hole.cup = rotatePointBy(hole.cup, pivot, rad);
+  hole.ballStart = rotatePointBy(hole.ballStart, pivot, rad);
+}
+
+function normalize360(deg: number): number {
+  return ((Math.round(deg) % 360) + 360) % 360;
+}
+
 export interface PostProcessReport {
   holesScaled: number;
-  details: Array<{ id: number; par: number; oldDist: number; newDist: number }>;
+  holesRotated: number;
+  details: Array<{ id: number; par: number; oldDist: number; newDist: number; routingAngle?: number }>;
 }
 
 export function postProcessCourse(course: Course): PostProcessReport {
-  const report: PostProcessReport = { holesScaled: 0, details: [] };
+  const report: PostProcessReport = { holesScaled: 0, holesRotated: 0, details: [] };
   for (const hole of course.holes) {
     if (!hole.terrain || !hole.terrain.tee || !hole.terrain.green || !hole.cup) continue;
+    // Apply routing angle FIRST, then distance cap (distance cap works regardless of rotation)
+    if ((hole.routingAngle ?? 0) !== 0) {
+      applyRoutingAngle(hole);
+      report.holesRotated++;
+    }
     const result = enforceDistanceCap(hole);
     anchorBallStart(hole);
     anchorCup(hole);
@@ -159,6 +236,7 @@ export function postProcessCourse(course: Course): PostProcessReport {
         par: hole.par,
         oldDist: Math.round(result.oldDist),
         newDist: Math.round(result.newDist),
+        routingAngle: hole.routingAngle,
       });
     }
   }
