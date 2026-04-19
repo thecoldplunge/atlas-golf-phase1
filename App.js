@@ -747,8 +747,8 @@ const GRAVITY = 30;
 const GROUND_EPSILON = 0.05;
 const FRINGE_BUFFER = 8;
 const MIN_BOUNCE_VZ = 3.2;
-const CURVE_FORCE = 0.42;
-const CURVE_LAUNCH_BLEND = 0.5;
+const CURVE_FORCE = 0.72;
+const CURVE_LAUNCH_BLEND = 0.7;
 
 // Haptic feedback: vibrate on Android/Chrome, audio tick on iOS Safari
 const hapticBuzz = (pattern = 30) => {
@@ -2013,7 +2013,7 @@ export default function App() {
     const yNorm = clamp(offset.y / MAX_SPIN_OFFSET, -1, 1);
     const launchAdjust = clamp(1 - yNorm * 0.4, 0.68, 1.38);
     const spinAdjust = clamp(1 - yNorm * 0.36, 0.7, 1.34);
-    const curveDeg = -xNorm * 34;
+    const curveDeg = -xNorm * 52;
     let shapeLabel = 'Dead straight';
 
     if (xNorm < -0.55) shapeLabel = 'Hook';
@@ -2551,7 +2551,7 @@ export default function App() {
     rayToWorldEdge
   );
 
-  const aimLineDots = [0.25, 0.5, 0.75, 1].map((pct) => {
+  const aimLineDots = [0, 0.25, 0.5, 0.75, 1].map((pct) => {
     const worldDist = aimGuideWorld * pct;
     const curveOffset = Math.sin(pct * Math.PI * 0.95) * aimGuideWorld * degToRad(totalPreviewCurveDeg) * 0.07 * pct;
     const loftOffset = -(shotMetrics.launchAdjust - 1) * 10 * Math.sin(pct * Math.PI) * 0.4;
@@ -2562,10 +2562,11 @@ export default function App() {
     const screen = toScreen(point);
     return {
       key: `aim-dot-${pct}`,
+      pct,
       x: screen.x,
       y: screen.y,
-      size: 4 + pct * 3,
-      opacity: 0.5 + pct * 0.35,
+      size: pct === 0 ? 0 : 4 + pct * 3,
+      opacity: pct === 0 ? 0 : 0.5 + pct * 0.35,
       color: '#ffdd44'
     };
   });
@@ -3334,7 +3335,7 @@ export default function App() {
 
           {!ballMoving && !sunk ? aimLineDots.map((dot) => (
             <React.Fragment key={dot.key}>
-            <View
+            {dot.pct > 0 ? <View
               pointerEvents="none"
               style={[
                 styles.aimDot,
@@ -3348,8 +3349,8 @@ export default function App() {
                   backgroundColor: dot.color
                 }
               ]}
-            />
-            <Text style={[styles.aimDotLabel, { left: dot.x + 6, top: dot.y - 10, opacity: dot.opacity }]}>{Math.round((parseFloat(dot.key.split('-').pop()) || 0) * 100)}%</Text>
+            /> : null}
+            {dot.pct > 0 ? <Text style={[styles.aimDotLabel, { left: dot.x + 6, top: dot.y - 10, opacity: dot.opacity }]}>{Math.round(dot.pct * 100)}%</Text> : null}
             </React.Fragment>
           )) : null}
 
