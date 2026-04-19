@@ -747,8 +747,8 @@ const GRAVITY = 30;
 const GROUND_EPSILON = 0.05;
 const FRINGE_BUFFER = 8;
 const MIN_BOUNCE_VZ = 3.2;
-const CURVE_FORCE = 0.12;
-const CURVE_LAUNCH_BLEND = 0.3;
+const CURVE_FORCE = 0.42;
+const CURVE_LAUNCH_BLEND = 0.5;
 
 // Haptic feedback: vibrate on Android/Chrome, audio tick on iOS Safari
 const hapticBuzz = (pattern = 30) => {
@@ -2013,7 +2013,7 @@ export default function App() {
     const yNorm = clamp(offset.y / MAX_SPIN_OFFSET, -1, 1);
     const launchAdjust = clamp(1 - yNorm * 0.4, 0.68, 1.38);
     const spinAdjust = clamp(1 - yNorm * 0.36, 0.7, 1.34);
-    const curveDeg = -xNorm * 18;
+    const curveDeg = -xNorm * 34;
     let shapeLabel = 'Dead straight';
 
     if (xNorm < -0.55) shapeLabel = 'Hook';
