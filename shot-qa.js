@@ -35,7 +35,7 @@ function simulateShot(club, powerPct, deviation) {
   // Curve
   const baseSens = 40;
   const overPct = Math.max(0, powerPct - 100);
-  const overpowerMult = overPct > 0 ? 1.0 + (Math.pow(1.06, overPct) - 1) * 1.2 : 1.0;
+  const overpowerMult = overPct > 0 ? 1.0 + overPct * 0.025 : 1.0;
   const rawCurve = deviation * baseSens * overpowerMult;
   const curveDeg = clamp(rawCurve, -45, 45);
   const curveRad = curveDeg * Math.PI / 180;

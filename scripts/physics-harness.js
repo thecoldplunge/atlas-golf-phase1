@@ -47,7 +47,7 @@ function getLaunchData({ club, powerPct, spinXNorm, spinYNorm, swingDeviation, l
   let overpowerMult = 1;
   if (powerPct > 100) {
     const overPct = powerPct - 100;
-    overpowerMult = 1 + (Math.pow(1.06, overPct) - 1) * 1.2;
+    overpowerMult = 1 + overPct * 0.025;
   }
   const swingCurveDeg = clamp(swingDeviation * 40 * lieSwingSens * overpowerMult, -45, 45);
   const totalCurveDeg = curveDeg + swingCurveDeg;

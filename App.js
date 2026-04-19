@@ -2638,13 +2638,14 @@ export default function App() {
     const effectiveSkill = puttingMode
       ? (golferPutting * 0.45 + golferTouch * 0.2 + focus * 0.15 + composure * 0.2)
       : (golferAccuracy * 0.34 + focus * 0.22 + composure * 0.14 + courseManagement * 0.12 + clubAccuracy * 0.18);
-    // Exponential overpower penalty: above 100%, deviation is amplified exponentially
+    // Overpower penalty: above 100%, deviation is amplified linearly so overswinging
+    // loses control without catapulting minor path errors to the 45° curve cap.
+    // 1.0 at 100%, 1.125 at 105%, 1.25 at 110%, 1.375 at 115%, 1.5 at 120%.
     const effectivePowerForPenalty = options.powerPct ?? powerRef.current;
     let overpowerMult = 1.0;
     if (effectivePowerForPenalty > 100) {
       const overPct = effectivePowerForPenalty - 100; // 0-20
-      // Exponential: 1.0 at 100%, ~1.08 at 105%, ~1.35 at 110%, ~1.8 at 115%, ~2.4 at 120%
-      overpowerMult = 1.0 + (Math.pow(1.06, overPct) - 1) * 1.2;
+      overpowerMult = 1.0 + overPct * 0.025;
     }
     const baseSensitivity = 40; // up from 25 — more punishing baseline
     const forgivenessFactor = clamp(1.18 - ((clubForgiveness - 50) * 0.004 + (effectiveSkill - 50) * 0.003 + (puttingMode ? (clubFeel - 50) * 0.002 : 0)), 0.7, 1.45);
