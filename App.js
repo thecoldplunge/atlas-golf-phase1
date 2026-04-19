@@ -2252,7 +2252,7 @@ export default function App() {
     setBallHeight(flightRef.current.z);
     shotTracerRef.current = [];
     setShotTracer([]);
-    const tempoEmoji = tempoTag === 'Perfect' ? '✨' : tempoTag === 'Smooth' ? '👌' : tempoTag === 'Rushed' ? '⚡' : tempoTag === 'Slow' ? '🐢' : '';
+    const tempoEmoji = tempoTag === 'Perfect' ? '✨' : tempoTag === 'Smooth' ? '👌' : tempoTag === 'Rushed' ? '⚡' : tempoTag === 'Slow' ? '🐢' : tempoTag === 'Frozen' ? '🧊' : tempoTag === 'Decel' ? '🪫' : tempoTag === 'Snappy' ? '💥' : '';
     setTempoLabel(`${tempoEmoji}${tempoTag} • ${shotShapeLabel} • ${launch.effectivePower}%`);
     setStrokesCurrent((s) => s + 1);
     setShotControlOpen(false);
@@ -2378,33 +2378,50 @@ export default function App() {
         },
         onPanResponderRelease: () => {
           if (powerRef.current > 5) {
-            // Compute tempo: time between reaching the top and releasing (forward swing duration)
+            // Compute tempo + acceleration strictness from top-of-backswing to release
             const now = Date.now();
             const forwardMs = transitionTimeRef.current > 0 ? now - transitionTimeRef.current : 999;
-            // Perfect tempo window: 80-220ms forward swing (smooth transition, not rushed or crawling)
-            // Rushed: < 60ms (blew through the top)
-            // Slow: > 350ms (froze at the top)
-            let tempoMult = 1.0; // accuracy multiplier (lower = worse)
+            const forwardTravelPx = Math.max(1, swingLowestRef.current.y - evt.nativeEvent.pageY);
+            const accelPxPerMs = forwardTravelPx / Math.max(1, forwardMs);
+            const overpowerPct = Math.max(0, peakPowerRef.current - 100);
+            let tempoMult = 1.0;
             let tempoTag = 'Normal';
-            if (forwardMs < 60) {
-              // Rushed — penalize deviation (magnify it)
-              tempoMult = 1.35;
+
+            // Tighter tempo windows. Brief pause is rewarded, no pause or long pause punished.
+            if (forwardMs < 85) {
+              tempoMult = 1.55;
               tempoTag = 'Rushed';
-            } else if (forwardMs <= 220) {
-              // Perfect window
-              tempoMult = 0.82;
+            } else if (forwardMs <= 165) {
+              tempoMult = 0.86;
               tempoTag = 'Perfect';
-              // Double-tap vibration/audio for perfect tempo
               hapticDoubleTap();
-            } else if (forwardMs <= 350) {
-              // Good but slightly slow
-              tempoMult = 0.92;
+            } else if (forwardMs <= 240) {
+              tempoMult = 1.0;
               tempoTag = 'Smooth';
-            } else {
-              // Too slow — mild penalty
-              tempoMult = 1.12;
+            } else if (forwardMs <= 320) {
+              tempoMult = 1.18;
               tempoTag = 'Slow';
+            } else {
+              tempoMult = 1.45;
+              tempoTag = 'Frozen';
             }
+
+            // Acceleration penalty: lazy forward acceleration or ultra-violent yank both hurt.
+            if (accelPxPerMs < 0.32) {
+              tempoMult *= 1.24;
+              tempoTag = tempoTag === 'Perfect' ? 'Decel' : tempoTag;
+            } else if (accelPxPerMs > 1.05) {
+              tempoMult *= 1.16;
+              if (tempoTag === 'Normal' || tempoTag === 'Smooth') tempoTag = 'Snappy';
+            }
+
+            // Overpower is high risk. 110% gets stricter, 120% gets much stricter.
+            if (overpowerPct >= 20) {
+              tempoMult *= 1.42;
+            } else if (overpowerPct >= 10) {
+              tempoMult *= 1.22;
+            }
+
             strikeBall(swingDeviationRef.current, { tempoMult, tempoTag });
           } else {
             setSwingPhase('idle');
@@ -3870,8 +3887,8 @@ export default function App() {
                 </View>
                 <View style={styles.shotStatRow}>
                   <Text style={styles.shotStatLabel}>Tempo</Text>
-                  <Text style={[styles.shotStatValue, lastShotStats.tempoTag === 'Perfect' ? { color: '#88F8BB' } : lastShotStats.tempoTag === 'Rushed' ? { color: '#ef4444' } : lastShotStats.tempoTag === 'Slow' ? { color: '#f0c040' } : null]}>
-                    {lastShotStats.tempoTag === 'Perfect' ? '✨ ' : lastShotStats.tempoTag === 'Smooth' ? '👌 ' : lastShotStats.tempoTag === 'Rushed' ? '⚡ ' : lastShotStats.tempoTag === 'Slow' ? '🐢 ' : ''}{lastShotStats.tempoTag || 'Normal'}
+                  <Text style={[styles.shotStatValue, lastShotStats.tempoTag === 'Perfect' ? { color: '#88F8BB' } : lastShotStats.tempoTag === 'Rushed' || lastShotStats.tempoTag === 'Frozen' || lastShotStats.tempoTag === 'Decel' ? { color: '#ef4444' } : lastShotStats.tempoTag === 'Slow' ? { color: '#f0c040' } : null]}>
+                    {lastShotStats.tempoTag === 'Perfect' ? '✨ ' : lastShotStats.tempoTag === 'Smooth' ? '👌 ' : lastShotStats.tempoTag === 'Rushed' ? '⚡ ' : lastShotStats.tempoTag === 'Slow' ? '🐢 ' : lastShotStats.tempoTag === 'Frozen' ? '🧊 ' : lastShotStats.tempoTag === 'Decel' ? '🪫 ' : lastShotStats.tempoTag === 'Snappy' ? '💥 ' : ''}{lastShotStats.tempoTag || 'Normal'}
                   </Text>
                 </View>
                 <View style={styles.shotStatRow}>
