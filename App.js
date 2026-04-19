@@ -782,7 +782,7 @@ const PHYSICS_CONFIG = {
   clubForgivenessScale: 1,
   puttLaunchScale: 2.8,
   chipRolloutScale: 1,
-  greenSlopeInfluence: 1.61,
+  greenSlopeInfluence: 4,
   lineSampleCount: 16,
   lineSmoothing: 0.95,
   previewLiveCalibration: 1,
@@ -834,7 +834,7 @@ const hapticDoubleTap = () => {
   } catch (e) { /* silent */ }
 };
 const PUTTING_ZOOM_MULT = 1.8;
-const SLOPE_FORCE = 7.5;
+const SLOPE_FORCE = 7.5 * PHYSICS_CONFIG.greenSlopeInfluence;
 const PUTT_PREVIEW_DT = 1 / 120;
 const PUTT_PREVIEW_MAX_TICKS = 1400;
 const PUTT_PREVIEW_SAMPLE_TICKS = 8;
@@ -1131,11 +1131,11 @@ const getGreenSlopeForce = (hole, point, surfaceName) => {
   let ax = 0;
   let ay = 0;
   hole.slopes.forEach((slope) => {
-    const centerX = green.x + green.w * clamp(slope.cx ?? 0.5, 0, 1);
-    const centerY = green.y + green.h * clamp(slope.cy ?? 0.5, 0, 1);
-    const nx = (point.x - centerX) / Math.max(1, green.w * 0.8);
-    const ny = (point.y - centerY) / Math.max(1, green.h * 0.8);
-    const influence = clamp(1 - Math.hypot(nx, ny), 0, 1);
+    const centerX = slope.x ?? (green.x + green.w * clamp(slope.cx ?? 0.5, 0, 1));
+    const centerY = slope.y ?? (green.y + green.h * clamp(slope.cy ?? 0.5, 0, 1));
+    const nx = (point.x - centerX) / Math.max(1, green.w * 0.55);
+    const ny = (point.y - centerY) / Math.max(1, green.h * 0.55);
+    const influence = clamp(1.2 - Math.hypot(nx, ny), 0, 1.2);
     if (influence <= 0) {
       return;
     }
