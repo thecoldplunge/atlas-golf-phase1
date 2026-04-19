@@ -1462,7 +1462,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.2';
+const BUILD_VERSION = 'IGT v3.3';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1540,9 +1540,9 @@ const getSurfaceAtPoint = (hole, point) => {
   if (!nearAnything) return 'deepRough';
   return 'rough';
 };
-const estimateStraightDistance = (powerPct, club, strike = { launch: 1, spin: 1 }) => {
+const estimateStraightDistance = (powerPct, club, strike = { launch: 1, spin: 1 }, distanceMult = 1) => {
   const shotRatio = clamp(powerPct / 100, 0, 1.2);
-  return (club.carryYards * shotRatio * strike.launch) / YARDS_PER_WORLD;
+  return (club.carryYards * shotRatio * strike.launch * distanceMult) / YARDS_PER_WORLD;
 };
 const puttPowerForDistance = (distanceWorld) => {
   // On a flat green, total roll distance ≈ v0 / friction (geometric drag series)
@@ -1687,6 +1687,7 @@ export default function App() {
   const shotRollRef = useRef(0);
   const shotCurveDegRef = useRef(0);
   const shotAimAngleRef = useRef(getAimAngleToCup(ACTIVE_HOLES[0].ballStart, ACTIVE_HOLES[0].cup));
+  const shotWindResistRef = useRef(1);
   const [currentLie, setCurrentLie] = useState('tee');
   const [selectedClubIndex, setSelectedClubIndex] = useState(15);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -2047,7 +2048,7 @@ export default function App() {
             // Wind force while airborne
             const wind = roundWindRef.current[holeIndexRef.current] || { speed: 0, dir: 'N' };
             const wDir = WIND_DIRS[wind.dir] || { x: 0, y: 0 };
-            const wForce = wind.speed * WIND_FORCE_SCALE * dt;
+            const wForce = wind.speed * WIND_FORCE_SCALE * shotWindResistRef.current * dt;
             vel.x += wDir.x * wForce;
             vel.y += wDir.y * wForce;
 
@@ -2638,13 +2639,14 @@ export default function App() {
     const effectiveSkill = puttingMode
       ? (golferPutting * 0.45 + golferTouch * 0.2 + focus * 0.15 + composure * 0.2)
       : (golferAccuracy * 0.34 + focus * 0.22 + composure * 0.14 + courseManagement * 0.12 + clubAccuracy * 0.18);
-    // Exponential overpower penalty: above 100%, deviation is amplified exponentially
+    // Overpower penalty: above 100%, deviation is amplified linearly so overswinging
+    // loses control without catapulting minor path errors to the 45° curve cap.
+    // 1.0 at 100%, 1.125 at 105%, 1.25 at 110%, 1.375 at 115%, 1.5 at 120%.
     const effectivePowerForPenalty = options.powerPct ?? powerRef.current;
     let overpowerMult = 1.0;
     if (effectivePowerForPenalty > 100) {
       const overPct = effectivePowerForPenalty - 100; // 0-20
-      // Exponential: 1.0 at 100%, ~1.08 at 105%, ~1.35 at 110%, ~1.8 at 115%, ~2.4 at 120%
-      overpowerMult = 1.0 + (Math.pow(1.06, overPct) - 1) * 1.2;
+      overpowerMult = 1.0 + overPct * 0.025;
     }
     const baseSensitivity = 40; // up from 25 — more punishing baseline
     const forgivenessFactor = clamp(1.18 - ((clubForgiveness - 50) * 0.004 + (effectiveSkill - 50) * 0.003 + (puttingMode ? (clubFeel - 50) * 0.002 : 0)), 0.7, 1.45);
@@ -2679,6 +2681,7 @@ export default function App() {
       effectivePower,
       launchRatio,
       powerFactor,
+      touchFactor,
       spinFactor,
       skillSnapshot: { golferPower, golferAccuracy, golferTouch, golferSpin, golferPutting, golferRecovery, focus, composure, courseManagement, clubDistance, clubAccuracy, clubForgiveness, clubSpin, clubFeel }
     };
@@ -2770,6 +2773,10 @@ export default function App() {
     };
     shotCurveDegRef.current = launch.totalCurveDeg;
     shotAimAngleRef.current = aimAngle;
+    // Course Management reduces in-air wind drift (reads line and plays it).
+    // 0 CIQ → wind ×1.30, 50 → ×1.0, 100 → ×0.70.
+    const courseMgmt = selectedMentalStats.courseManagement ?? 50;
+    shotWindResistRef.current = clamp(1 - (courseMgmt - 50) * 0.006, 0.7, 1.3);
     if (selectedClub.key === 'PT') {
       // Putter: pure ground roll, no flight. Speed calibrated so ball rolls the aim distance.
       const puttSpeed = (selectedClub.carryYards / YARDS_PER_WORLD) * launch.launchRatio * 2.8;
@@ -2970,11 +2977,17 @@ export default function App() {
             let tempoMult = 1.0;
             let tempoTag = 'Normal';
 
+            // Focus widens the Perfect tempo window. 0 → ±15ms tighter, 100 → ±15ms wider.
+            const focusStat = selectedMentalStats.focus ?? 50;
+            const focusBias = Math.round((focusStat - 50) * 0.3);
+            const perfectLo = 85 - focusBias;
+            const perfectHi = 165 + focusBias;
+
             // Tighter tempo windows. Brief pause is rewarded, no pause or long pause punished.
-            if (forwardMs < 85) {
+            if (forwardMs < perfectLo) {
               tempoMult = 1.55;
               tempoTag = 'Rushed';
-            } else if (forwardMs <= 165) {
+            } else if (forwardMs <= perfectHi) {
               tempoMult = 0.86;
               tempoTag = 'Perfect';
               hapticDoubleTap();
@@ -3003,6 +3016,14 @@ export default function App() {
               tempoMult *= 1.42;
             } else if (overpowerPct >= 10) {
               tempoMult *= 1.22;
+            }
+
+            // Composure softens penalties above neutral (bonuses like Perfect stay unchanged).
+            // 0 composure → penalties ×1.15, 50 → unchanged, 100 → ×0.85.
+            if (tempoMult > 1.0) {
+              const composureStat = selectedMentalStats.composure ?? 50;
+              const composureFactor = clamp(1 - (composureStat - 50) * 0.003, 0.85, 1.15);
+              tempoMult = 1 + (tempoMult - 1) * composureFactor;
             }
 
             strikeBall(swingDeviationRef.current, { tempoMult, tempoTag });
@@ -3042,15 +3063,26 @@ export default function App() {
   const aimPerp = { x: -aimDir.y, y: aimDir.x };
   const previewLaunch = getLaunchData(0, { powerPct, aimAngle });
   const totalPreviewCurveDeg = previewLaunch.totalCurveDeg;
+  // Preview distance reflects Power/Touch (from launch) plus the current lie's
+  // power penalty with Recovery's bad-lie distance boost folded in.
+  const previewInBadLie = currentLie === 'rough' || currentLie === 'deepRough' || currentLie === 'sand' || currentLie === 'pluggedSand';
+  const previewRecoveryDistFactor = previewInBadLie
+    ? clamp(1 + ((selectedGolferStats.recovery ?? 50) - 50) * 0.0035, 0.82, 1.18)
+    : 1;
+  const previewLiePhys = SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.fairway;
+  const [previewPenMin, previewPenMax] = previewLiePhys.powerPenalty || [1, 1];
+  const previewLiePenalty = clamp(((previewPenMin + previewPenMax) / 2) * previewRecoveryDistFactor, 0.35, 1.05);
+  const previewDistMult = previewLaunch.powerFactor * previewLaunch.touchFactor * previewLiePenalty;
+  const previewStockDistMult = previewLaunch.powerFactor * previewLaunch.touchFactor;
   const distanceToCupWorld = Math.hypot(currentHole.cup.x - ball.x, currentHole.cup.y - ball.y);
   const yardsToCup = Math.max(0, Math.round(distanceToCupWorld * YARDS_PER_WORLD));
   const windData = roundWind[safeHoleIndex] || { speed: 0, dir: 'N' };
   const windLabel = `${windData.speed} mph`;
   const windArrow = WIND_ARROWS[windData.dir] || '•';
   const windDirLabel = windData.dir;
-  const stockClubYards = Math.round(estimateStraightDistance(100, selectedClub, neutralStrike) * YARDS_PER_WORLD);
+  const stockClubYards = Math.round(estimateStraightDistance(100, selectedClub, neutralStrike, previewStockDistMult) * YARDS_PER_WORLD);
   const previewPower = powerPct;
-  const previewYards = Math.round(estimateStraightDistance(previewPower, selectedClub, { launch: shotMetrics.launchAdjust, spin: shotMetrics.spinAdjust }) * YARDS_PER_WORLD);
+  const previewYards = Math.round(estimateStraightDistance(previewPower, selectedClub, { launch: shotMetrics.launchAdjust, spin: shotMetrics.spinAdjust }, previewDistMult) * YARDS_PER_WORLD);
   const shotShape = `${SHOT_SHAPE_HINTS[selectedClub.key] || 'Neutral'} • ${shotMetrics.shapeLabel}`;
   const shotNumber = sunk ? strokesCurrent : strokesCurrent + 1;
   const puttTargetText = typeof puttTargetPowerPct === 'number' ? `${puttTargetPowerPct}%` : '--';
@@ -3120,7 +3152,7 @@ export default function App() {
     return Math.max(0, Math.min(...candidates));
   })();
   const aimGuideWorld = clamp(
-    estimateStraightDistance(100, selectedClub, { launch: shotMetrics.launchAdjust, spin: shotMetrics.spinAdjust }),
+    estimateStraightDistance(100, selectedClub, { launch: shotMetrics.launchAdjust, spin: shotMetrics.spinAdjust }, previewStockDistMult),
     6,
     rayToWorldEdge
   );
@@ -3283,14 +3315,9 @@ export default function App() {
           </View>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
           <Text style={styles.spaceMenuSubtitle}>SELECT GOLFER</Text>
+          <Text style={styles.golferRosterHint}>{GOLFERS.length} golfers — tap a thumbnail to view stats</Text>
 
-          <ScrollView
-            horizontal
-            nestedScrollEnabled
-            style={styles.golferRosterScroll}
-            contentContainerStyle={styles.golferRosterContent}
-            showsHorizontalScrollIndicator={false}
-          >
+          <View style={styles.golferRosterGrid}>
             {GOLFERS.map((golfer) => {
               const isSelected = golfer.id === g.id;
               return (
@@ -3309,7 +3336,7 @@ export default function App() {
                 </Pressable>
               );
             })}
-          </ScrollView>
+          </View>
 
           <View style={styles.golferCard}>
             {/* Avatar */}
@@ -5145,16 +5172,21 @@ const styles = StyleSheet.create({
     fontWeight: '800'
   },
   // Golfer select styles
-  golferRosterScroll: {
-    marginBottom: 12
+  golferRosterHint: {
+    color: 'rgba(245,251,239,0.55)',
+    fontSize: 11,
+    marginBottom: 10,
+    letterSpacing: 0.5
   },
-  golferRosterContent: {
+  golferRosterGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
-    paddingRight: 4
+    marginBottom: 16
   },
   golferRosterCard: {
-    width: 118,
-    minHeight: 104,
+    width: '31.5%',
+    minHeight: 96,
     backgroundColor: 'rgba(255,255,255,0.055)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
