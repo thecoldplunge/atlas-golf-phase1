@@ -2911,6 +2911,44 @@ export default function App() {
     );
   }
 
+  if (gameScreen === 'editor') {
+    return (
+      <SafeAreaView style={styles.root}>
+        <StatusBar style="light" />
+        <View style={styles.spaceMenuScreen}>
+          <View style={styles.menuStarsLayer} pointerEvents="none">
+            {starField.map((star) => (
+              <View key={`${star.key}-editor-lite`} style={[styles.menuStar, { left: star.left, top: star.top, width: star.size, height: star.size, backgroundColor: star.color, opacity: star.opacity }]} />
+            ))}
+          </View>
+          <View style={styles.menuGreenGlow} pointerEvents="none" />
+          <View style={styles.coursesContentWrap}>
+            <Text style={styles.menuDataBar}>◂ DEV TOOL · SAFE MODE ▸</Text>
+            <Text style={styles.coursesTitle}>EDITOR</Text>
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+              <View style={styles.editorPanel}>
+                <Text style={styles.editorSectionTitle}>Character Creator</Text>
+                <Text style={styles.golferBio}>Temporary safe-mode editor entry. Next pass will restore full create-new-character and create-new-club flows after load stability is confirmed.</Text>
+                <Text style={styles.clubItemMeta}>Planned: add new character, clothing asset inventory, value, rarity, save/export.</Text>
+              </View>
+              <View style={styles.editorPanel}>
+                <Text style={styles.editorSectionTitle}>Club Creator</Text>
+                <Text style={styles.golferBio}>Planned: add static non-fungible club assets, assign value, rarity, per-club stat package, and connect to player inventory.</Text>
+              </View>
+              <View style={styles.editorPanel}>
+                <Text style={styles.editorSectionTitle}>Why this is minimal right now</Text>
+                <Text style={styles.golferBio}>I stripped the risky version during crash isolation. This gets the editor back into Settings without reopening the load regression.</Text>
+              </View>
+            </ScrollView>
+            <Pressable style={styles.coursesBackButton} onPress={() => setGameScreen('settings')}>
+              <Text style={styles.coursesBackButtonText}>BACK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   if (gameScreen === 'settings') {
     return (
       <SafeAreaView style={styles.root}>
@@ -2926,6 +2964,14 @@ export default function App() {
             <Text style={styles.menuDataBar}>◂ INTERGALACTIC GOLF TOUR ▸</Text>
             <Text style={styles.coursesTitle}>SETTINGS</Text>
             <View style={{ gap: 12, marginTop: 20 }}>
+              <Pressable style={styles.spaceMenuBtnActive} onPress={() => setGameScreen('editor')}>
+                <Text style={styles.spaceMenuBtnLeft}>🛠️ DEV EDITOR</Text>
+                <Text style={styles.spaceMenuBtnRight}>&gt;</Text>
+                <View style={[styles.lCorner, styles.lCornerTopLeft]} />
+                <View style={[styles.lCorner, styles.lCornerTopRight]} />
+                <View style={[styles.lCorner, styles.lCornerBottomLeft]} />
+                <View style={[styles.lCorner, styles.lCornerBottomRight]} />
+              </Pressable>
               <Pressable style={styles.spaceMenuBtnActive} onPress={() => setGameScreen('backstory-read')}>
                 <Text style={styles.spaceMenuBtnLeft}>📜 READ BACKSTORY</Text>
                 <Text style={styles.spaceMenuBtnRight}>&gt;</Text>
