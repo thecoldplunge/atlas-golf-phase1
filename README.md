@@ -91,6 +91,7 @@ scripts/physics-harness.js             standalone physics test harness
 docs/physics.html                      physics visualizer
 sim-*.js, putt-qa.js, shot-qa.js       headless simulation / calibration scripts
 dev-tool-character-club-editor.html    in-browser character + bag editor
+designer/                              Next.js + Tailwind design tool (characters, clubs, courses, physics) — deployed as its own Vercel project with Root Directory `designer/`
 ```
 
 ---
