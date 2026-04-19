@@ -21,7 +21,10 @@ import Svg, {
   Ellipse as SvgEllipse,
   Line as SvgLine,
 } from 'react-native-svg';
-import { SURFACE_COLORS, PATTERNS, TREES, GENERIC_TREE } from './shared/theme';
+// Source of truth lives inside designer/ (it must — Vercel Root Directory
+// for the designer Vercel project is `designer/` and can't see above it).
+// The game reaches in for the same file so both renderers stay in sync.
+import { SURFACE_COLORS, PATTERNS, TREES, GENERIC_TREE } from './designer/shared/theme';
 import testCourseData from './courses/test-course.json';
 import test2CourseData from './courses/test-2.json';
 import test4CourseData from './courses/test-4.json';
