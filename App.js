@@ -1226,6 +1226,7 @@ export default function App() {
     magnitude(velocityRef.current) > 0.3 ||
     flightRef.current.z > 0.04 ||
     Math.abs(flightRef.current.vz) > 0.35;
+  const cameraAnchorY = (!ballMoving && !puttingMode && !shotControlOpen) ? viewHeight * 0.74 : viewHeight / 2;
 
   const syncCourseFrame = () => {
     if (!courseRef.current || typeof courseRef.current.measureInWindow !== 'function') {
@@ -2451,7 +2452,6 @@ export default function App() {
   const ballVisualScale = 1 - airborneRatio * 0.12;
   const shadowScale = 1 + airborneRatio * 0.5;
   const shadowOpacity = 0.28 - airborneRatio * 0.18;
-  const cameraAnchorY = (!ballMoving && !puttingMode && !shotControlOpen) ? viewHeight * 0.74 : viewHeight / 2;
   const worldOffsetX = viewWidth / 2 - camera.x * pixelsPerWorld;
   const worldOffsetY = cameraAnchorY - camera.y * pixelsPerWorld;
 
