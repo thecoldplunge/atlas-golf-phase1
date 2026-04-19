@@ -1,12 +1,67 @@
-import type { ExportCourse, ExportHole, HoleData, SlopeDirection, SurfaceShape } from '@/lib/types';
+import type { ExportCourse, ExportHole, HoleData, ShapePreset, SlopeDirection, SurfaceKind, SurfaceShape } from '@/lib/types';
 import { createEmptyHole, getDefaultEntityId } from '@/lib/store';
 import {
+  createPresetVectorShape,
   createRectVectorShape,
   fromExportVectorShape,
   pointInShape,
   shapeBounds,
   toExportVectorShape,
 } from '@/lib/vector';
+
+const VALID_SHAPES: ShapePreset[] = ['rectangle', 'circle', 'oval', 'squircle', 'diamond', 'capsule'];
+
+function asShape(raw: unknown, fallback: ShapePreset): ShapePreset {
+  return typeof raw === 'string' && (VALID_SHAPES as string[]).includes(raw) ? (raw as ShapePreset) : fallback;
+}
+
+/**
+ * Add small organic perturbation to anchor points + handles so the shape
+ * looks hand-drawn rather than geometrically perfect. Leaves overall
+ * position/scale intact.
+ */
+function jitterShape(shape: SurfaceShape, magnitude = 0.06): SurfaceShape {
+  const bounds = shapeBounds(shape);
+  const scale = Math.min(bounds.w, bounds.h) * magnitude;
+  if (!(scale > 0)) return shape;
+  // Seed with a deterministic hash of id so re-renders don't shimmer
+  let seed = 0;
+  for (let i = 0; i < shape.id.length; i++) seed = (seed * 31 + shape.id.charCodeAt(i)) | 0;
+  const rand = () => {
+    seed = (seed * 1664525 + 1013904223) | 0;
+    return ((seed >>> 0) / 0xffffffff) * 2 - 1;
+  };
+  shape.path.points = shape.path.points.map((p) => {
+    const dx = rand() * scale;
+    const dy = rand() * scale;
+    return {
+      ...p,
+      x: p.x + dx,
+      y: p.y + dy,
+      inX: p.inX + dx,
+      inY: p.inY + dy,
+      outX: p.outX + dx,
+      outY: p.outY + dy,
+    };
+  });
+  return shape;
+}
+
+function createShapeFromRect(params: {
+  id: string;
+  kind: SurfaceKind;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  shape?: ShapePreset;
+  jitter?: boolean;
+}): SurfaceShape {
+  const { id, kind, x, y, w, h, shape, jitter = true } = params;
+  const preset: ShapePreset = shape ?? 'rectangle';
+  const result = createPresetVectorShape({ id, kind, x, y, w, h, preset });
+  return jitter ? jitterShape(result) : result;
+}
 
 const slopeDirections: SlopeDirection[] = ['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW'];
 const RASTER_STEP = 24;
@@ -286,29 +341,32 @@ function normalizeHole(raw: unknown, index: number): HoleData {
     hole.terrain.fairway = fairway
       .map((segment, segmentIndex) => {
         const item = (segment ?? {}) as Record<string, unknown>;
-        return createRectVectorShape({
+        return createShapeFromRect({
           id: getDefaultEntityId(`fairway-${segmentIndex}`),
           kind: 'fairway',
           x: asNumber(item.x),
           y: asNumber(item.y),
           w: asNumber(item.w),
           h: asNumber(item.h),
+          shape: asShape(item.shape, 'capsule'),
         });
       })
       .filter((shape) => shape.path.points.length >= 3);
 
     const readSurfaceArray = (raw: unknown, kind: 'rough' | 'deepRough' | 'desert'): SurfaceShape[] => {
       const items = Array.isArray(raw) ? raw : [];
+      const defaultShape: ShapePreset = kind === 'desert' ? 'squircle' : 'oval';
       return items
         .map((entry, idx) => {
           const item = (entry ?? {}) as Record<string, unknown>;
-          return createRectVectorShape({
+          return createShapeFromRect({
             id: getDefaultEntityId(`${kind}-${idx}`),
             kind,
             x: asNumber(item.x),
             y: asNumber(item.y),
             w: asNumber(item.w),
             h: asNumber(item.h),
+            shape: asShape(item.shape, defaultShape),
           });
         })
         .filter((shape) => shape.path.points.length >= 3);
@@ -324,13 +382,14 @@ function normalizeHole(raw: unknown, index: number): HoleData {
     }
 
     hole.terrain.green = green
-      ? createRectVectorShape({
+      ? createShapeFromRect({
           id: getDefaultEntityId('green'),
           kind: 'green',
           x: asNumber(green.x),
           y: asNumber(green.y),
           w: asNumber(green.w, 60),
           h: asNumber(green.h, 60),
+          shape: asShape(green.shape, 'oval'),
         })
       : null;
 
@@ -340,25 +399,27 @@ function normalizeHole(raw: unknown, index: number): HoleData {
       const item = (entry ?? {}) as Record<string, unknown>;
       if (item.type === 'sandRect') {
         hole.hazards.push(
-          createRectVectorShape({
+          createShapeFromRect({
             id: getDefaultEntityId('haz-sand'),
             kind: 'sand',
             x: asNumber(item.x),
             y: asNumber(item.y),
             w: asNumber(item.w),
             h: asNumber(item.h),
+            shape: asShape(item.shape, 'oval'),
           }),
         );
       }
       if (item.type === 'waterRect') {
         hole.hazards.push(
-          createRectVectorShape({
+          createShapeFromRect({
             id: getDefaultEntityId('haz-water'),
             kind: 'water',
             x: asNumber(item.x),
             y: asNumber(item.y),
             w: asNumber(item.w),
             h: asNumber(item.h),
+            shape: asShape(item.shape, 'squircle'),
           }),
         );
       }

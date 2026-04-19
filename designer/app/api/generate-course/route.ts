@@ -4,6 +4,7 @@ import { COURSE_JSON_SCHEMA } from '@/lib/generator/schema';
 import { buildSystemPrompt, buildUserPrompt } from '@/lib/generator/prompt';
 import { estimateCostUsd } from '@/lib/generator/pricing';
 import { PLANETS, type PlanetId } from '@/lib/generator/planets';
+import { postProcessCourse } from '@/lib/generator/postProcess';
 import type { GenerateCourseRequest } from '@/lib/generator/types';
 
 export const runtime = 'nodejs';
@@ -131,6 +132,15 @@ export async function POST(request: Request) {
       );
     }
 
+    // Enforce hard caps (distance, ball-in-tee, cup-in-green) regardless of
+    // what the LLM emitted.
+    let postReport: ReturnType<typeof postProcessCourse> | null = null;
+    try {
+      postReport = postProcessCourse(course as Parameters<typeof postProcessCourse>[0]);
+    } catch (e) {
+      console.warn('postProcessCourse failed:', e);
+    }
+
     const usage = completion.usage;
     const promptTokens = usage?.prompt_tokens ?? 0;
     const completionTokens = usage?.completion_tokens ?? 0;
@@ -145,6 +155,7 @@ export async function POST(request: Request) {
         difficulty: parsed.difficulty,
         wind: parsed.wind,
         inspiration: parsed.inspiration,
+        postProcess: postReport,
       },
       usage: {
         promptTokens,

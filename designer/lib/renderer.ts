@@ -690,14 +690,51 @@ export function renderScene(
   ctx.translate(pan.x, pan.y);
   ctx.scale(zoom, zoom);
 
-  // Big-map backdrop sized to course extent
-  ctx.fillStyle = '#2a5220';
+  // Big-map backdrop sized to course extent, painted based on the course's
+  // dominant background (rough = grass, deepRough = dark grass/forest,
+  // desert = tan waste). Picks the background most holes use.
+  const bgCounts: Record<string, number> = { rough: 0, deepRough: 0, desert: 0 };
+  for (const h of allHoles) bgCounts[h.background] = (bgCounts[h.background] ?? 0) + 1;
+  const courseBg =
+    bgCounts.desert > bgCounts.rough && bgCounts.desert >= bgCounts.deepRough
+      ? 'desert'
+      : bgCounts.deepRough > bgCounts.rough
+        ? 'deepRough'
+        : 'rough';
+
+  const bgFill =
+    courseBg === 'desert' ? '#c8a06a' : courseBg === 'deepRough' ? '#1e3e18' : '#2a5220';
+  ctx.fillStyle = bgFill;
   ctx.fillRect(0, 0, extent.w, extent.h);
-  if (patterns.rough) {
+
+  if (courseBg === 'rough' && patterns.rough) {
     ctx.fillStyle = patterns.rough;
     ctx.fillRect(0, 0, extent.w, extent.h);
+  } else if (courseBg === 'desert') {
+    // speckle
+    ctx.save();
+    ctx.fillStyle = 'rgba(70,40,10,0.18)';
+    for (let yy = 0; yy < extent.h; yy += 14) {
+      for (let xx = (yy % 28 === 0 ? 0 : 7); xx < extent.w; xx += 14) {
+        ctx.fillRect(xx, yy, 2, 2);
+      }
+    }
+    ctx.restore();
+  } else if (courseBg === 'deepRough') {
+    // dense grass lines
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+    ctx.lineWidth = 1;
+    for (let yy = 0; yy < extent.h; yy += 10) {
+      ctx.beginPath();
+      ctx.moveTo(0, yy);
+      ctx.lineTo(extent.w, yy);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
+  // Soft vertical gradient for depth
   ctx.fillStyle = 'rgba(255,255,255,0.05)';
   ctx.fillRect(0, 0, extent.w, extent.h * 0.44);
   ctx.fillStyle = 'rgba(0,0,0,0.10)';

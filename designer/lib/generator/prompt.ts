@@ -96,9 +96,11 @@ function landscapeGuide(landscape: string): string {
 }
 
 function worldDims(holeCount: HoleCount): { width: number; height: number } {
-  if (holeCount === 3) return { width: 2400, height: 1800 };
-  if (holeCount === 9) return { width: 4000, height: 3200 };
-  return { width: 5600, height: 4800 };
+  // Sized so per-hole corridor is ~700-900 units — enough to fit a par 5
+  // without overflow, tight enough that the LLM doesn't over-stretch.
+  if (holeCount === 3) return { width: 1800, height: 1400 };
+  if (holeCount === 9) return { width: 2600, height: 2000 };
+  return { width: 3800, height: 3000 };
 }
 
 function holeCorridorHint(holeCount: HoleCount): string {
@@ -114,19 +116,53 @@ function holeCorridorHint(holeCount: HoleCount): string {
 }
 
 export function buildSystemPrompt(): string {
-  return `You are an expert golf course architect. You design beautiful, strategic, playable courses in a 2D top-down pixel-golf aesthetic. You return a strictly-valid JSON course matching the provided schema — no prose, no markdown.
+  return `You are an expert golf course architect. You design beautiful, strategic, playable, DETAILED courses in a 2D top-down pixel-golf aesthetic. You return a strictly-valid JSON course matching the provided schema — no prose, no markdown.
 
 ${COURSE_DESIGN_BRIEF}
 
-SCALE (ABSOLUTELY CRITICAL — DO NOT SHRINK HOLES)
+SCALE (HARD CAPS — DO NOT EXCEED)
 - 1 world unit ≈ 1 yard.
-- Measure straight-line distance from tee CENTER to cup. That distance MUST match par-by-par length targets:
-  • Par 3: 150–240 units.
-  • Par 4: 320–500 units. Short par 4 = 320–380. Medium = 380–440. Long = 440–500.
-  • Par 5: 500–650 units.
-- Producing a "par 4" with a tee-to-cup distance of 150 units is WRONG. The hole would play like a chip, not a par 4. Always pick the distance bucket first, then lay out the hole.
-- Fairway segments MUST span the distance from tee to green. For a par 4 of 400 units, you typically need 2–3 fairway rects chained end-to-end — not a single 80-unit blob.
-- Fairway segment typical size: 120–220 units long, 30–50 units wide at landing zones.
+- Measure straight-line distance from tee CENTER to cup. That distance MUST be in the par-specific range:
+  • Par 3:  150 ≤ dist ≤ 240.    (Short 150–175, medium 180–210, long 220–240.)
+  • Par 4:  320 ≤ dist ≤ 500.    (Short 320–380, medium 380–440, long 440–500.)
+  • Par 5:  500 ≤ dist ≤ 650.    (Reachable-in-two 500–540, three-shotter 560–650.)
+- A par 4 at 150 units is WRONG (too short — chip shot). A par 4 at 600 units is WRONG (too long — the course plays like garbage at the wrong scale). STAY IN THE BAND.
+- Remember: par does NOT scale with distance beyond these caps. A 1000-unit hole is not a par 6 — there is no par 6. Caps are HARD.
+
+DETAIL TARGET — AIM HIGH (every hole must look hand-crafted, not skeletal)
+Every hole MUST include AT LEAST:
+  • Par 3:  2 fairway/apron segments, 2 bunkers, 1–2 rough patches framing the approach, 1 greenside framing (trees or rough), 1–2 green slopes, 3–6 trees/flora (if planet allows).
+  • Par 4:  3–4 fairway segments (tee strip + landing zone + approach strip), 3–5 bunkers (fairway + greenside), 2–3 rough patches framing the corridor, 5–10 trees/flora or equivalent rough framing, 1–3 green slopes.
+  • Par 5:  4–5 fairway segments (tee strip + 1st landing + 2nd landing + approach + green apron), 4–6 bunkers (fairway + cross-hazard + greenside), 3–4 rough/deepRough/desert patches framing both landing zones, 6–12 trees/flora, 1–3 green slopes, OFTEN a cross-hazard in the 2nd-shot landing zone.
+If in doubt: add more. Skeletal holes (1 fairway rect, 1 bunker) are unacceptable.
+
+SHAPES — GOLF COURSES ARE NOT RECTANGLES
+Every surface has a "shape" field. Pick it to make the course look hand-drawn, not like a wireframe:
+  • green: ALWAYS 'oval' or 'squircle'. NEVER 'rectangle'.
+  • fairway: 'capsule' (long straight segments, best default) or 'oval' (round landing zones) or 'squircle' (organic blobs). Vary across the course.
+  • rough / deepRough: 'oval' or 'squircle' (organic). Occasionally 'rectangle' only for long strips framing a corridor.
+  • desert: 'squircle' or 'oval' (naturally scalloped waste areas).
+  • tee box: 'rectangle' or 'capsule'.
+  • sand bunker (sandRect hazard): 'circle', 'oval', or 'squircle'. NEVER 'rectangle' — real bunkers are round.
+  • water (waterRect hazard): 'squircle' or 'oval' for lakes/ponds; 'capsule' for creeks/burns.
+Use VARIETY — don't make every fairway segment a capsule. A realistic course alternates.
+
+LANDSCAPE DRIVES BACKGROUND + AMBIENT SURFACES (this matters — do not ignore)
+You MUST set "background" on every hole to match the landscape, AND populate ambient terrain arrays heavily:
+  • desert / canyon / volcanic / lunar-basin:
+      → background = "desert"
+      → 3–6 LARGE desert rects per hole framing the fairway corridor on BOTH sides.
+      → Rough/deepRough sparse or empty.
+  • tundra / crystal:
+      → background = "deepRough"
+      → No desert rects (unless "crystal desert" is the vibe). Rough/deepRough patches frame the hole.
+  • links / coastal:
+      → background = "rough"
+      → deepRough dune patches scattered for dune framing.
+  • forest / mountain / parkland:
+      → background = "deepRough" (dense forest)
+      → Rough strips framing the fairway. Trees dense along the corridor edge.
+Background is not decorative — it determines what a ball LIES IN if it misses the hole. Matching landscape is mandatory.
 
 GEOMETRY RULES
 - (0,0) is top-left of the world canvas. x grows right, y grows down.
@@ -136,16 +172,19 @@ GEOMETRY RULES
 - cup MUST be inside the green rectangle.
 - slope cx/cy are 0-1 fractions within the green bounding box.
 - tee size: width 18–30, height 12–20 typical.
+- Desert/rough/deepRough framing rects: 80–250 units long on the long axis, 40–120 wide. Place them to frame fairways, not random noise.
 
-OBSTACLES / HAZARDS
+OBSTACLES (TREES ONLY)
 - Obstacles: ONLY type "circle" (trees). No rect / wall obstacles exist in this engine.
 - Tree "look" must be one of the planet's allowed flora. Never emit a look not in the list.
 - If the planet has no allowed flora, emit an empty obstacles array.
-- Hazards: sandRect for bunkers, waterRect for water. Place them where they affect strategic decisions — on the line of the good player's tee shot, guarding the green, etc.
+- Place trees in CLUSTERS along fairway edges (3–6 trees per cluster) — not in single isolated lonely trees.
+- In forest landscapes, use many trees (6–12 per hole). In links, very few (0–3). In desert, almost none.
 
 OUTPUT
 - Do NOT output markdown code fences. Output only the JSON object.
-- Do NOT skip required fields. rough/deepRough/desert may be empty arrays if not used.`;
+- Do NOT skip required fields. rough/deepRough/desert arrays MUST be populated (not empty) when their landscape calls for them.
+- MORE DETAIL > LESS. If the model is tempted to ship a sparse hole, add 3 more bunkers, 2 more rough patches, and a cluster of trees.`;
 }
 
 export function buildUserPrompt(req: GenerateCourseRequest): string {
