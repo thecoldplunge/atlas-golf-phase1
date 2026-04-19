@@ -14,8 +14,10 @@ import { StatusBar } from 'expo-status-bar';
 import Svg, { Path as SvgPath, G as SvgG } from 'react-native-svg';
 import testCourseData from './courses/test-course.json';
 import test2CourseData from './courses/test-2.json';
+import test4CourseData from './courses/test-4.json';
 const TEST_COURSE_HOLES = testCourseData.holes;
 const TEST2_COURSE_HOLES = test2CourseData.holes;
+const TEST4_COURSE_HOLES = test4CourseData.holes;
 
 // ---- Vector path helpers (for rendering designer-exported editorVectors) ----
 // Each PathPoint is { x, y, inX, inY, outX, outY } where inX/inY is the
@@ -808,6 +810,14 @@ const COURSES = [
     designer: 'Mike G',
     holes: TEST2_COURSE_HOLES,
     description: '3 holes • Par 12 • AI-generated v2',
+    difficulty: 'Hard'
+  },
+  {
+    id: 'test-4',
+    name: 'Test 4',
+    designer: 'Mike G',
+    holes: TEST4_COURSE_HOLES,
+    description: '3 holes • Par 12 • AI-generated v4',
     difficulty: 'Hard'
   },
   {
