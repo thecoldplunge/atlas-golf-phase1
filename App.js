@@ -709,6 +709,28 @@ const BACKSTORY_PARAGRAPHS = [
   'Your Tour begins now. Good luck out there, player.'
 ];
 
+const DRIVING_RANGE_HOLES = [
+  {
+    id: 1,
+    name: 'Driving Range',
+    par: 0,
+    isRange: true,
+    ballStart: { x: H_OFF_X + 130, y: H_OFF_Y + 760 },
+    cup: { x: H_OFF_X + 130, y: H_OFF_Y + 30 },
+    terrain: {
+      tee: { x: H_OFF_X + 114, y: H_OFF_Y + 750, w: 32, h: 20, r: 8 },
+      fairway: [
+        { x: H_OFF_X + 60, y: H_OFF_Y + 40, w: 140, h: 720, r: 18 }
+      ],
+      green: { x: H_OFF_X + 120, y: H_OFF_Y + 20, w: 20, h: 20, r: 10 }
+    },
+    slopes: [],
+    obstacles: [],
+    hazards: [],
+    rangeMarkers: [50, 100, 150, 200, 250, 300]
+  }
+];
+
 const COURSES = [
   {
     id: 'pine-valley',
@@ -725,6 +747,14 @@ const COURSES = [
     holes: MICHAELS_COURSE_HOLES,
     description: '3 holes • Par 12',
     difficulty: 'Hard'
+  },
+  {
+    id: 'driving-range',
+    name: 'Driving Range',
+    designer: 'Atlas',
+    holes: DRIVING_RANGE_HOLES,
+    description: 'Practice • No wind • Unlimited shots',
+    difficulty: 'Practice'
   }
 ];
 
@@ -1436,9 +1466,11 @@ const WIND_DIRS = {
 const WIND_ARROWS = { N: '↑', S: '↓', E: '→', W: '←', NE: '↗', NW: '↖', SE: '↘', SW: '↙' };
 const WIND_DIR_KEYS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 const generateWind = (holes = HOLES) => {
-  // One random speed for the whole round (1-25 mph), direction shifts per hole
+  // One random speed for the whole round (1-25 mph), direction shifts per hole.
+  // Range holes always play in still air.
   const roundSpeed = Math.max(1, Math.round(Math.random() * 25));
-  return holes.map(() => {
+  return holes.map((hole) => {
+    if (hole?.isRange) return { speed: 0, dir: 'N' };
     const dir = WIND_DIR_KEYS[Math.floor(Math.random() * WIND_DIR_KEYS.length)];
     return { speed: roundSpeed, dir };
   });
@@ -2229,7 +2261,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (sunk) {
+    if (sunk || currentHole.isRange) {
       return;
     }
     if (ballHeight > 0.28 || Math.abs(flightRef.current.vz) > 0.5) {
@@ -2330,6 +2362,22 @@ export default function App() {
       setSelectedClubIndex(0);
     }
   }, [puttingMode, selectedClubIndex]);
+
+  // Driving range: once the ball comes to rest, reset back to the tee so the
+  // player can keep hitting. Short delay lets the shot-stats card show first.
+  useEffect(() => {
+    if (!currentHole.isRange || ballMoving) {
+      return;
+    }
+    const atTee = Math.hypot(ball.x - currentHole.ballStart.x, ball.y - currentHole.ballStart.y) < 0.5;
+    if (atTee) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      resetBall();
+    }, 1400);
+    return () => clearTimeout(timer);
+  }, [ball, ballMoving, currentHole]);
 
   useEffect(() => {
     if (!puttingMode) {
@@ -3853,6 +3901,46 @@ export default function App() {
                 ]}
               />
             ) : null}
+
+            {currentHole.isRange && currentHole.rangeMarkers?.length && currentHole.terrain?.fairway?.[0]
+              ? currentHole.rangeMarkers.map((yd) => {
+                  const fair = currentHole.terrain.fairway[0];
+                  const markerY = currentHole.ballStart.y - yd / YARDS_PER_WORLD;
+                  return (
+                    <React.Fragment key={`rm-${yd}`}>
+                      <View
+                        pointerEvents="none"
+                        style={{
+                          position: 'absolute',
+                          left: fair.x * scaleX,
+                          top: markerY * scaleY - 1,
+                          width: fair.w * scaleX,
+                          height: 2,
+                          backgroundColor: 'rgba(255,255,255,0.55)'
+                        }}
+                      />
+                      <Text
+                        pointerEvents="none"
+                        style={{
+                          position: 'absolute',
+                          left: (fair.x + fair.w / 2) * scaleX - 18,
+                          top: markerY * scaleY - 8,
+                          width: 36,
+                          textAlign: 'center',
+                          color: '#ffffff',
+                          fontSize: 11,
+                          fontWeight: '900',
+                          textShadowColor: 'rgba(0,0,0,0.55)',
+                          textShadowOffset: { width: 0, height: 1 },
+                          textShadowRadius: 2
+                        }}
+                      >
+                        {yd}
+                      </Text>
+                    </React.Fragment>
+                  );
+                })
+              : null}
 
             {currentHole.hazards.map((h, i) => {
               const common = {
