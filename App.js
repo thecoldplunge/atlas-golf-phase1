@@ -3302,12 +3302,18 @@ export default function App() {
           </View>
 
           {/* Shot Tracer */}
-          {shotTracer.length > 1 ? shotTracer.map((pt, i) => {
-            const sx = (pt.x - cameraRef.current.x) * pixelsPerWorld + viewWidth / 2;
-            const sy = (pt.y - cameraRef.current.y) * pixelsPerWorld + viewHeight / 2 - (pt.z || 0) * pixelsPerWorld * 0.35;
-            const age = (shotTracer.length - 1 - i) / Math.max(1, shotTracer.length - 1);
-            const opacity = Math.max(0.06, 0.95 - age * 0.9);
-            return (
+          {(() => {
+            const tracerPoints = shotTracer.length > 0
+              ? [...shotTracer, { x: ball.x, y: ball.y, z: ballHeight }]
+              : [];
+            return tracerPoints.length > 1 ? tracerPoints.map((pt, i) => {
+              const sx = (pt.x - camera.x) * pixelsPerWorld + viewWidth / 2;
+              const tracerRawLiftPx = (pt.z || 0) * pixelsPerWorld * 1.55;
+              const tracerLiftPx = tracerRawLiftPx > 0 ? Math.sqrt(tracerRawLiftPx) * 8 : 0;
+              const sy = (pt.y - camera.y) * pixelsPerWorld + viewHeight / 2 - tracerLiftPx;
+              const age = (tracerPoints.length - 1 - i) / Math.max(1, tracerPoints.length - 1);
+              const opacity = Math.max(0.06, 0.95 - age * 0.9);
+              return (
               <View
                 key={i}
                 style={{
@@ -3322,7 +3328,8 @@ export default function App() {
                 }}
               />
             );
-          }) : null}
+            }) : null;
+          })()}
 
           {!sunk ? (
             <>
