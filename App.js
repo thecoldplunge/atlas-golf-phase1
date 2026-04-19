@@ -1396,29 +1396,32 @@ const SURFACE_PHYSICS = {
 };
 
 const GOLFER_PIXEL_KEY = {
-  h: '#d25f49',
-  o: '#20282a',
-  s: '#3f76c1',
-  k: '#f0c08c',
-  p: '#2e563c',
-  b: '#1a1f1c',
-  c: '#d9ddd2',
-  n: '#263246',
-  w: '#edf1ea'
+  o: '#10151b',
+  n: '#1f4ed8',
+  b: '#1741b6',
+  w: '#f4f7fb',
+  g: '#cfd6e0',
+  s: '#f2a35e',
+  t: '#d98b45',
+  p: '#d7c18e',
+  q: '#b89f6d',
+  c: '#0f1720'
 };
 
 const GOLFER_SPRITE_ROWS = [
-  '.....nn.....',
-  '....nwwn....',
-  '...nkkkkn...',
-  '..nnssssnn..',
-  '..nsshhssn..',
-  '.ppsssssspp.',
-  '.ppsskksspp.',
-  '..pppppppp..',
-  '..bb....bb..',
-  '.bb......bb.',
-  '.b........b.'
+  '.....bbb.....',
+  '...bbwwwbb...',
+  '..bbwwgwwbb..',
+  '.bbnnwwwnnbb.',
+  '.bnnnnnnnnnb.',
+  '.bnnssssnnnb.',
+  '..nnssssssnn.',
+  '..psssssssp..',
+  '.pppsccspppp.',
+  '.ppq....qppp.',
+  '.pq......qp..',
+  '.ww......ww..',
+  '..c......c...'
 ];
 
 const GOLFER_PIXELS = GOLFER_SPRITE_ROWS.flatMap((row, y) =>
