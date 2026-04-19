@@ -1117,10 +1117,12 @@ export default function App() {
       opacity: 0.3 + Math.random() * 0.5
     }));
   }, [viewWidth, viewHeight]);
-  const [gameScreen, setGameScreen] = useState('menu'); // 'menu' | 'golfer-select' | 'club-select' | 'courses' | 'playing'
-  const [selectedGolfer, setSelectedGolfer] = useState(GOLFERS[0]);
+  const [gameScreen, setGameScreen] = useState('menu'); // 'menu' | 'golfer-select' | 'club-select' | 'courses' | 'editor' | 'playing'
+  const [selectedGolfer, setSelectedGolfer] = useState(JSON.parse(JSON.stringify(GOLFERS[0])));
   const [selectedBag, setSelectedBag] = useState([...DEFAULT_BAG]);
   const [bagPickerCategory, setBagPickerCategory] = useState('drivers');
+  const [editorTab, setEditorTab] = useState('golfer');
+  const [equipmentCatalog, setEquipmentCatalog] = useState(JSON.parse(JSON.stringify(EQUIPMENT_CATALOG)));
   const [activeCourseIndex, setActiveCourseIndex] = useState(0);
   const [selectedCourseIndex, setSelectedCourseIndex] = useState(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -2745,7 +2747,7 @@ export default function App() {
       { key: 'wedges', label: 'Wedges' },
       { key: 'putters', label: 'Putters' }
     ];
-    const categoryItems = EQUIPMENT_CATALOG[bagPickerCategory] || [];
+    const categoryItems = equipmentCatalog[bagPickerCategory] || [];
     const bagCount = selectedBag.length;
     const hasPutter = selectedBag.some(id => {
       const eq = getEquipmentById(id);
@@ -2897,9 +2899,101 @@ export default function App() {
             <Pressable style={styles.coursesPlayButton} onPress={() => startCourse(selectedCourseIndex)}>
               <Text style={styles.coursesPlayButtonText}>PLAY</Text>
             </Pressable>
+            <Pressable style={styles.coursesEditorButton} onPress={() => setGameScreen('editor')}>
+              <Text style={styles.coursesEditorButtonText}>EDITOR</Text>
+            </Pressable>
             <Pressable style={styles.coursesBackButton} onPress={() => setGameScreen('menu')}>
               <Text style={styles.coursesBackButtonText}>BACK</Text>
             </Pressable>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (gameScreen === 'editor') {
+    const clubCategories = [
+      { key: 'drivers', label: 'Drivers' },
+      { key: 'fairwayWoods', label: 'Woods' },
+      { key: 'irons', label: 'Irons' },
+      { key: 'wedges', label: 'Wedges' },
+      { key: 'putters', label: 'Putters' }
+    ];
+    const activeClubList = equipmentCatalog[bagPickerCategory] || [];
+    const updateGolferStat = (group, key, value) => {
+      setSelectedGolfer(prev => ({
+        ...prev,
+        [group]: { ...prev[group], [key]: clamp(value, 0, 100) }
+      }));
+    };
+    const updateAvatar = (key, value) => {
+      setSelectedGolfer(prev => ({ ...prev, avatar: { ...prev.avatar, [key]: value } }));
+    };
+    const updateClubStat = (itemId, statKey, value) => {
+      setEquipmentCatalog(prev => ({
+        ...prev,
+        [bagPickerCategory]: prev[bagPickerCategory].map(item =>
+          item.id === itemId ? { ...item, stats: { ...item.stats, [statKey]: clamp(value, 0, 100) } } : item
+        )
+      }));
+    };
+    return (
+      <SafeAreaView style={styles.root}>
+        <StatusBar style="light" />
+        <View style={styles.spaceMenuScreen}>
+          <View style={styles.menuStarsLayer} pointerEvents="none">
+            {starField.map((star) => (
+              <View key={`${star.key}-editor`} style={[styles.menuStar, { left: star.left, top: star.top, width: star.size, height: star.size, backgroundColor: star.color, opacity: star.opacity }]} />
+            ))}
+          </View>
+          <View style={styles.menuGreenGlow} pointerEvents="none" />
+          <View style={styles.coursesContentWrap}>
+            <Text style={styles.menuDataBar}>◂ COURSE + PLAYER + CLUB EDITOR ▸</Text>
+            <Text style={styles.coursesTitle}>EDITOR</Text>
+            <View style={styles.editorTabRow}>
+              <Pressable style={[styles.editorTabBtn, editorTab === 'golfer' && styles.editorTabBtnActive]} onPress={() => setEditorTab('golfer')}><Text style={styles.editorTabText}>Golfer</Text></Pressable>
+              <Pressable style={[styles.editorTabBtn, editorTab === 'clubs' && styles.editorTabBtnActive]} onPress={() => setEditorTab('clubs')}><Text style={styles.editorTabText}>Clubs</Text></Pressable>
+              <Pressable style={[styles.editorTabBtn, editorTab === 'course' && styles.editorTabBtnActive]} onPress={() => setEditorTab('course')}><Text style={styles.editorTabText}>Course</Text></Pressable>
+            </View>
+            <ScrollView style={styles.editorScroll} showsVerticalScrollIndicator={false}>
+              {editorTab === 'golfer' ? (
+                <View style={styles.editorPanel}>
+                  <Text style={styles.editorSectionTitle}>Mike G Preview</Text>
+                  <View style={styles.golferCard}>
+                    <View style={styles.golferAvatarWrap}>
+                      <View style={[styles.golferAvatarBlock, { backgroundColor: selectedGolfer.avatar.hat }]} />
+                      <View style={[styles.golferAvatarBlock, { backgroundColor: selectedGolfer.avatar.skin }]} />
+                      <View style={[styles.golferAvatarBlock, { backgroundColor: selectedGolfer.avatar.shirt }]} />
+                      <View style={[styles.golferAvatarBlock, { backgroundColor: selectedGolfer.avatar.pants }]} />
+                    </View>
+                    <View style={styles.golferInfo}><Text style={styles.golferName}>{selectedGolfer.name}</Text><Text style={styles.golferBio}>Live editor for golfer identity, attributes, and on-course look.</Text></View>
+                  </View>
+                  {['skin','hat','shirt','pants'].map(key => (
+                    <View key={key} style={styles.editorRow}><Text style={styles.editorLabel}>{key}</Text><Pressable style={styles.editorColorChip} onPress={() => updateAvatar(key, key === 'skin' ? '#d7a070' : key === 'hat' ? '#1f2937' : key === 'shirt' ? '#2563eb' : '#365314')}><Text style={styles.editorColorText}>{selectedGolfer.avatar[key]}</Text></Pressable></View>
+                  ))}
+                  {Object.entries(selectedGolfer.stats).map(([key, val]) => (
+                    <View key={key} style={styles.editorRow}><Text style={styles.editorLabel}>{key}</Text><Pressable style={styles.editorStepper} onPress={() => updateGolferStat('stats', key, val - 5)}><Text style={styles.editorStepperText}>-</Text></Pressable><Text style={styles.editorValue}>{val}</Text><Pressable style={styles.editorStepper} onPress={() => updateGolferStat('stats', key, val + 5)}><Text style={styles.editorStepperText}>+</Text></Pressable></View>
+                  ))}
+                </View>
+              ) : null}
+              {editorTab === 'clubs' ? (
+                <View style={styles.editorPanel}>
+                  <View style={styles.clubCategoryTabs}>{clubCategories.map(cat => <Pressable key={cat.key} style={[styles.clubCategoryTab, bagPickerCategory === cat.key && styles.clubCategoryTabActive]} onPress={() => setBagPickerCategory(cat.key)}><Text style={[styles.clubCategoryTabText, bagPickerCategory === cat.key && styles.clubCategoryTabTextActive]}>{cat.label}</Text></Pressable>)}</View>
+                  {activeClubList.map(item => (
+                    <View key={item.id} style={styles.editorClubCard}>
+                      <Text style={styles.clubItemName}>{item.name}</Text>
+                      {Object.entries(item.stats).map(([statKey, statVal]) => (
+                        <View key={statKey} style={styles.editorRow}><Text style={styles.editorLabel}>{statKey}</Text><Pressable style={styles.editorStepper} onPress={() => updateClubStat(item.id, statKey, statVal - 5)}><Text style={styles.editorStepperText}>-</Text></Pressable><Text style={styles.editorValue}>{statVal}</Text><Pressable style={styles.editorStepper} onPress={() => updateClubStat(item.id, statKey, statVal + 5)}><Text style={styles.editorStepperText}>+</Text></Pressable></View>
+                      ))}
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+              {editorTab === 'course' ? (
+                <View style={styles.editorPanel}><Text style={styles.editorSectionTitle}>Course Editor Linkage</Text><Text style={styles.golferBio}>This editor is now connected to the course flow entry. Next step is wiring these values directly into the separate course-shaping controls and save/load presets.</Text><Text style={styles.spaceCourseDesigner}>ACTIVE COURSE · {COURSES[selectedCourseIndex]?.name?.toUpperCase()}</Text></View>
+              ) : null}
+            </ScrollView>
+            <Pressable style={styles.coursesPlayButton} onPress={() => setGameScreen('courses')}><Text style={styles.coursesPlayButtonText}>DONE</Text></Pressable>
           </View>
         </View>
       </SafeAreaView>
@@ -5356,6 +5450,107 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     letterSpacing: 3
+  },
+  coursesEditorButton: {
+    marginTop: 10,
+    height: 44,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  coursesEditorButtonText: {
+    color: '#f5fbef',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 3
+  },
+  editorTabRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12
+  },
+  editorTabBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center'
+  },
+  editorTabBtnActive: {
+    backgroundColor: 'rgba(74,158,63,0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(136,248,187,0.45)'
+  },
+  editorTabText: {
+    color: '#f5fbef',
+    fontWeight: '700'
+  },
+  editorScroll: {
+    flex: 1,
+    marginBottom: 12
+  },
+  editorPanel: {
+    backgroundColor: 'rgba(7,11,9,0.5)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 14,
+    padding: 12,
+    gap: 8
+  },
+  editorSectionTitle: {
+    color: '#88F8BB',
+    fontSize: 16,
+    fontWeight: '800'
+  },
+  editorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4
+  },
+  editorLabel: {
+    flex: 1,
+    color: '#dbe7d7',
+    fontSize: 13,
+    textTransform: 'capitalize'
+  },
+  editorStepper: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  editorStepperText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700'
+  },
+  editorValue: {
+    width: 34,
+    textAlign: 'center',
+    color: '#88F8BB',
+    fontWeight: '800'
+  },
+  editorColorChip: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  editorColorText: {
+    color: '#f5fbef',
+    fontSize: 11
+  },
+  editorClubCard: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10
   },
   scorecardOverlay: {
     position: 'absolute',
