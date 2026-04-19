@@ -1494,7 +1494,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.10';
+const BUILD_VERSION = 'IGT v3.11';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1536,6 +1536,48 @@ const pointInCircle = (p, c) => {
 };
 
 const getAimAngleToCup = (ballPos, cup) => Math.atan2(cup.y - ballPos.y, cup.x - ballPos.x);
+// Tempo thresholds in one place so dev-mode UI can show "0.42 > 0.38"
+// alongside each triggered tag, and the coaching text can cite them.
+const TEMPO_THRESHOLDS = {
+  backJerk: 0.38,
+  forwardJerk: 0.50,
+  pauseTolerance: 10,          // ms beyond the 35ms natural-reversal floor
+  followThroughCommitted: 0.60, // peak position ≥ this tags Committed
+  followThroughCoasted: 0.30,   // peak position < this tags Coasted
+  purePeakBack: 0.35,           // below → pure bonus eligible
+  purePeakFwd: 0.48,
+  purePauseMs: 10,
+  pureFollowThrough: 0.75,
+};
+
+// Per-flaw coaching — shown on the shot-stats card when dev mode is on.
+// Reads the metrics the algorithm actually used and tells the player
+// what to change on the next swing.
+const coachSwing = (tempoTag, metrics) => {
+  if (!metrics) return [];
+  const tips = [];
+  const tags = (tempoTag || '').split(' + ').map((t) => t.trim());
+  if (tags.includes('Paused')) {
+    tips.push(`You held at the top for ${Math.round(metrics.pauseMs)}ms. Reverse direction in one continuous motion — no hovering.`);
+  }
+  if (tags.includes('Jerky Back')) {
+    tips.push(`Backswing had uneven speed (${metrics.backJerk.toFixed(2)}, triggers above ${TEMPO_THRESHOLDS.backJerk}). Pull at a steady pace; avoid starts/stops and direction wobbles.`);
+  }
+  if (tags.includes('Jerky Fwd')) {
+    tips.push(`Forward swing was jerky (${metrics.forwardJerk.toFixed(2)}, triggers above ${TEMPO_THRESHOLDS.forwardJerk}). Let speed build smoothly — don't yank mid-swing.`);
+  }
+  if (tags.includes('Coasted')) {
+    tips.push(`Peak speed landed at ${Math.round(metrics.followThrough * 100)}% of forward swing (want ≥30% to avoid Coasted, ≥60% for Committed). Keep accelerating — don't lose power after the first push.`);
+  }
+  if (tags.includes('Committed') || tags.includes('Pure')) {
+    tips.push(`Peak speed landed at ${Math.round(metrics.followThrough * 100)}% of forward swing — that's a committed release. Keep doing that.`);
+  }
+  if (tags.includes('Smooth') && tips.length === 0) {
+    tips.push(`Clean swing — no flaws tripped. For "Pure", aim for peak speed at ≥75% of forward swing with no pause at the top.`);
+  }
+  return tips;
+};
+
 // Evaluate the swing tempo based on the pointer's timestamped trajectory.
 // Returns { tempoMult, tempoTag, metrics }. tempoMult > 1 amplifies deviation
 // (penalty); < 1 dampens it (bonus). The algorithm rewards smooth acceleration
@@ -1633,31 +1675,31 @@ const evaluateTempo = (samples, { focus = 50, composure = 50 } = {}) => {
   const tags = [];
   const focusBias = clamp((focus - 50) / 100, -0.5, 0.5);
 
-  // Pause: natural reversal is ~35ms; anything past 10ms extra is taxed.
-  // 100ms pause → ~1.5×, 200ms → ~2.0×, 300ms clamped.
-  const pauseTolerance = 10 * (1 - focusBias * 0.4);
+  // Pause: natural reversal is ~35ms; anything past pauseTolerance ms
+  // extra is taxed. 100ms pause → ~1.5×, 200ms → ~2.0×, 300ms clamped.
+  const pauseTolerance = TEMPO_THRESHOLDS.pauseTolerance * (1 - focusBias * 0.4);
   if (pauseMs > pauseTolerance) {
     mult *= 1 + clamp((pauseMs - pauseTolerance) / 130, 0, 1.2);
     tags.push('Paused');
   }
-  if (backJerk > 0.38) {
-    mult *= 1 + clamp((backJerk - 0.38) * 2.0, 0, 0.7);
+  if (backJerk > TEMPO_THRESHOLDS.backJerk) {
+    mult *= 1 + clamp((backJerk - TEMPO_THRESHOLDS.backJerk) * 2.0, 0, 0.7);
     tags.push('Jerky Back');
   }
-  if (forwardJerk > 0.50) {
-    mult *= 1 + clamp((forwardJerk - 0.50) * 2.0, 0, 0.7);
+  if (forwardJerk > TEMPO_THRESHOLDS.forwardJerk) {
+    mult *= 1 + clamp((forwardJerk - TEMPO_THRESHOLDS.forwardJerk) * 2.0, 0, 0.7);
     tags.push('Jerky Fwd');
   }
   // Forward-motion scoring via peak POSITION in the forward swing.
   // We intentionally do NOT check release velocity vs peak — on a
   // touchscreen the finger naturally slows before lift, which would
   // flag every swing. Peak position is the honest signal.
-  if (followThrough >= 0.60 && tags.length === 0) {
-    const bonus = clamp((followThrough - 0.60) * 0.4 + 0.08, 0, 0.22);
+  if (followThrough >= TEMPO_THRESHOLDS.followThroughCommitted && tags.length === 0) {
+    const bonus = clamp((followThrough - TEMPO_THRESHOLDS.followThroughCommitted) * 0.4 + 0.08, 0, 0.22);
     mult *= 1 - bonus;
     tags.push('Committed');
-  } else if (followThrough < 0.30) {
-    mult *= 1 + clamp((0.30 - followThrough) * 0.8, 0, 0.25);
+  } else if (followThrough < TEMPO_THRESHOLDS.followThroughCoasted) {
+    mult *= 1 + clamp((TEMPO_THRESHOLDS.followThroughCoasted - followThrough) * 0.8, 0, 0.25);
     tags.push('Coasted');
   }
 
@@ -1667,7 +1709,10 @@ const evaluateTempo = (samples, { focus = 50, composure = 50 } = {}) => {
   }
 
   const pureBonus = tags.length === 1 && tags[0] === 'Committed'
-    && backJerk < 0.35 && forwardJerk < 0.48 && pauseMs < 10 && followThrough >= 0.75;
+    && backJerk < TEMPO_THRESHOLDS.purePeakBack
+    && forwardJerk < TEMPO_THRESHOLDS.purePeakFwd
+    && pauseMs < TEMPO_THRESHOLDS.purePauseMs
+    && followThrough >= TEMPO_THRESHOLDS.pureFollowThrough;
   if (pureBonus) {
     mult = 0.75;
     tags.length = 0;
@@ -1862,6 +1907,7 @@ export default function App() {
   const [swingLog, setSwingLog] = useState([]);
   const [showSwingLog, setShowSwingLog] = useState(false);
   const [swingLogToast, setSwingLogToast] = useState('');
+  const [devMode, setDevMode] = useState(false);
   const pendingSwingRef = useRef(null);
   const nextSwingIdRef = useRef(1);
   const shotStartPosRef = useRef(null);
@@ -1914,8 +1960,18 @@ export default function App() {
           nextSwingIdRef.current = maxId + 1;
         }
       }
+      const devStored = localStorage.getItem('atlasGolfDevMode');
+      if (devStored === '1') setDevMode(true);
     } catch (err) { /* ignore */ }
   }, []);
+
+  // Persist dev-mode toggle so it survives reloads.
+  useEffect(() => {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      localStorage.setItem('atlasGolfDevMode', devMode ? '1' : '0');
+    } catch (err) { /* ignore */ }
+  }, [devMode]);
 
   const pushSwingLog = (entry) => {
     setSwingLog((prev) => {
@@ -3023,7 +3079,7 @@ export default function App() {
     };
   };
 
-  const strikeBall = (deviation = 0, { tempoMult = 1.0, tempoTag = 'Normal' } = {}) => {
+  const strikeBall = (deviation = 0, { tempoMult = 1.0, tempoTag = 'Normal', tempoMetrics = null } = {}) => {
     // Apply tempo multiplier to deviation — rushed/slow swings are less accurate
     const tempoAdjustedDeviation = clamp(deviation * tempoMult, -1, 1);
     if (sunk || ballMoving) return;
@@ -3109,6 +3165,11 @@ export default function App() {
       swingPath = pts.map(p => ({ x: p.x / maxAbs, y: p.y / maxAbs, phase: p.phase }));
     }
 
+    // Capture the full timestamped path so dev-mode can render a
+    // speed-vs-time graph and a to-scale swing trace. We keep only a
+    // normalized copy on lastShotStats (swingPath) for the regular view.
+    const rawPathFull = fullSwingPathRef.current.map((p) => ({ x: p.x, y: p.y, t: p.t, phase: p.phase }));
+
     setLastShotStats({
       club: selectedClub.short,
       clubName: selectedClub.name,
@@ -3123,8 +3184,10 @@ export default function App() {
       startLie: currentLie,
       endLie: 'unknown',
       swingPath,
+      rawSamples: rawPathFull,
       tempoTag,
-      tempoMult
+      tempoMult,
+      tempoMetrics,
     });
 
     setBallHeight(flightRef.current.z);
@@ -3335,7 +3398,7 @@ export default function App() {
               shot: null, // filled when ball rests
             };
 
-            strikeBall(swingDeviationRef.current, { tempoMult, tempoTag });
+            strikeBall(swingDeviationRef.current, { tempoMult, tempoTag, tempoMetrics: tempo.metrics });
           } else {
             setSwingPhase('idle');
             setPowerPct(0);
@@ -3951,6 +4014,14 @@ export default function App() {
               <Pressable style={styles.spaceMenuBtnActive} onPress={() => setGameScreen('backstory-listen')}>
                 <Text style={styles.spaceMenuBtnLeft}>🎧 LISTEN TO BACKSTORY</Text>
                 <Text style={styles.spaceMenuBtnRight}>&gt;</Text>
+                <View style={[styles.lCorner, styles.lCornerTopLeft]} />
+                <View style={[styles.lCorner, styles.lCornerTopRight]} />
+                <View style={[styles.lCorner, styles.lCornerBottomLeft]} />
+                <View style={[styles.lCorner, styles.lCornerBottomRight]} />
+              </Pressable>
+              <Pressable style={styles.spaceMenuBtnActive} onPress={() => setDevMode((v) => !v)}>
+                <Text style={styles.spaceMenuBtnLeft}>🔧 DEV MODE</Text>
+                <Text style={[styles.spaceMenuBtnRight, devMode && { color: '#4adb6a' }]}>{devMode ? 'ON' : 'OFF'}</Text>
                 <View style={[styles.lCorner, styles.lCornerTopLeft]} />
                 <View style={[styles.lCorner, styles.lCornerTopRight]} />
                 <View style={[styles.lCorner, styles.lCornerBottomLeft]} />
@@ -4966,6 +5037,142 @@ export default function App() {
                   <Text style={styles.shotStatValue}>{(SURFACE_PHYSICS[lastShotStats.endLie] || SURFACE_PHYSICS.rough).emoji} {(SURFACE_PHYSICS[lastShotStats.endLie] || SURFACE_PHYSICS.rough).label}</Text>
                 </View>
               </View>
+              {devMode && lastShotStats.tempoMetrics ? (() => {
+                const m = lastShotStats.tempoMetrics;
+                const th = TEMPO_THRESHOLDS;
+                const rows = [
+                  { label: 'backJerk',     v: m.backJerk, fmt: m.backJerk.toFixed(2), thresh: th.backJerk, relation: '>', trips: 'Jerky Back' },
+                  { label: 'forwardJerk',  v: m.forwardJerk, fmt: m.forwardJerk.toFixed(2), thresh: th.forwardJerk, relation: '>', trips: 'Jerky Fwd' },
+                  { label: 'pauseMs',      v: m.pauseMs, fmt: Math.round(m.pauseMs) + 'ms', thresh: th.pauseTolerance, relation: '>', trips: 'Paused' },
+                  { label: 'followThrough', v: m.followThrough, fmt: (m.followThrough * 100).toFixed(0) + '%', thresh: th.followThroughCommitted, relation: '≥', trips: 'Committed (≥60%)  ·  Coasted (<30%)' },
+                  { label: 'peakBack',     v: m.peakBack, fmt: m.peakBack.toFixed(2) + ' px/ms', thresh: null },
+                  { label: 'peakForward',  v: m.peakForward, fmt: m.peakForward.toFixed(2) + ' px/ms', thresh: null },
+                ];
+                // Build speed-vs-time series for the forward phase.
+                const samples = lastShotStats.rawSamples || [];
+                const forwardSamples = samples.filter((s, i) => s.phase === 'forward');
+                const speeds = [];
+                for (let i = 1; i < forwardSamples.length; i++) {
+                  const a = forwardSamples[i - 1];
+                  const b = forwardSamples[i];
+                  const dt = Math.max(1, b.t - a.t);
+                  speeds.push({ t: b.t - forwardSamples[0].t, v: Math.hypot(b.x - a.x, b.y - a.y) / dt });
+                }
+                const maxV = Math.max(0.001, ...speeds.map((s) => s.v));
+                const maxT = Math.max(1, ...speeds.map((s) => s.t));
+                return (
+                  <View style={styles.devPanel}>
+                    <Text style={styles.devPanelTitle}>🔧 DEV — tempo metrics</Text>
+                    {rows.map((r) => {
+                      const tripped = r.trips && (
+                        (r.label === 'backJerk' && m.backJerk > th.backJerk) ||
+                        (r.label === 'forwardJerk' && m.forwardJerk > th.forwardJerk) ||
+                        (r.label === 'pauseMs' && m.pauseMs > th.pauseTolerance) ||
+                        (r.label === 'followThrough' && (m.followThrough >= th.followThroughCommitted || m.followThrough < th.followThroughCoasted))
+                      );
+                      return (
+                        <View key={r.label} style={styles.devMetricRow}>
+                          <Text style={styles.devMetricLabel}>{r.label}</Text>
+                          <Text style={[styles.devMetricValue, tripped && { color: '#ff9a5a' }]}>{r.fmt}</Text>
+                          {r.thresh !== null ? (
+                            <Text style={styles.devMetricThresh}>
+                              {r.relation} {typeof r.thresh === 'number' && r.thresh > 5 ? Math.round(r.thresh) + 'ms' : r.thresh}
+                            </Text>
+                          ) : <Text style={styles.devMetricThresh}>—</Text>}
+                        </View>
+                      );
+                    })}
+
+                    {/* Speed-vs-time — forward swing only */}
+                    {speeds.length > 2 ? (
+                      <View style={styles.devGraphBox}>
+                        <Text style={styles.devGraphLabel}>Forward swing speed · peak {maxV.toFixed(2)} px/ms</Text>
+                        <View style={styles.devGraphCanvas}>
+                          <View style={styles.devGraphBaseline} />
+                          {speeds.map((s, i) => {
+                            const left = (s.t / maxT) * 100;
+                            const height = Math.max(2, (s.v / maxV) * 46);
+                            // Mark the peak position with a brighter color
+                            const peakIdx = speeds.reduce((best, cur, idx) => speeds[idx].v > speeds[best].v ? idx : best, 0);
+                            return (
+                              <View
+                                key={i}
+                                style={{
+                                  position: 'absolute',
+                                  left: `${left}%`,
+                                  bottom: 0,
+                                  width: 3,
+                                  height,
+                                  marginLeft: -1.5,
+                                  backgroundColor: i === peakIdx ? '#ffdd44' : '#6bdc84',
+                                  borderRadius: 1.5,
+                                }}
+                              />
+                            );
+                          })}
+                          {/* Ideal: peak near end (committed) — faint reference line */}
+                          <View style={styles.devGraphIdealDot} />
+                        </View>
+                        <View style={styles.devGraphAxis}>
+                          <Text style={styles.devGraphAxisText}>0ms</Text>
+                          <Text style={styles.devGraphAxisText}>{Math.round(maxT)}ms</Text>
+                        </View>
+                      </View>
+                    ) : null}
+
+                    {/* Coaching — per-flaw tips */}
+                    {(() => {
+                      const tips = coachSwing(lastShotStats.tempoTag, m);
+                      if (!tips.length) return null;
+                      return (
+                        <View style={styles.devCoachBox}>
+                          <Text style={styles.devCoachTitle}>Coaching</Text>
+                          {tips.map((t, i) => (
+                            <Text key={i} style={styles.devCoachText}>• {t}</Text>
+                          ))}
+                        </View>
+                      );
+                    })()}
+
+                    {/* Side-by-side trace: your swing vs ideal */}
+                    {lastShotStats.swingPath && lastShotStats.swingPath.length > 2 ? (
+                      <View style={styles.devCompareBox}>
+                        <View style={styles.devCompareCol}>
+                          <Text style={styles.devCompareLabel}>Your trace</Text>
+                          <View style={styles.devCompareCanvas}>
+                            {lastShotStats.swingPath.map((pt, i) => {
+                              const cx = 50 + pt.x * 40;
+                              const cy = 50 + pt.y * 40;
+                              const isBack = pt.phase === 'back' || pt.phase === 'start';
+                              return (
+                                <View key={i} style={{ position: 'absolute', left: cx - 1.5, top: cy - 1.5, width: 3, height: 3, borderRadius: 1.5, backgroundColor: isBack ? '#4adb6a' : '#ffdd44', opacity: 0.3 + (i / lastShotStats.swingPath.length) * 0.7 }} />
+                              );
+                            })}
+                          </View>
+                        </View>
+                        <View style={styles.devCompareCol}>
+                          <Text style={styles.devCompareLabel}>Ideal</Text>
+                          <View style={styles.devCompareCanvas}>
+                            {/* Backswing: straight down, evenly spaced (smooth) */}
+                            {Array.from({ length: 12 }).map((_, i) => (
+                              <View key={`ib-${i}`} style={{ position: 'absolute', left: 50 - 1.5, top: 14 + i * 3 - 1.5, width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#4adb6a', opacity: 0.4 + i * 0.04 }} />
+                            ))}
+                            {/* Forward: straight up, speed accelerates to end (spacing widens) */}
+                            {Array.from({ length: 10 }).map((_, i) => {
+                              const u = i / 9;
+                              const progress = 0.25 + u * 0.75; // committed profile
+                              return (
+                                <View key={`if-${i}`} style={{ position: 'absolute', left: 50 - 1.5, top: 50 - progress * 35 - 1.5, width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#ffdd44', opacity: 0.4 + i * 0.05 }} />
+                              );
+                            })}
+                          </View>
+                        </View>
+                      </View>
+                    ) : null}
+                  </View>
+                );
+              })() : null}
+
               <View style={styles.shotStatsActions}>
                 <Pressable
                   style={styles.shotStatsActionBtn}
@@ -7291,5 +7498,126 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     overflow: 'hidden',
+  },
+  devPanel: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(155,216,255,0.25)',
+    gap: 6,
+  },
+  devPanelTitle: {
+    color: '#9bd8ff',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  devMetricRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 1,
+  },
+  devMetricLabel: {
+    color: 'rgba(200,220,200,0.75)',
+    fontSize: 11,
+    fontFamily: 'monospace',
+    minWidth: 110,
+  },
+  devMetricValue: {
+    color: '#d8f4dd',
+    fontSize: 11,
+    fontFamily: 'monospace',
+    fontWeight: '700',
+    minWidth: 84,
+  },
+  devMetricThresh: {
+    color: 'rgba(155,216,255,0.6)',
+    fontSize: 10,
+    fontFamily: 'monospace',
+    flex: 1,
+  },
+  devGraphBox: {
+    marginTop: 10,
+  },
+  devGraphLabel: {
+    color: 'rgba(200,220,200,0.75)',
+    fontSize: 10,
+    marginBottom: 4,
+  },
+  devGraphCanvas: {
+    height: 50,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderRadius: 4,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  devGraphBaseline: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  devGraphIdealDot: {
+    position: 'absolute',
+    right: 4,
+    top: 4,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: 'rgba(255,221,68,0.35)',
+  },
+  devGraphAxis: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 2,
+  },
+  devGraphAxisText: {
+    color: 'rgba(200,220,200,0.5)',
+    fontSize: 9,
+    fontFamily: 'monospace',
+  },
+  devCoachBox: {
+    marginTop: 10,
+    padding: 8,
+    backgroundColor: 'rgba(74,170,235,0.10)',
+    borderLeftWidth: 2,
+    borderLeftColor: '#9bd8ff',
+    borderRadius: 4,
+  },
+  devCoachTitle: {
+    color: '#9bd8ff',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  devCoachText: {
+    color: '#d8f4dd',
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  devCompareBox: {
+    flexDirection: 'row',
+    marginTop: 10,
+    gap: 12,
+  },
+  devCompareCol: {
+    flex: 1,
+  },
+  devCompareLabel: {
+    color: 'rgba(200,220,200,0.75)',
+    fontSize: 10,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  devCompareCanvas: {
+    height: 100,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderRadius: 4,
+    position: 'relative',
   },
 });
