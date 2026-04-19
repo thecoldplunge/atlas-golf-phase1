@@ -2553,7 +2553,8 @@ export default function App() {
 
   const aimLineDots = [0, 0.25, 0.5, 0.75, 1].map((pct) => {
     const worldDist = aimGuideWorld * pct;
-    const curveOffset = Math.sin(pct * Math.PI * 0.95) * aimGuideWorld * degToRad(totalPreviewCurveDeg) * 0.18 * pct;
+    const previewCurveStrength = CURVE_FORCE * 0.55 + CURVE_LAUNCH_BLEND * 0.08;
+    const curveOffset = Math.sin(pct * Math.PI * 0.95) * aimGuideWorld * degToRad(totalPreviewCurveDeg) * previewCurveStrength * pct;
     const loftOffset = -(shotMetrics.launchAdjust - 1) * 10 * Math.sin(pct * Math.PI) * 0.4;
     const point = {
       x: ball.x + aimDir.x * worldDist + aimPerp.x * curveOffset,
