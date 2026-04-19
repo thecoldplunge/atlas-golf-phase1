@@ -2323,6 +2323,9 @@ export default function App() {
         onStartShouldSetPanResponder: () => !sunk && !ballMoving && !shotControlOpen,
         onStartShouldSetPanResponderCapture: () => !sunk && !ballMoving && !shotControlOpen,
         onMoveShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponderCapture: () => true,
+        onPanResponderTerminationRequest: () => false,
+        onShouldBlockNativeResponder: () => true,
         onPanResponderGrant: (evt) => {
           swingStartRef.current = { x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY };
           swingLowestRef.current = { x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY };
@@ -2564,6 +2567,20 @@ export default function App() {
       size: 4 + pct * 3,
       opacity: 0.5 + pct * 0.35,
       color: '#ffdd44'
+    };
+  });
+
+  const aimPathSegments = aimLineDots.slice(0, -1).map((dot, index) => {
+    const next = aimLineDots[index + 1];
+    const dx = next.x - dot.x;
+    const dy = next.y - dot.y;
+    const length = Math.hypot(dx, dy);
+    return {
+      key: `aim-seg-${index}`,
+      left: dot.x,
+      top: dot.y,
+      width: length,
+      angle: `${Math.atan2(dy, dx)}rad`
     };
   });
 
@@ -3311,9 +3328,13 @@ export default function App() {
             ) : null}
           </View>
 
+          {!ballMoving && !sunk ? aimPathSegments.map((seg) => (
+            <View key={seg.key} pointerEvents="none" style={[styles.aimPathSegment, { left: seg.left, top: seg.top, width: seg.width, transform: [{ rotate: seg.angle }] }]} />
+          )) : null}
+
           {!ballMoving && !sunk ? aimLineDots.map((dot) => (
+            <React.Fragment key={dot.key}>
             <View
-              key={dot.key}
               pointerEvents="none"
               style={[
                 styles.aimDot,
@@ -3328,6 +3349,8 @@ export default function App() {
                 }
               ]}
             />
+            <Text style={[styles.aimDotLabel, { left: dot.x + 6, top: dot.y - 10, opacity: dot.opacity }]}>{Math.round((parseFloat(dot.key.split('-').pop()) || 0) * 100)}%</Text>
+            </React.Fragment>
           )) : null}
 
           <View
@@ -4135,6 +4158,12 @@ const styles = StyleSheet.create({
     shadowColor: '#ffdd44',
     shadowOpacity: 0.7,
     shadowRadius: 4
+  },
+  aimPathSegment: {
+    position: 'absolute',
+    height: 2,
+    backgroundColor: 'rgba(255,221,68,0.65)',
+    transformOrigin: 'left center'
   },
   aimDotLabel: {
     position: 'absolute',
