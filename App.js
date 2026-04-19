@@ -747,8 +747,8 @@ const GRAVITY = 30;
 const GROUND_EPSILON = 0.05;
 const FRINGE_BUFFER = 8;
 const MIN_BOUNCE_VZ = 3.2;
-const CURVE_FORCE = 0.72;
-const CURVE_LAUNCH_BLEND = 0.7;
+const CURVE_FORCE = 1.35;
+const CURVE_LAUNCH_BLEND = 1.15;
 
 // Haptic feedback: vibrate on Android/Chrome, audio tick on iOS Safari
 const hapticBuzz = (pattern = 30) => {
@@ -2013,7 +2013,7 @@ export default function App() {
     const yNorm = clamp(offset.y / MAX_SPIN_OFFSET, -1, 1);
     const launchAdjust = clamp(1 - yNorm * 0.4, 0.68, 1.38);
     const spinAdjust = clamp(1 - yNorm * 0.36, 0.7, 1.34);
-    const curveDeg = -xNorm * 52;
+    const curveDeg = -xNorm * 85;
     let shapeLabel = 'Dead straight';
 
     if (xNorm < -0.55) shapeLabel = 'Hook';
@@ -2553,7 +2553,7 @@ export default function App() {
 
   const aimLineDots = [0, 0.25, 0.5, 0.75, 1].map((pct) => {
     const worldDist = aimGuideWorld * pct;
-    const curveOffset = Math.sin(pct * Math.PI * 0.95) * aimGuideWorld * degToRad(totalPreviewCurveDeg) * 0.07 * pct;
+    const curveOffset = Math.sin(pct * Math.PI * 0.95) * aimGuideWorld * degToRad(totalPreviewCurveDeg) * 0.18 * pct;
     const loftOffset = -(shotMetrics.launchAdjust - 1) * 10 * Math.sin(pct * Math.PI) * 0.4;
     const point = {
       x: ball.x + aimDir.x * worldDist + aimPerp.x * curveOffset,
