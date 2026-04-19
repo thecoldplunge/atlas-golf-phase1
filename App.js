@@ -2379,12 +2379,13 @@ export default function App() {
             swingDeviationRef.current = combinedDev;
           }
         },
-        onPanResponderRelease: () => {
+        onPanResponderRelease: (evt) => {
           if (powerRef.current > 5) {
             // Compute tempo + acceleration strictness from top-of-backswing to release
             const now = Date.now();
             const forwardMs = transitionTimeRef.current > 0 ? now - transitionTimeRef.current : 999;
-            const forwardTravelPx = Math.max(1, swingLowestRef.current.y - evt.nativeEvent.pageY);
+            const releaseY = evt?.nativeEvent?.pageY ?? (swingLowestRef.current.y - 24);
+            const forwardTravelPx = Math.max(1, swingLowestRef.current.y - releaseY);
             const accelPxPerMs = forwardTravelPx / Math.max(1, forwardMs);
             const overpowerPct = Math.max(0, peakPowerRef.current - 100);
             let tempoMult = 1.0;
@@ -2899,9 +2900,6 @@ export default function App() {
 
             <Pressable style={styles.coursesPlayButton} onPress={() => startCourse(selectedCourseIndex)}>
               <Text style={styles.coursesPlayButtonText}>PLAY</Text>
-            </Pressable>
-            <Pressable style={styles.coursesEditorButton} onPress={() => setGameScreen('editor')}>
-              <Text style={styles.coursesEditorButtonText}>EDITOR</Text>
             </Pressable>
             <Pressable style={styles.coursesBackButton} onPress={() => setGameScreen('menu')}>
               <Text style={styles.coursesBackButtonText}>BACK</Text>
