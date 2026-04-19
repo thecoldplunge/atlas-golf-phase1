@@ -1213,6 +1213,7 @@ export default function App() {
   const [scores, setScores] = useState(Array(ACTIVE_HOLES.length).fill(null));
   const [holeScores, setHoleScores] = useState([]); // array of {hole: number, par: number, strokes: number, name: string}
   const [showScorecard, setShowScorecard] = useState(false);
+  const [holeCelebration, setHoleCelebration] = useState(null);
   const [roundWind, setRoundWind] = useState(() => generateWind(ACTIVE_HOLES));
   const [ball, setBall] = useState(ACTIVE_HOLES[0].ballStart);
   const [aimAngle, setAimAngle] = useState(getAimAngleToCup(ACTIVE_HOLES[0].ballStart, ACTIVE_HOLES[0].cup));
@@ -1793,7 +1794,11 @@ export default function App() {
       setSunk(true);
       velocityRef.current = { x: 0, y: 0 };
       flightRef.current = { z: 0, vz: 0 };
-      setBallHeight(0);
+      const scoreDiff = strokesCurrent - currentHole.par;
+      const resultLabel = scoreDiff <= -2 ? 'Eagle or better' : scoreDiff === -1 ? 'Birdie' : scoreDiff === 0 ? 'Par' : scoreDiff === 1 ? 'Bogey' : 'Double+';
+      const emote = scoreDiff <= -2 ? '🔥' : scoreDiff === -1 ? '😎' : scoreDiff === 0 ? '🙂' : scoreDiff === 1 ? '😬' : '😵';
+      setHoleCelebration({ resultLabel, emote, scoreDiff });
+      setBallHeight(-0.8);
       setBall(currentHole.cup);
       ballRef.current = currentHole.cup;
       setHoleScores((prev) => [
@@ -1805,7 +1810,10 @@ export default function App() {
         next[holeIndex] = strokesCurrent;
         return next;
       });
-      setShowScorecard(true);
+      setTimeout(() => {
+        setBallHeight(0);
+        setShowScorecard(true);
+      }, 1800);
     }
   }, [ball, ballHeight, currentHole.cup.x, currentHole.cup.y, holeIndex, strokesCurrent, sunk]);
 
@@ -3837,6 +3845,17 @@ export default function App() {
               >
                 <Text style={styles.nextHoleBtnText}>🔄 Stroke & Distance (re-hit from last spot)</Text>
               </Pressable>
+            </View>
+          </View>
+        ) : null}
+
+        {sunk && holeCelebration && !showScorecard ? (
+          <View style={styles.scorecardOverlay}>
+            <View style={[styles.scorecardCard, { maxWidth: 320, alignItems: 'center', gap: 10 }]}>
+              <Text style={{ fontSize: 44 }}>{holeCelebration.emote}</Text>
+              <Text style={styles.scorecardTitle}>Ball in the hole</Text>
+              <Text style={{ color: '#e5e7eb', fontSize: 18, fontWeight: '700' }}>{holeCelebration.resultLabel}</Text>
+              <Text style={{ color: '#9ca3af', fontSize: 14 }}>Holding for a beat before the scorecard.</Text>
             </View>
           </View>
         ) : null}
