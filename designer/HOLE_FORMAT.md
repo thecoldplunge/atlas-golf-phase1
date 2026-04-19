@@ -20,10 +20,7 @@ interface Hole {
     strength: number; // 0-1 how strong the break is
     dir: string;      // compass: 'N','S','E','W','NE','NW','SE','SW'
   }>;
-  obstacles: Array<
-    | { type: 'circle'; x: number; y: number; r: number; look?: string }   // trees, rocks
-    | { type: 'rect'; x: number; y: number; w: number; h: number }       // walls, barriers
-  >;
+  obstacles: Array<{ type: 'circle'; x: number; y: number; r: number; look?: string }>;  // trees, rocks
   hazards: Array<
     | { type: 'sandRect'; x: number; y: number; w: number; h: number }
     | { type: 'waterRect'; x: number; y: number; w: number; h: number }

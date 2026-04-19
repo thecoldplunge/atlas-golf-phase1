@@ -159,7 +159,7 @@ function reducer(state: DesignerState, action: DesignerAction): DesignerState {
     case 'SET_SELECTED_OBJECT':
       return { ...state, selectedObjectId: action.payload };
     case 'SET_ZOOM':
-      return { ...state, zoom: Math.max(1, Math.min(4, action.payload)) };
+      return { ...state, zoom: Math.max(0.12, Math.min(4, action.payload)) };
     case 'SET_PAN':
       return { ...state, panOffset: action.payload };
     case 'RESET_VIEW':

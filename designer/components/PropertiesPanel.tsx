@@ -24,7 +24,6 @@ interface PropertiesPanelProps {
   onUpdateSlope: (id: string, patch: { dir?: SlopeDirection; strength?: number }) => void;
   onUpdateTree: (id: string, patch: { look?: TreeType; r?: number }) => void;
   onUpdateTee?: (patch: { rotation?: number }) => void;
-  onUpdateObstacle?: (id: string, patch: { rotation?: number }) => void;
   onRotateShape?: (id: string, degrees: number) => void;
   onUpdateShapeKind?: (id: string, kind: SurfaceKind) => void;
 }
@@ -54,7 +53,6 @@ export default function PropertiesPanel({
   onUpdateSlope,
   onUpdateTree,
   onUpdateTee,
-  onUpdateObstacle,
   onRotateShape,
   onUpdateShapeKind,
 }: PropertiesPanelProps) {
@@ -65,7 +63,7 @@ export default function PropertiesPanel({
   const selectedHazard = hole.hazards.find((s) => s.id === selectedObjectId) ?? null;
   const selectedSlope = hole.slopes.find((z) => z.id === selectedObjectId) ?? null;
   const selectedObstacle = hole.obstacles.find((o) => o.id === selectedObjectId) ?? null;
-  const selectedTree = selectedObstacle?.type === 'circle' && hasTreeLook(selectedObstacle.look) ? selectedObstacle : null;
+  const selectedTree = selectedObstacle && hasTreeLook(selectedObstacle.look) ? selectedObstacle : null;
   const selectedShape = selectedGreen ?? selectedFairway ?? selectedHazard;
 
   const stats = {
@@ -237,17 +235,6 @@ export default function PropertiesPanel({
         </div>
       )}
 
-      {selectedObstacle && !selectedTree && (
-        <div className="space-y-2 text-sm text-gray-300">
-          <h3 className="text-xs uppercase text-gray-400">Wall / Obstacle</h3>
-          <div className="text-xs">Type: {selectedObstacle.type}</div>
-          {selectedObstacle.type === 'rect' && onUpdateObstacle ? <div>
-            <label className="text-xs text-gray-400 block mb-1">Rotation: {Math.round(selectedObstacle.rotation ?? 0)}°</label>
-            <input type="range" min={-180} max={180} step={1} value={selectedObstacle.rotation ?? 0} className="w-full"
-              onChange={(e) => onUpdateObstacle(selectedObstacle.id, { rotation: Number(e.target.value) })} />
-          </div> : null}
-        </div>
-      )}
     </section>
   );
 }

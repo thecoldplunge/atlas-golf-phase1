@@ -139,24 +139,13 @@ export function toExportHole(hole: HoleData, index: number): ExportHole {
       strength: clamp01(slope.strength),
       dir: slope.dir,
     })),
-    obstacles: hole.obstacles.map((obstacle) => {
-      if (obstacle.type === 'circle') {
-        return {
-          type: 'circle' as const,
-          x: obstacle.x,
-          y: obstacle.y,
-          r: obstacle.r,
-          look: obstacle.look,
-        };
-      }
-      return {
-        type: 'rect' as const,
-        x: obstacle.x,
-        y: obstacle.y,
-        w: obstacle.w,
-        h: obstacle.h,
-      };
-    }),
+    obstacles: hole.obstacles.map((obstacle) => ({
+      type: 'circle' as const,
+      x: obstacle.x,
+      y: obstacle.y,
+      r: obstacle.r,
+      look: obstacle.look,
+    })),
     hazards: [...sandRects, ...waterRects],
     editorVectors: {
       version: 2,
@@ -308,6 +297,32 @@ function normalizeHole(raw: unknown, index: number): HoleData {
       })
       .filter((shape) => shape.path.points.length >= 3);
 
+    const readSurfaceArray = (raw: unknown, kind: 'rough' | 'deepRough' | 'desert'): SurfaceShape[] => {
+      const items = Array.isArray(raw) ? raw : [];
+      return items
+        .map((entry, idx) => {
+          const item = (entry ?? {}) as Record<string, unknown>;
+          return createRectVectorShape({
+            id: getDefaultEntityId(`${kind}-${idx}`),
+            kind,
+            x: asNumber(item.x),
+            y: asNumber(item.y),
+            w: asNumber(item.w),
+            h: asNumber(item.h),
+          });
+        })
+        .filter((shape) => shape.path.points.length >= 3);
+    };
+
+    hole.terrain.rough = readSurfaceArray(terrain?.rough, 'rough');
+    hole.terrain.deepRough = readSurfaceArray(terrain?.deepRough, 'deepRough');
+    hole.terrain.desert = readSurfaceArray(terrain?.desert, 'desert');
+
+    const bg = data.background;
+    if (bg === 'rough' || bg === 'deepRough' || bg === 'desert') {
+      hole.background = bg;
+    }
+
     hole.terrain.green = green
       ? createRectVectorShape({
           id: getDefaultEntityId('green'),
@@ -372,16 +387,8 @@ function normalizeHole(raw: unknown, index: number): HoleData {
         r: asNumber(item.r, 12),
         look: typeof item.look === 'string' ? item.look : undefined,
       });
-    } else if (item.type === 'rect') {
-      hole.obstacles.push({
-        id: getDefaultEntityId('obs-rect'),
-        type: 'rect',
-        x: asNumber(item.x),
-        y: asNumber(item.y),
-        w: asNumber(item.w),
-        h: asNumber(item.h),
-      });
     }
+    // Legacy 'rect' (wall) obstacles are dropped on import.
   }
 
   const slopes = Array.isArray(data.slopes) ? data.slopes : [];

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Canvas from '@/components/Canvas';
 import ExportModal from '@/components/ExportModal';
+import GenerateCourseWizard from '@/components/GenerateCourseWizard';
 import HolePanel from '@/components/HolePanel';
 import PropertiesPanel from '@/components/PropertiesPanel';
 import Toolbar from '@/components/Toolbar';
@@ -25,9 +26,12 @@ const toolKeyMap: Record<string, ToolType> = {
   g: 'green',
   h: 'cup',
   f: 'fairway',
+  r: 'rough',
+  x: 'deepRough',
   s: 'sand',
   w: 'water',
-  b: 'wall',
+  d: 'desert',
+  l: 'slope',
 };
 
 function findSelectedShape(hole: (typeof useDesigner extends never ? never : never) | any, id: string | null): SurfaceShape | null {
@@ -76,6 +80,7 @@ export default function CourseDesigner() {
   const { state, dispatch } = useDesigner();
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState<'export' | 'import'>('export');
+  const [generatorOpen, setGeneratorOpen] = useState(false);
 
   const activeHole = state.holes[state.activeHoleIndex];
 
@@ -145,6 +150,14 @@ export default function CourseDesigner() {
           className="h-8 px-2 rounded bg-gray-700 border border-gray-600 text-sm w-40"
           placeholder="Designer"
         />
+
+        <button
+          type="button"
+          className="h-8 px-3 rounded bg-fuchsia-600 hover:bg-fuchsia-500 text-sm font-semibold"
+          onClick={() => setGeneratorOpen(true)}
+        >
+          ✨ Generate Course
+        </button>
 
         <button
           type="button"
@@ -303,7 +316,7 @@ export default function CourseDesigner() {
                 updater: (hole) => ({
                   ...hole,
                   obstacles: hole.obstacles.map((item) => {
-                    if (item.id !== id || item.type !== 'circle') return item;
+                    if (item.id !== id) return item;
                     return { ...item, look: patch.look ?? item.look, r: patch.r ?? item.r };
                   }),
                 }),
@@ -313,15 +326,6 @@ export default function CourseDesigner() {
               dispatch({
                 type: 'UPDATE_ACTIVE_HOLE',
                 updater: (hole) => hole.terrain.tee ? { ...hole, terrain: { ...hole.terrain, tee: { ...hole.terrain.tee, rotation: patch.rotation ?? hole.terrain.tee.rotation ?? 0 } } } : hole,
-              });
-            }}
-            onUpdateObstacle={(id, patch) => {
-              dispatch({
-                type: 'UPDATE_ACTIVE_HOLE',
-                updater: (hole) => ({
-                  ...hole,
-                  obstacles: hole.obstacles.map((item) => item.id === id && item.type === 'rect' ? { ...item, rotation: patch.rotation ?? item.rotation ?? 0 } : item),
-                }),
               });
             }}
             onRotateShape={(id, degrees) => {
@@ -387,6 +391,19 @@ export default function CourseDesigner() {
           dispatch({ type: 'SET_COURSE_NAME', payload: payload.courseName });
           dispatch({ type: 'SET_DESIGNER', payload: payload.designer });
           dispatch({ type: 'SET_HOLES', payload: payload.holes, activeHoleIndex: 0, selectedObjectId: null });
+        }}
+      />
+
+      <GenerateCourseWizard
+        open={generatorOpen}
+        onClose={() => setGeneratorOpen(false)}
+        initialCourseName={state.courseName}
+        initialDesigner={state.designer}
+        onCourseGenerated={(payload) => {
+          dispatch({ type: 'SET_COURSE_NAME', payload: payload.courseName });
+          dispatch({ type: 'SET_DESIGNER', payload: payload.designer });
+          dispatch({ type: 'SET_HOLES', payload: payload.holes, activeHoleIndex: 0, selectedObjectId: null });
+          dispatch({ type: 'RESET_VIEW' });
         }}
       />
     </div>

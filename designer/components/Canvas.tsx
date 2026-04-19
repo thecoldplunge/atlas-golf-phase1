@@ -2,14 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDesigner, getDefaultEntityId } from '@/lib/store';
-import { pointInRect, renderScene } from '@/lib/renderer';
+import { courseExtent, pointInRect, renderScene } from '@/lib/renderer';
 import { anchorHit, createPresetVectorShape, handleHit, nearestSegment, pointInShape, shapeBounds, splitSegmentAt, toggleSegmentCurve } from '@/lib/vector';
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import type { DrawPreview, HoleData, Obstacle, SurfaceShape, ToolType, TreeType, Vec2 } from '@/lib/types';
+import type { DrawPreview, HoleData, SurfaceShape, ToolType, TreeType, Vec2 } from '@/lib/types';
 import type { PathEditOverlay } from '@/lib/renderer';
-
-const WORLD_WIDTH = 700;
-const WORLD_HEIGHT = 700;
+import { WORLD_WIDTH as WORLD_BASE_W, WORLD_HEIGHT as WORLD_BASE_H } from '@/lib/world';
 
 interface CanvasProps {
   onSelectObject: (id: string | null) => void;
@@ -34,8 +32,8 @@ function snap(v: number, enabled: boolean): number {
   return enabled ? Math.round(v / 5) * 5 : v;
 }
 
-function clampWorld(v: number, max = WORLD_WIDTH): number {
-  return Math.max(0, Math.min(max, v));
+function clampWorld(v: number, max = WORLD_BASE_W): number {
+  return Math.max(0, Math.min(Math.max(max, 1), v));
 }
 
 function normalizeRect(start: Vec2, end: Vec2) {
@@ -59,6 +57,9 @@ function findShape(hole: HoleData, id: string): SurfaceShape | null {
   return (
     (hole.terrain.green?.id === id ? hole.terrain.green : null) ??
     hole.terrain.fairway.find((s) => s.id === id) ??
+    hole.terrain.rough.find((s) => s.id === id) ??
+    hole.terrain.deepRough.find((s) => s.id === id) ??
+    hole.terrain.desert.find((s) => s.id === id) ??
     hole.hazards.find((s) => s.id === id) ??
     null
   );
@@ -71,6 +72,9 @@ function replaceShape(hole: HoleData, id: string, next: SurfaceShape): HoleData 
       ...hole.terrain,
       green: hole.terrain.green?.id === id ? next : hole.terrain.green,
       fairway: hole.terrain.fairway.map((s) => (s.id === id ? next : s)),
+      rough: hole.terrain.rough.map((s) => (s.id === id ? next : s)),
+      deepRough: hole.terrain.deepRough.map((s) => (s.id === id ? next : s)),
+      desert: hole.terrain.desert.map((s) => (s.id === id ? next : s)),
     },
     hazards: hole.hazards.map((s) => (s.id === id ? next : s)),
   };
@@ -84,16 +88,24 @@ function hitTest(hole: HoleData, point: Vec2): string | null {
   if (hole.terrain.tee && pointInRect(point, hole.terrain.tee)) return hole.terrain.tee.id;
   for (let i = hole.obstacles.length - 1; i >= 0; i--) {
     const o = hole.obstacles[i];
-    if (o.type === 'circle' && pointInCircle(point, o.x, o.y, o.r)) return o.id;
-    if (o.type === 'rect' && pointInRect(point, o)) return o.id;
+    if (pointInCircle(point, o.x, o.y, o.r)) return o.id;
   }
   for (let i = hole.hazards.length - 1; i >= 0; i--) {
     if (pointInShape(hole.hazards[i], point)) return hole.hazards[i].id;
   }
+  if (hole.terrain.green && pointInShape(hole.terrain.green, point)) return hole.terrain.green.id;
   for (let i = hole.terrain.fairway.length - 1; i >= 0; i--) {
     if (pointInShape(hole.terrain.fairway[i], point)) return hole.terrain.fairway[i].id;
   }
-  if (hole.terrain.green && pointInShape(hole.terrain.green, point)) return hole.terrain.green.id;
+  for (let i = hole.terrain.desert.length - 1; i >= 0; i--) {
+    if (pointInShape(hole.terrain.desert[i], point)) return hole.terrain.desert[i].id;
+  }
+  for (let i = hole.terrain.deepRough.length - 1; i >= 0; i--) {
+    if (pointInShape(hole.terrain.deepRough[i], point)) return hole.terrain.deepRough[i].id;
+  }
+  for (let i = hole.terrain.rough.length - 1; i >= 0; i--) {
+    if (pointInShape(hole.terrain.rough[i], point)) return hole.terrain.rough[i].id;
+  }
   return null;
 }
 
@@ -123,7 +135,7 @@ function moveById(hole: HoleData, id: string, dx: number, dy: number): HoleData 
 
   if (moved.terrain.tee?.id === id) {
     moved.terrain.tee.x = clampWorld(moved.terrain.tee.x + dx);
-    moved.terrain.tee.y = clampWorld(moved.terrain.tee.y + dy, WORLD_HEIGHT);
+    moved.terrain.tee.y = clampWorld(moved.terrain.tee.y + dy, WORLD_BASE_H);
     moved.ballStart.x = moved.terrain.tee.x + moved.terrain.tee.w / 2;
     moved.ballStart.y = moved.terrain.tee.y + moved.terrain.tee.h / 2;
     return moved;
@@ -152,6 +164,12 @@ function deleteById(hole: HoleData, id: string): HoleData {
   if (hole.cup?.id === id) return { ...hole, cup: null };
   const fw = hole.terrain.fairway.filter((s) => s.id !== id);
   if (fw.length !== hole.terrain.fairway.length) return { ...hole, terrain: { ...hole.terrain, fairway: fw } };
+  const rg = hole.terrain.rough.filter((s) => s.id !== id);
+  if (rg.length !== hole.terrain.rough.length) return { ...hole, terrain: { ...hole.terrain, rough: rg } };
+  const dr = hole.terrain.deepRough.filter((s) => s.id !== id);
+  if (dr.length !== hole.terrain.deepRough.length) return { ...hole, terrain: { ...hole.terrain, deepRough: dr } };
+  const ds = hole.terrain.desert.filter((s) => s.id !== id);
+  if (ds.length !== hole.terrain.desert.length) return { ...hole, terrain: { ...hole.terrain, desert: ds } };
   const sl = hole.slopes.filter((z) => z.id !== id);
   if (sl.length !== hole.slopes.length) return { ...hole, slopes: sl };
   const ob = hole.obstacles.filter((o) => o.id !== id);
@@ -196,6 +214,8 @@ export default function Canvas({ onSelectObject }: CanvasProps) {
     handleKind: null,
   });
 
+  const extent = useMemo(() => courseExtent(state.holes), [state.holes]);
+
   // Sync overlay when selection changes externally (e.g. undo)
   useEffect(() => {
     if (!state.selectedObjectId) {
@@ -204,6 +224,24 @@ export default function Canvas({ onSelectObject }: CanvasProps) {
       setOverlay((prev) => ({ ...prev, selectedShapeId: state.selectedObjectId }));
     }
   }, [state.selectedObjectId, hole]);
+
+  // Auto-fit when course extent grows significantly (e.g. newly generated course loads).
+  const lastFittedExtentRef = useRef<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    if (size.width < 320 || size.height < 320) return;
+    const prev = lastFittedExtentRef.current;
+    const grew = !prev || Math.abs(prev.w - extent.w) > 400 || Math.abs(prev.h - extent.h) > 400;
+    if (!grew) return;
+    lastFittedExtentRef.current = extent;
+    const margin = 40;
+    const zx = (size.width - margin * 2) / Math.max(1, extent.w);
+    const zy = (size.height - margin * 2) / Math.max(1, extent.h);
+    const fitZoom = Math.max(0.12, Math.min(4, Math.min(zx, zy)));
+    const panX = (size.width - extent.w * fitZoom) / 2;
+    const panY = (size.height - extent.h * fitZoom) / 2;
+    dispatch({ type: 'SET_ZOOM', payload: fitZoom });
+    dispatch({ type: 'SET_PAN', payload: { x: panX, y: panY } });
+  }, [extent, size.width, size.height, dispatch]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -251,6 +289,8 @@ export default function Canvas({ onSelectObject }: CanvasProps) {
     const frame = requestAnimationFrame(() => {
       renderScene(ctx, {
         hole,
+        holes: state.holes,
+        activeHoleIndex: state.activeHoleIndex,
         selectedObjectId: state.selectedObjectId,
         preview,
         zoom: state.zoom,
@@ -261,7 +301,7 @@ export default function Canvas({ onSelectObject }: CanvasProps) {
       });
     });
     return () => cancelAnimationFrame(frame);
-  }, [hole, overlay, preview, size, state.panOffset, state.selectedObjectId, state.zoom]);
+  }, [hole, state.holes, state.activeHoleIndex, overlay, preview, size, state.panOffset, state.selectedObjectId, state.zoom]);
 
   const screenToWorld = useMemo(() => (screen: Vec2): Vec2 => ({
     x: (screen.x - state.panOffset.x) / state.zoom,
@@ -288,8 +328,8 @@ export default function Canvas({ onSelectObject }: CanvasProps) {
     }
 
     const point = {
-      x: snap(clampWorld(world.x), state.snapToGrid),
-      y: snap(clampWorld(world.y, WORLD_HEIGHT), state.snapToGrid),
+      x: snap(clampWorld(world.x, extent.w), state.snapToGrid),
+      y: snap(clampWorld(world.y, extent.h), state.snapToGrid),
     };
 
     // --- PATH EDIT MODE ---
@@ -386,8 +426,8 @@ export default function Canvas({ onSelectObject }: CanvasProps) {
     // --- PLACE TEE ---
     if (state.activeTool === 'tee') {
       const w = 20; const h = 14;
-      const x = snap(clampWorld(point.x - w / 2), state.snapToGrid);
-      const y = snap(clampWorld(point.y - h / 2, WORLD_HEIGHT), state.snapToGrid);
+      const x = snap(clampWorld(point.x - w / 2, extent.w), state.snapToGrid);
+      const y = snap(clampWorld(point.y - h / 2, extent.h), state.snapToGrid);
       dispatch({
         type: 'UPDATE_ACTIVE_HOLE',
         updater: (h) => ({
@@ -455,12 +495,13 @@ export default function Canvas({ onSelectObject }: CanvasProps) {
     }
 
     const point = {
-      x: snap(clampWorld(world.x), state.snapToGrid),
-      y: snap(clampWorld(world.y, WORLD_HEIGHT), state.snapToGrid),
+      x: snap(clampWorld(world.x, extent.w), state.snapToGrid),
+      y: snap(clampWorld(world.y, extent.h), state.snapToGrid),
     };
 
     if (interaction.current.mode === 'draw') {
-      if (state.activeTool === 'green' || state.activeTool === 'fairway' || state.activeTool === 'water' || state.activeTool === 'wall') {
+      const rectTools: ToolType[] = ['green', 'fairway', 'rough', 'deepRough', 'desert', 'water'];
+      if (rectTools.includes(state.activeTool)) {
         setPreview({ type: 'rect', x: interaction.current.startWorld.x, y: interaction.current.startWorld.y, w: point.x - interaction.current.startWorld.x, h: point.y - interaction.current.startWorld.y });
       } else if (state.activeTool === 'sand') {
         setPreview({ type: 'circle', x: interaction.current.startWorld.x, y: interaction.current.startWorld.y, r: Math.hypot(point.x - interaction.current.startWorld.x, point.y - interaction.current.startWorld.y) });
@@ -577,14 +618,23 @@ export default function Canvas({ onSelectObject }: CanvasProps) {
         setOverlay({ selectedShapeId: id, activeAnchorIndex: null, activeHandle: null });
       }
 
-      if (state.activeTool === 'wall' && rect.w > 3 && rect.h > 3) {
-        const obstacle: Obstacle = { id: getDefaultEntityId('wall'), type: 'rect', ...rect };
+      if ((state.activeTool === 'rough' || state.activeTool === 'deepRough' || state.activeTool === 'desert') && rect.w > 3 && rect.h > 3) {
+        const kind = state.activeTool;
+        const id = getDefaultEntityId(kind);
+        const shape = makePresetShape(id, kind, rect.x, rect.y, rect.w, rect.h, state.activeShapePreset);
         dispatch({
           type: 'UPDATE_ACTIVE_HOLE',
-          updater: (hole) => ({ ...hole, obstacles: [...hole.obstacles, obstacle] }),
-          selectedObjectId: obstacle.id,
+          updater: (hole) => ({
+            ...hole,
+            terrain: {
+              ...hole.terrain,
+              [kind]: [...hole.terrain[kind], shape],
+            },
+          }),
+          selectedObjectId: id,
         });
-        onSelectObject(obstacle.id);
+        onSelectObject(id);
+        setOverlay({ selectedShapeId: id, activeAnchorIndex: null, activeHandle: null });
       }
     }
 
@@ -599,7 +649,7 @@ export default function Canvas({ onSelectObject }: CanvasProps) {
     if (state.activeTool !== 'pathEdit') return;
     const screen = getScreenPoint(event);
     const world = screenToWorld(screen);
-    const point = { x: clampWorld(world.x), y: clampWorld(world.y, WORLD_HEIGHT) };
+    const point = { x: clampWorld(world.x, extent.w), y: clampWorld(world.y, extent.h) };
 
     if (!state.selectedObjectId) return;
     const shape = findShape(hole, state.selectedObjectId);

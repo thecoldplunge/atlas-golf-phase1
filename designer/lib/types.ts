@@ -11,7 +11,6 @@ export type ToolType =
   | 'water'
   | 'desert'
   | 'tree'
-  | 'wall'
   | 'slope';
 
 export type TreeType = 'pine' | 'oak' | 'palm' | 'birch' | 'cypress';
@@ -82,13 +81,7 @@ export interface CircleObstacle {
   look?: string;
 }
 
-export interface RectObstacle extends RectShape {
-  id: string;
-  type: 'rect';
-  rotation?: number;
-}
-
-export type Obstacle = CircleObstacle | RectObstacle;
+export type Obstacle = CircleObstacle;
 
 export interface HoleData {
   id: number;
@@ -164,10 +157,7 @@ export interface ExportHole {
     strength: number;
     dir: SlopeDirection;
   }>;
-  obstacles: Array<
-    | { type: 'circle'; x: number; y: number; r: number; look?: string }
-    | { type: 'rect'; x: number; y: number; w: number; h: number }
-  >;
+  obstacles: Array<{ type: 'circle'; x: number; y: number; r: number; look?: string }>;
   hazards: Array<
     | { type: 'sandRect'; x: number; y: number; w: number; h: number }
     | { type: 'waterRect'; x: number; y: number; w: number; h: number }

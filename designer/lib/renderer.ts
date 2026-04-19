@@ -292,10 +292,7 @@ export function getBoundsForId(hole: HoleData, id: string): RectShape | null {
   if (slope) return { x: slope.x - 8, y: slope.y - 8, w: 16, h: 16 };
   const obstacle = hole.obstacles.find((item) => item.id === id);
   if (obstacle) {
-    if (obstacle.type === 'circle') {
-      return { x: obstacle.x - obstacle.r, y: obstacle.y - obstacle.r, w: obstacle.r * 2, h: obstacle.r * 2 };
-    }
-    return { x: obstacle.x, y: obstacle.y, w: obstacle.w, h: obstacle.h };
+    return { x: obstacle.x - obstacle.r, y: obstacle.y - obstacle.r, w: obstacle.r * 2, h: obstacle.r * 2 };
   }
   const hazard = hole.hazards.find((item) => item.id === id);
   if (hazard) {
@@ -415,47 +412,68 @@ function drawPathEditOverlay(
   ctx.restore();
 }
 
-export function renderScene(
+export function courseExtent(holes: HoleData[]): { w: number; h: number } {
+  let maxX = WORLD_WIDTH;
+  let maxY = WORLD_HEIGHT;
+  const considerShape = (shape: SurfaceShape) => {
+    const b = shapeBounds(shape);
+    maxX = Math.max(maxX, b.x + b.w + 100);
+    maxY = Math.max(maxY, b.y + b.h + 100);
+  };
+  for (const hole of holes) {
+    if (hole.terrain.green) considerShape(hole.terrain.green);
+    for (const s of hole.terrain.fairway) considerShape(s);
+    for (const s of hole.terrain.rough) considerShape(s);
+    for (const s of hole.terrain.deepRough) considerShape(s);
+    for (const s of hole.terrain.desert) considerShape(s);
+    for (const s of hole.hazards) considerShape(s);
+    if (hole.terrain.tee) {
+      maxX = Math.max(maxX, hole.terrain.tee.x + hole.terrain.tee.w + 100);
+      maxY = Math.max(maxY, hole.terrain.tee.y + hole.terrain.tee.h + 100);
+    }
+    if (hole.cup) {
+      maxX = Math.max(maxX, hole.cup.x + 50);
+      maxY = Math.max(maxY, hole.cup.y + 50);
+    }
+    for (const o of hole.obstacles) {
+      maxX = Math.max(maxX, o.x + o.r + 50);
+      maxY = Math.max(maxY, o.y + o.r + 50);
+    }
+  }
+  return { w: maxX, h: maxY };
+}
+
+function drawHoleTerrain(
   ctx: CanvasRenderingContext2D,
-  params: {
-    hole: HoleData;
-    selectedObjectId: string | null;
-    preview: DrawPreview | null;
-    zoom: number;
-    pan: { x: number; y: number };
-    width: number;
-    height: number;
-    pathEditOverlay?: PathEditOverlay;
-  },
+  hole: HoleData,
+  patterns: Patterns,
+  opts: { dim?: boolean } = {},
 ) {
-  const { hole, selectedObjectId, preview, zoom, pan, width, height, pathEditOverlay } = params;
-  const patterns = getPatterns(ctx);
-
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = '#223923';
-  ctx.fillRect(0, 0, width, height);
-
-  ctx.save();
-  ctx.translate(pan.x, pan.y);
-  ctx.scale(zoom, zoom);
-
-  ctx.fillStyle = '#2a5220';
-  ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-  if (patterns.rough) {
-    ctx.fillStyle = patterns.rough;
-    ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+  const dimAlpha = opts.dim ? 0.55 : 1;
+  if (opts.dim) {
+    ctx.save();
+    ctx.globalAlpha = dimAlpha;
   }
 
-  ctx.fillStyle = 'rgba(255,255,255,0.05)';
-  ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT * 0.44);
-  ctx.fillStyle = 'rgba(0,0,0,0.10)';
-  ctx.fillRect(0, WORLD_HEIGHT * 0.58, WORLD_WIDTH, WORLD_HEIGHT * 0.42);
+  // Rough patches (lighter than default backdrop)
+  for (const r of hole.terrain.rough) {
+    fillShape(ctx, r, '#3a6230', patterns.rough);
+  }
+  // Deep rough patches
+  for (const d of hole.terrain.deepRough) {
+    fillShape(ctx, d, '#1e3e18', null);
+  }
+  // Desert waste
+  for (const ds of hole.terrain.desert) {
+    fillShape(ctx, ds, '#c8a06a', null);
+  }
 
+  // Water first (so fairway can overlap edges visually above)
   for (const water of hole.hazards.filter((h) => h.kind === 'water')) {
     fillShape(ctx, water, '#3f88bc', patterns.water);
   }
 
+  // Fairway
   for (const fairway of hole.terrain.fairway) {
     fillShape(ctx, fairway, '#7ab855', patterns.fairway);
     ctx.save();
@@ -467,27 +485,44 @@ export function renderScene(
     ctx.restore();
   }
 
-  if (hole.terrain.green) {
-    const green = hole.terrain.green;
-    const fringe = {
-      ...green,
-      id: `${green.id}-fringe`,
-      path: {
-        ...green.path,
-        points: green.path.points.map((p) => ({
-          ...p,
-          x: p.x + (p.x - centroid(green).x) * (GREEN_FRINGE / 100),
-          y: p.y + (p.y - centroid(green).y) * (GREEN_FRINGE / 100),
-          inX: p.inX + (p.inX - centroid(green).x) * (GREEN_FRINGE / 100),
-          inY: p.inY + (p.inY - centroid(green).y) * (GREEN_FRINGE / 100),
-          outX: p.outX + (p.outX - centroid(green).x) * (GREEN_FRINGE / 100),
-          outY: p.outY + (p.outY - centroid(green).y) * (GREEN_FRINGE / 100),
-        })),
-      },
-    };
-    fillShape(ctx, fringe, '#5fa048', patterns.fringe);
-    fillShape(ctx, green, '#4ec96a', patterns.green);
+  if (opts.dim) ctx.restore();
+}
 
+function drawHoleGreenAndSlopes(
+  ctx: CanvasRenderingContext2D,
+  hole: HoleData,
+  patterns: Patterns,
+  opts: { drawSlopes?: boolean; dim?: boolean } = {},
+) {
+  if (!hole.terrain.green) return;
+  const { drawSlopes = true, dim = false } = opts;
+  if (dim) {
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+  }
+
+  const green = hole.terrain.green;
+  const c = centroid(green);
+  const fringe = {
+    ...green,
+    id: `${green.id}-fringe`,
+    path: {
+      ...green.path,
+      points: green.path.points.map((p) => ({
+        ...p,
+        x: p.x + (p.x - c.x) * (GREEN_FRINGE / 100),
+        y: p.y + (p.y - c.y) * (GREEN_FRINGE / 100),
+        inX: p.inX + (p.inX - c.x) * (GREEN_FRINGE / 100),
+        inY: p.inY + (p.inY - c.y) * (GREEN_FRINGE / 100),
+        outX: p.outX + (p.outX - c.x) * (GREEN_FRINGE / 100),
+        outY: p.outY + (p.outY - c.y) * (GREEN_FRINGE / 100),
+      })),
+    },
+  };
+  fillShape(ctx, fringe, '#5fa048', patterns.fringe);
+  fillShape(ctx, green, '#4ec96a', patterns.green);
+
+  if (drawSlopes) {
     for (const slope of hole.slopes) {
       if (!pointInShape(green, { x: slope.x, y: slope.y })) continue;
       const v = slopeVector(slope.dir);
@@ -528,23 +563,25 @@ export function renderScene(
     }
   }
 
+  if (dim) ctx.restore();
+}
+
+function drawHoleSandsAndObstacles(
+  ctx: CanvasRenderingContext2D,
+  hole: HoleData,
+  patterns: Patterns,
+  opts: { dim?: boolean } = {},
+) {
+  if (opts.dim) {
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+  }
   for (const sand of hole.hazards.filter((h) => h.kind === 'sand')) {
     fillShape(ctx, sand, '#d4b96a', patterns.sand);
   }
-
-  for (const obstacle of hole.obstacles.filter(
-    (item) => !(item.type === 'circle' && isTreeLook(item.look)),
-  )) {
-    if (obstacle.type === 'rect') {
-      ctx.save();
-      ctx.translate(obstacle.x + obstacle.w / 2, obstacle.y + obstacle.h / 2);
-      ctx.rotate(((obstacle.rotation ?? 0) * Math.PI) / 180);
-      ctx.fillStyle = '#5a4732';
-      ctx.strokeStyle = '#3c2d22';
-      ctx.lineWidth = 1;
-      ctx.fillRect(-obstacle.w / 2, -obstacle.h / 2, obstacle.w, obstacle.h);
-      ctx.strokeRect(-obstacle.w / 2, -obstacle.h / 2, obstacle.w, obstacle.h);
-      ctx.restore();
+  for (const obstacle of hole.obstacles) {
+    if (isTreeLook(obstacle.look)) {
+      drawTree(ctx, obstacle.x, obstacle.y, obstacle.r, obstacle.look);
     } else {
       ctx.fillStyle = '#6e5a46';
       ctx.strokeStyle = '#4f3f31';
@@ -555,13 +592,19 @@ export function renderScene(
       ctx.stroke();
     }
   }
+  if (opts.dim) ctx.restore();
+}
 
-  for (const obstacle of hole.obstacles) {
-    if (obstacle.type === 'circle' && isTreeLook(obstacle.look)) {
-      drawTree(ctx, obstacle.x, obstacle.y, obstacle.r, obstacle.look);
-    }
+function drawHoleTeeAndCup(
+  ctx: CanvasRenderingContext2D,
+  hole: HoleData,
+  zoom: number,
+  opts: { dim?: boolean; label?: string | null } = {},
+) {
+  if (opts.dim) {
+    ctx.save();
+    ctx.globalAlpha = 0.7;
   }
-
   if (hole.terrain.tee) {
     const tee = hole.terrain.tee;
     ctx.save();
@@ -599,17 +642,128 @@ export function renderScene(
     ctx.restore();
   }
 
-  drawPreview(ctx, preview, zoom);
-  drawSelectionBounds(ctx, selectedObjectId ? getBoundsForId(hole, selectedObjectId) : null, zoom);
-  if (pathEditOverlay) {
-    drawPathEditOverlay(ctx, hole, pathEditOverlay, zoom);
+  if (opts.label && hole.terrain.tee) {
+    const tee = hole.terrain.tee;
+    const cx = tee.x + tee.w / 2;
+    const cy = tee.y + tee.h / 2;
+    ctx.save();
+    ctx.font = `bold ${Math.max(10, 14 / zoom)}px sans-serif`;
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 3 / zoom;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.strokeText(opts.label, cx, cy);
+    ctx.fillText(opts.label, cx, cy);
+    ctx.restore();
   }
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+  if (opts.dim) ctx.restore();
+}
+
+export function renderScene(
+  ctx: CanvasRenderingContext2D,
+  params: {
+    hole: HoleData;
+    holes?: HoleData[];
+    activeHoleIndex?: number;
+    selectedObjectId: string | null;
+    preview: DrawPreview | null;
+    zoom: number;
+    pan: { x: number; y: number };
+    width: number;
+    height: number;
+    pathEditOverlay?: PathEditOverlay;
+  },
+) {
+  const { hole, holes, activeHoleIndex = 0, selectedObjectId, preview, zoom, pan, width, height, pathEditOverlay } = params;
+  const patterns = getPatterns(ctx);
+  const allHoles = holes && holes.length > 0 ? holes : [hole];
+  const extent = courseExtent(allHoles);
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#223923';
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.save();
+  ctx.translate(pan.x, pan.y);
+  ctx.scale(zoom, zoom);
+
+  // Big-map backdrop sized to course extent
+  ctx.fillStyle = '#2a5220';
+  ctx.fillRect(0, 0, extent.w, extent.h);
+  if (patterns.rough) {
+    ctx.fillStyle = patterns.rough;
+    ctx.fillRect(0, 0, extent.w, extent.h);
+  }
+
+  ctx.fillStyle = 'rgba(255,255,255,0.05)';
+  ctx.fillRect(0, 0, extent.w, extent.h * 0.44);
+  ctx.fillStyle = 'rgba(0,0,0,0.10)';
+  ctx.fillRect(0, extent.h * 0.58, extent.w, extent.h * 0.42);
+
+  // Pass 1: draw all NON-active holes dimmed
+  allHoles.forEach((h, idx) => {
+    if (idx === activeHoleIndex) return;
+    drawHoleTerrain(ctx, h, patterns, { dim: true });
+    drawHoleGreenAndSlopes(ctx, h, patterns, { drawSlopes: false, dim: true });
+    drawHoleSandsAndObstacles(ctx, h, patterns, { dim: true });
+    drawHoleTeeAndCup(ctx, h, zoom, { dim: true, label: `${h.id}` });
+  });
+
+  // Pass 2: draw active hole in full fidelity
+  const active = allHoles[activeHoleIndex] ?? hole;
+  drawHoleTerrain(ctx, active, patterns);
+  drawHoleGreenAndSlopes(ctx, active, patterns);
+  drawHoleSandsAndObstacles(ctx, active, patterns);
+  drawHoleTeeAndCup(ctx, active, zoom, { label: null });
+
+  // Active hole highlight ring
+  {
+    const gather: RectShape[] = [];
+    if (active.terrain.green) gather.push(shapeBounds(active.terrain.green));
+    for (const s of active.terrain.fairway) gather.push(shapeBounds(s));
+    for (const s of active.terrain.rough) gather.push(shapeBounds(s));
+    for (const s of active.terrain.deepRough) gather.push(shapeBounds(s));
+    for (const s of active.terrain.desert) gather.push(shapeBounds(s));
+    if (active.terrain.tee) {
+      const t = active.terrain.tee;
+      gather.push({ x: t.x, y: t.y, w: t.w, h: t.h });
+    }
+    if (gather.length > 0 && allHoles.length > 1) {
+      let x1 = gather[0].x;
+      let y1 = gather[0].y;
+      let x2 = gather[0].x + gather[0].w;
+      let y2 = gather[0].y + gather[0].h;
+      for (const r of gather) {
+        if (r.x < x1) x1 = r.x;
+        if (r.y < y1) y1 = r.y;
+        if (r.x + r.w > x2) x2 = r.x + r.w;
+        if (r.y + r.h > y2) y2 = r.y + r.h;
+      }
+      ctx.save();
+      ctx.strokeStyle = 'rgba(147,210,124,0.85)';
+      ctx.setLineDash([10 / zoom, 6 / zoom]);
+      ctx.lineWidth = 1.6 / zoom;
+      const pad = 24;
+      ctx.strokeRect(x1 - pad, y1 - pad, x2 - x1 + pad * 2, y2 - y1 + pad * 2);
+      ctx.restore();
+    }
+  }
+
+  drawPreview(ctx, preview, zoom);
+  drawSelectionBounds(ctx, selectedObjectId ? getBoundsForId(active, selectedObjectId) : null, zoom);
+  if (pathEditOverlay) {
+    drawPathEditOverlay(ctx, active, pathEditOverlay, zoom);
+  }
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
   ctx.lineWidth = 1 / zoom;
-  ctx.strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+  ctx.strokeRect(0, 0, extent.w, extent.h);
   ctx.restore();
 }
+
 
 function centroid(shape: SurfaceShape): Vec2 {
   const points = shape.path.points;

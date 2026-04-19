@@ -9,10 +9,13 @@ const toolButtons: Array<{ tool: ToolType; label: string; hotkey: string }> = [
   { tool: 'green', label: 'Green', hotkey: 'G' },
   { tool: 'cup', label: 'Cup', hotkey: 'H' },
   { tool: 'fairway', label: 'Fairway', hotkey: 'F' },
+  { tool: 'rough', label: 'Rough', hotkey: 'R' },
+  { tool: 'deepRough', label: 'Deep Rgh', hotkey: 'X' },
   { tool: 'sand', label: 'Sand', hotkey: 'S' },
   { tool: 'water', label: 'Water', hotkey: 'W' },
-  { tool: 'wall', label: 'Wall', hotkey: 'B' },
+  { tool: 'desert', label: 'Desert', hotkey: 'D' },
   { tool: 'tree', label: 'Tree', hotkey: '1-5' },
+  { tool: 'slope', label: 'Slope', hotkey: 'L' },
 ];
 
 const treeTypes: TreeType[] = ['pine', 'oak', 'palm', 'birch', 'cypress'];

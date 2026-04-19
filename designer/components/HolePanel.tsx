@@ -103,7 +103,7 @@ export default function HolePanel({
             </select>
           </div>
           <div className="rounded border border-gray-700 bg-gray-900/50 p-2 text-xs text-gray-400">
-            Fairways: {activeHole.terrain.fairway.length} • Hazards: {activeHole.hazards.length} • Trees/Walls: {activeHole.obstacles.length} • Slopes: {activeHole.slopes.length}
+            Fairways: {activeHole.terrain.fairway.length} • Hazards: {activeHole.hazards.length} • Trees: {activeHole.obstacles.length} • Slopes: {activeHole.slopes.length}
           </div>
           <button
             type="button"
