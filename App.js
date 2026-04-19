@@ -2806,7 +2806,28 @@ export default function App() {
     if (sunk || ballMoving) return;
 
     const launch = getLaunchData(tempoAdjustedDeviation);
-    const speed = speedFromPower(launch.effectivePower * launch.powerFactor, selectedClub);
+    // Solve for the launch speed that actually delivers the aim-line carry.
+    // The aim line shows club.carryYards * powerFactor * touchFactor, so the
+    // physics has to hit that target using the REAL flight hang time (which
+    // includes launchRatio, the spin-dot launch adjust, and the spin launch
+    // modifier). Previously speedFromPower applied only powerFactor and used
+    // a different internal hang time, so character stats drifted away from
+    // what the UI promised — most noticeably, touchFactor was ignored and
+    // power characters fell short of their "stock" distance.
+    const spinLaunchMod = clamp(0.94 + (launch.spinFactor - 1) * 0.35, 0.82, 1.12);
+    const actualHangTime = (3.2 + selectedClub.launch * 0.8)
+      * launch.launchRatio
+      * launch.shotMetrics.launchAdjust
+      * spinLaunchMod;
+    const powerFrac = clamp(launch.effectivePower / 100, 0, 1.2);
+    const targetCarryWorld = (selectedClub.carryYards / YARDS_PER_WORLD)
+      * powerFrac
+      * launch.powerFactor
+      * launch.touchFactor;
+    const expFactor = 1 - Math.exp(-0.14 * actualHangTime);
+    const speed = expFactor > 0.001
+      ? (targetCarryWorld * 0.14 / expFactor)
+      : targetCarryWorld * 2;
     const liePhys = SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough;
     const [penMin, penMax] = liePhys.powerPenalty;
     const recoveryBoost = currentLie === 'rough' || currentLie === 'deepRough' || currentLie === 'sand' || currentLie === 'pluggedSand'
