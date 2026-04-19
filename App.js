@@ -1238,11 +1238,11 @@ export default function App() {
 
   const toScreen = (p) => ({
     x: (p.x - cameraRef.current.x) * pixelsPerWorld + viewWidth / 2,
-    y: (p.y - cameraRef.current.y) * pixelsPerWorld + viewHeight / 2
+    y: (p.y - cameraRef.current.y) * pixelsPerWorld + cameraAnchorY
   });
   const toWorld = (p) => ({
     x: cameraRef.current.x + (p.x - viewWidth / 2) / pixelsPerWorld,
-    y: cameraRef.current.y + (p.y - viewHeight / 2) / pixelsPerWorld
+    y: cameraRef.current.y + (p.y - cameraAnchorY) / pixelsPerWorld
   });
 
   const resetBall = ({ penaltyStroke = false } = {}) => {
@@ -2451,8 +2451,9 @@ export default function App() {
   const ballVisualScale = 1 - airborneRatio * 0.12;
   const shadowScale = 1 + airborneRatio * 0.5;
   const shadowOpacity = 0.28 - airborneRatio * 0.18;
+  const cameraAnchorY = (!ballMoving && !puttingMode && !shotControlOpen) ? viewHeight * 0.74 : viewHeight / 2;
   const worldOffsetX = viewWidth / 2 - camera.x * pixelsPerWorld;
-  const worldOffsetY = viewHeight / 2 - camera.y * pixelsPerWorld;
+  const worldOffsetY = cameraAnchorY - camera.y * pixelsPerWorld;
 
   const isLastHole = safeHoleIndex === ACTIVE_HOLES.length - 1;
   const shotMetrics = getShotControlMetrics();
@@ -3453,7 +3454,7 @@ export default function App() {
               const sx = (pt.x - camera.x) * pixelsPerWorld + viewWidth / 2;
               const tracerRawLiftPx = (pt.z || 0) * pixelsPerWorld * 1.55;
               const tracerLiftPx = tracerRawLiftPx > 0 ? Math.sqrt(tracerRawLiftPx) * 8 : 0;
-              const sy = (pt.y - camera.y) * pixelsPerWorld + viewHeight / 2 - tracerLiftPx;
+              const sy = (pt.y - camera.y) * pixelsPerWorld + cameraAnchorY - tracerLiftPx;
               const age = (tracerPoints.length - 1 - i) / Math.max(1, tracerPoints.length - 1);
               const opacity = Math.max(0.06, 0.95 - age * 0.9);
               return (
