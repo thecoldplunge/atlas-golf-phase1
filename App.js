@@ -834,7 +834,7 @@ const hapticDoubleTap = () => {
   } catch (e) { /* silent */ }
 };
 const PUTTING_ZOOM_MULT = 1.8;
-const SLOPE_FORCE = 7.5 * PHYSICS_CONFIG.greenSlopeInfluence;
+const SLOPE_FORCE = 7.5 * 0.6 * PHYSICS_CONFIG.greenSlopeInfluence;
 const PUTT_PREVIEW_DT = 1 / 120;
 const PUTT_PREVIEW_MAX_TICKS = 1400;
 const PUTT_PREVIEW_SAMPLE_TICKS = 8;
