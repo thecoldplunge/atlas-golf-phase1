@@ -1494,7 +1494,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.7';
+const BUILD_VERSION = 'IGT v3.8';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1624,15 +1624,16 @@ const evaluateTempo = (samples, { focus = 50, composure = 50 } = {}) => {
     mult *= 1 + clamp((forwardJerk - 0.30) * 1.8, 0, 0.5);
     tags.push('Jerky Fwd');
   }
-  if (decelFrac > 0.65) {
-    mult *= 1 + clamp((decelFrac - 0.65) * 1.4, 0, 0.5);
-    tags.push('Decel');
-  }
-  if (followThrough >= 0.70 && tags.length === 0) {
-    mult *= 0.88;
+  // Forward-motion scoring via peak POSITION in the forward swing.
+  // We intentionally do NOT check release velocity vs peak — on a
+  // touchscreen the finger naturally slows before lift, which would
+  // flag every swing. Peak position is the honest signal.
+  if (followThrough >= 0.60 && tags.length === 0) {
+    const bonus = clamp((followThrough - 0.60) * 0.4 + 0.08, 0, 0.22);
+    mult *= 1 - bonus;
     tags.push('Committed');
-  } else if (followThrough < 0.25) {
-    mult *= 1.15;
+  } else if (followThrough < 0.30) {
+    mult *= 1 + clamp((0.30 - followThrough) * 0.8, 0, 0.25);
     tags.push('Coasted');
   }
 
@@ -1642,9 +1643,9 @@ const evaluateTempo = (samples, { focus = 50, composure = 50 } = {}) => {
   }
 
   const pureBonus = tags.length === 1 && tags[0] === 'Committed'
-    && backJerk < 0.12 && forwardJerk < 0.18 && pauseMs < 15 && decelFrac < 0.05;
+    && backJerk < 0.12 && forwardJerk < 0.22 && pauseMs < 10 && followThrough >= 0.75;
   if (pureBonus) {
-    mult = 0.78;
+    mult = 0.75;
     tags.length = 0;
     tags.push('Pure');
   }

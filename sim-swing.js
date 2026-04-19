@@ -160,21 +160,22 @@ function evaluateTempo(samples, { focus = 50, composure = 50 } = {}) {
     tags.push('Jerky Forward');
   }
 
-  // Deceleration penalty — losing speed before release. Natural arc
-  // swings have decelFrac near 1.0 (release at zero speed). We only
-  // flag clearly decelerating swings (release speed under ~35% of peak).
-  if (decelFrac > 0.65) {
-    mult *= 1 + clamp((decelFrac - 0.65) * 1.4, 0, 0.5);
-    tags.push('Decel');
-  }
-
-  // Follow-through scoring — peak position in the forward swing.
-  // followThrough: 0 = coasted (bad), 1 = committed (great).
-  if (followThrough >= 0.70 && tags.length === 0) {
-    mult *= 0.88;
+  // Forward-motion scoring via peak POSITION in the forward swing.
+  //   followThrough = peakIdx / (n-1)    range 0..1
+  //     ≥ 0.60  →  peak landed near release = committed follow-through
+  //     0.30-0.60 →  peak mid-swing = smooth / neutral
+  //     < 0.30  →  peak early, then coasted = bad
+  // We intentionally do NOT use "release velocity vs peak" as a signal:
+  // on a touchscreen the finger naturally slows before lift, so that
+  // metric fires on virtually every swing.
+  if (followThrough >= 0.60 && tags.length === 0) {
+    // Scale bonus by how late the peak is — the later it lands, the
+    // stronger the follow-through. 0.60 → -8%, 0.90+ → -20%.
+    const bonus = clamp((followThrough - 0.60) * 0.4 + 0.08, 0, 0.22);
+    mult *= 1 - bonus;
     tags.push('Committed');
-  } else if (followThrough < 0.25) {
-    mult *= 1.15;
+  } else if (followThrough < 0.30) {
+    mult *= 1 + clamp((0.30 - followThrough) * 0.8, 0, 0.25);
     tags.push('Coasted');
   }
 
@@ -186,11 +187,12 @@ function evaluateTempo(samples, { focus = 50, composure = 50 } = {}) {
 
   // "Pure" — the perfect swing. No penalties AND strong follow-through
   // AND low overall jerk. Gets the best modifier in the system.
+  // "Pure" upgrade: a Committed swing that is ALSO very smooth (low jerk
+  // on both phases) and has essentially zero pause. Rare and rewarded.
   const pureBonus = tags.length === 1 && tags[0] === 'Committed'
-    && backJerk < 0.12 && forwardJerk < 0.18 && pauseMs < 15
-    && decelFrac < 0.05;
+    && backJerk < 0.12 && forwardJerk < 0.22 && pauseMs < 10 && followThrough >= 0.75;
   if (pureBonus) {
-    mult = 0.78;
+    mult = 0.75;
     tags.length = 0;
     tags.push('Pure');
   }
