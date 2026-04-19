@@ -11,7 +11,7 @@ import {
   Platform
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import Svg, { Path as SvgPath, G as SvgG } from 'react-native-svg';
+import Svg, { Path as SvgPath } from 'react-native-svg';
 import testCourseData from './courses/test-course.json';
 import test2CourseData from './courses/test-2.json';
 import test4CourseData from './courses/test-4.json';
@@ -4346,18 +4346,40 @@ export default function App() {
                     fill="#5aad42"
                   />
                 ))}
-                {/* fringe + green */}
-                {currentHole.editorVectors?.terrain?.green ? (
-                  <SvgG key="vg-group">
+                {/* fringe + green.
+                    First pass: rect-based green from terrain.green as a
+                    visibility safety net — guarantees the putting surface
+                    renders even if the vector path below fails on some
+                    platforms or the designer exported mismatched data.
+                    Second pass: vector fringe + green from editorVectors,
+                    which matches the designer canvas when available. */}
+                {currentHole.terrain?.green ? (
+                  <>
                     <SvgPath
+                      key="rect-fringe"
+                      d={`M ${currentHole.terrain.green.x - FRINGE_BUFFER} ${currentHole.terrain.green.y - FRINGE_BUFFER} h ${currentHole.terrain.green.w + FRINGE_BUFFER * 2} v ${currentHole.terrain.green.h + FRINGE_BUFFER * 2} h ${-(currentHole.terrain.green.w + FRINGE_BUFFER * 2)} Z`}
+                      fill="#3f8a3a"
+                    />
+                    <SvgPath
+                      key="rect-green"
+                      d={`M ${currentHole.terrain.green.x} ${currentHole.terrain.green.y} h ${currentHole.terrain.green.w} v ${currentHole.terrain.green.h} h ${-currentHole.terrain.green.w} Z`}
+                      fill="#89d95a"
+                    />
+                  </>
+                ) : null}
+                {currentHole.editorVectors?.terrain?.green?.points?.length >= 2 ? (
+                  <>
+                    <SvgPath
+                      key="vec-fringe"
                       d={pointsToSvgD(expandPointsFromCentroid(currentHole.editorVectors.terrain.green.points, FRINGE_BUFFER))}
                       fill="#3f8a3a"
                     />
                     <SvgPath
+                      key="vec-green"
                       d={pointsToSvgD(currentHole.editorVectors.terrain.green.points)}
                       fill="#89d95a"
                     />
-                  </SvgG>
+                  </>
                 ) : null}
                 {/* sand bunkers (on top of green surface) */}
                 {currentHole.editorVectors?.hazards?.sand?.map((shape, i) => (
