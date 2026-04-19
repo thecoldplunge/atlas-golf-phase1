@@ -1409,19 +1409,19 @@ const GOLFER_PIXEL_KEY = {
 };
 
 const GOLFER_SPRITE_ROWS = [
-  '.....bbb.....',
-  '...bbwwwbb...',
-  '..bbwwgwwbb..',
-  '.bbnnwwwnnbb.',
-  '.bnnnnnnnnnb.',
-  '.bnnssssnnnb.',
-  '..nnssssssnn.',
-  '..psssssssp..',
-  '.pppsccspppp.',
-  '.ppq....qppp.',
-  '.pq......qp..',
-  '.ww......ww..',
-  '..c......c...'
+  '..............',
+  '...bbb........',
+  '..bwwwbb......',
+  '.bwwgwwnbbb...',
+  '.bnnwwwnnnnb..',
+  '.bnnnnnnnnnb..',
+  '..nssssnnnb...',
+  '.pssssssnn....',
+  '.ppsccssp.....',
+  '.pq...qpp.....',
+  '.w....qp......',
+  '.c....ww......',
+  '......c.......'
 ];
 
 const GOLFER_PIXELS = GOLFER_SPRITE_ROWS.flatMap((row, y) =>
@@ -2469,8 +2469,8 @@ export default function App() {
             return;
           }
           isTwoFingerPanningRef.current = false;
-          setIsAiming(true);
-          setAimFromTouch(evt.nativeEvent.pageX, evt.nativeEvent.pageY);
+          panCentroidRef.current = null;
+          setIsAiming(false);
         },
         onMoveShouldSetPanResponder: () => false,
         onPanResponderMove: (evt, gestureState) => {
