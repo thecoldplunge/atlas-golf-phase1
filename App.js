@@ -11,10 +11,52 @@ import {
   Platform
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import Svg, { Path as SvgPath, G as SvgG } from 'react-native-svg';
 import testCourseData from './courses/test-course.json';
 import test2CourseData from './courses/test-2.json';
 const TEST_COURSE_HOLES = testCourseData.holes;
 const TEST2_COURSE_HOLES = test2CourseData.holes;
+
+// ---- Vector path helpers (for rendering designer-exported editorVectors) ----
+// Each PathPoint is { x, y, inX, inY, outX, outY } where inX/inY is the
+// incoming handle and outX/outY is the outgoing handle. Convert an array
+// of such points (closed loop) into an SVG cubic-bezier "d" string.
+const pointsToSvgD = (points) => {
+  if (!Array.isArray(points) || points.length < 2) return '';
+  const p0 = points[0];
+  let d = `M ${p0.x.toFixed(2)} ${p0.y.toFixed(2)}`;
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const p = points[i];
+    d += ` C ${prev.outX.toFixed(2)} ${prev.outY.toFixed(2)}, ${p.inX.toFixed(2)} ${p.inY.toFixed(2)}, ${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
+  }
+  const last = points[points.length - 1];
+  const first = points[0];
+  d += ` C ${last.outX.toFixed(2)} ${last.outY.toFixed(2)}, ${first.inX.toFixed(2)} ${first.inY.toFixed(2)}, ${first.x.toFixed(2)} ${first.y.toFixed(2)} Z`;
+  return d;
+};
+
+// Expand a closed vector path outward from its centroid by `px` world units.
+// Used for the green fringe (a wider halo outside the putting surface).
+const expandPointsFromCentroid = (points, px) => {
+  if (!Array.isArray(points) || points.length === 0) return points;
+  let cx = 0, cy = 0;
+  for (const p of points) { cx += p.x; cy += p.y; }
+  cx /= points.length; cy /= points.length;
+  const grow = (ax, ay) => {
+    const dx = ax - cx, dy = ay - cy;
+    const d = Math.hypot(dx, dy);
+    if (d < 0.01) return { x: ax, y: ay };
+    const s = (d + px) / d;
+    return { x: cx + dx * s, y: cy + dy * s };
+  };
+  return points.map((p) => {
+    const a = grow(p.x, p.y);
+    const ip = grow(p.inX, p.inY);
+    const op = grow(p.outX, p.outY);
+    return { x: a.x, y: a.y, inX: ip.x, inY: ip.y, outX: op.x, outY: op.y };
+  });
+};
 
 // All holes are centered in a 700x700 region of the world starting at offset (170, 200)
 // This gives ~170 units of rough on left/right and ~200+ units top/bottom
@@ -4231,84 +4273,177 @@ export default function App() {
               }
             ]}
           >
-            {/* Layer 1: water hazards (background — fairway paints over them) */}
-            {currentHole.hazards?.filter((h) => h.type === 'waterRect').map((h, i) => (
-              <View
-                key={`water-${i}`}
-                style={[
-                  styles.water,
-                  {
-                    left: h.x * scaleX,
-                    top: h.y * scaleY,
-                    width: h.w * scaleX,
-                    height: h.h * scaleY
-                  }
-                ]}
-              />
-            ))}
-
-            {currentHole.terrain?.fairway?.map((f, i) => (
-              <View
-                key={`fair-${i}`}
-                style={[
-                  styles.fairway,
-                  {
-                    left: f.x * scaleX,
-                    top: f.y * scaleY,
-                    width: f.w * scaleX,
-                    height: f.h * scaleY,
-                    borderRadius: (f.r || 8) * scaleX
-                  }
-                ]}
+            {/*
+             * Terrain layers.
+             *
+             * If the course was exported from the designer it ships with
+             * editorVectors (cubic-bezier path data). We render those as SVG
+             * paths so the game looks identical to the designer canvas
+             * (smooth capsules, curvy greens, varied bunker shapes).
+             *
+             * For hand-authored rect-based courses (Pine Valley, Michael's,
+             * Driving Range) we fall back to the old View/borderRadius
+             * rendering.
+             *
+             * Z-order (both paths): water → rough/deepRough/desert →
+             * fairway → fringe → green → slope arrows → tee → sand → trees → cup.
+             */}
+            {currentHole.editorVectors ? (
+              <Svg
+                pointerEvents="none"
+                width={WORLD.w * scaleX}
+                height={WORLD.h * scaleY}
+                viewBox={`0 0 ${WORLD.w} ${WORLD.h}`}
+                style={{ position: 'absolute', left: 0, top: 0 }}
               >
-                <View style={styles.fairwaySheen} />
-              </View>
-            ))}
-
-            {currentHole.terrain?.green ? (
+                {/* water (background) */}
+                {currentHole.editorVectors?.hazards?.water?.map((shape, i) => (
+                  <SvgPath
+                    key={`vw-${i}`}
+                    d={pointsToSvgD(shape.points)}
+                    fill="#3879c5"
+                    stroke="#1c4a85"
+                    strokeWidth={1}
+                  />
+                ))}
+                {/* desert / deepRough / rough (background surface patches) */}
+                {currentHole.terrain?.desert?.map((s, i) => (
+                  <SvgPath
+                    key={`vd-${i}`}
+                    d={`M ${s.x} ${s.y} h ${s.w} v ${s.h} h ${-s.w} Z`}
+                    fill="#d8b57b"
+                  />
+                )) || null}
+                {currentHole.terrain?.deepRough?.map((s, i) => (
+                  <SvgPath
+                    key={`vdr-${i}`}
+                    d={`M ${s.x} ${s.y} h ${s.w} v ${s.h} h ${-s.w} Z`}
+                    fill="#193818"
+                  />
+                )) || null}
+                {currentHole.terrain?.rough?.map((s, i) => (
+                  <SvgPath
+                    key={`vr-${i}`}
+                    d={`M ${s.x} ${s.y} h ${s.w} v ${s.h} h ${-s.w} Z`}
+                    fill="#3f6f2f"
+                  />
+                )) || null}
+                {/* fairway */}
+                {currentHole.editorVectors?.terrain?.fairway?.map((shape, i) => (
+                  <SvgPath
+                    key={`vf-${i}`}
+                    d={pointsToSvgD(shape.points)}
+                    fill="#5aad42"
+                  />
+                ))}
+                {/* fringe + green */}
+                {currentHole.editorVectors?.terrain?.green ? (
+                  <SvgG key="vg-group">
+                    <SvgPath
+                      d={pointsToSvgD(expandPointsFromCentroid(currentHole.editorVectors.terrain.green.points, FRINGE_BUFFER))}
+                      fill="#3f8a3a"
+                    />
+                    <SvgPath
+                      d={pointsToSvgD(currentHole.editorVectors.terrain.green.points)}
+                      fill="#89d95a"
+                    />
+                  </SvgG>
+                ) : null}
+                {/* sand bunkers (on top of green surface) */}
+                {currentHole.editorVectors?.hazards?.sand?.map((shape, i) => (
+                  <SvgPath
+                    key={`vs-${i}`}
+                    d={pointsToSvgD(shape.points)}
+                    fill="#e6d2a1"
+                    stroke="#b59b6a"
+                    strokeWidth={1}
+                  />
+                ))}
+              </Svg>
+            ) : (
               <>
-                <View
-                  style={[
-                    styles.fringe,
-                    {
-                      left: (currentHole.terrain.green.x - FRINGE_BUFFER) * scaleX,
-                      top: (currentHole.terrain.green.y - FRINGE_BUFFER) * scaleY,
-                      width: (currentHole.terrain.green.w + FRINGE_BUFFER * 2) * scaleX,
-                      height: (currentHole.terrain.green.h + FRINGE_BUFFER * 2) * scaleY,
-                      borderRadius: (currentHole.terrain.green.r + FRINGE_BUFFER) * scaleX
-                    }
-                  ]}
-                />
-                <View
-                  style={[
-                    styles.green,
-                    {
-                      left: currentHole.terrain.green.x * scaleX,
-                      top: currentHole.terrain.green.y * scaleY,
-                      width: currentHole.terrain.green.w * scaleX,
-                      height: currentHole.terrain.green.h * scaleY,
-                      borderRadius: currentHole.terrain.green.r * scaleX
-                    }
-                  ]}
-                />
-                {puttingMode ? slopeArrows.map((arrow) => (
-                  <Text
-                    key={arrow.key}
-                    pointerEvents="none"
+                {/* Layer 1: water hazards (background — fairway paints over them) */}
+                {currentHole.hazards?.filter((h) => h.type === 'waterRect').map((h, i) => (
+                  <View
+                    key={`water-${i}`}
                     style={[
-                      styles.slopeArrowText,
+                      styles.water,
                       {
-                        left: arrow.x * scaleX - 5,
-                        top: arrow.y * scaleY - 9,
-                        opacity: arrow.opacity ?? 0.7
+                        left: h.x * scaleX,
+                        top: h.y * scaleY,
+                        width: h.w * scaleX,
+                        height: h.h * scaleY
+                      }
+                    ]}
+                  />
+                ))}
+
+                {currentHole.terrain?.fairway?.map((f, i) => (
+                  <View
+                    key={`fair-${i}`}
+                    style={[
+                      styles.fairway,
+                      {
+                        left: f.x * scaleX,
+                        top: f.y * scaleY,
+                        width: f.w * scaleX,
+                        height: f.h * scaleY,
+                        borderRadius: (f.r || 8) * scaleX
                       }
                     ]}
                   >
-                    {arrow.char}
-                  </Text>
-                )) : null}
+                    <View style={styles.fairwaySheen} />
+                  </View>
+                ))}
+
+                {currentHole.terrain?.green ? (
+                  <>
+                    <View
+                      style={[
+                        styles.fringe,
+                        {
+                          left: (currentHole.terrain.green.x - FRINGE_BUFFER) * scaleX,
+                          top: (currentHole.terrain.green.y - FRINGE_BUFFER) * scaleY,
+                          width: (currentHole.terrain.green.w + FRINGE_BUFFER * 2) * scaleX,
+                          height: (currentHole.terrain.green.h + FRINGE_BUFFER * 2) * scaleY,
+                          borderRadius: (currentHole.terrain.green.r + FRINGE_BUFFER) * scaleX
+                        }
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.green,
+                        {
+                          left: currentHole.terrain.green.x * scaleX,
+                          top: currentHole.terrain.green.y * scaleY,
+                          width: currentHole.terrain.green.w * scaleX,
+                          height: currentHole.terrain.green.h * scaleY,
+                          borderRadius: currentHole.terrain.green.r * scaleX
+                        }
+                      ]}
+                    />
+                  </>
+                ) : null}
               </>
-            ) : null}
+            )}
+
+            {/* Slope arrows render on top of the green regardless of path (they're per-slope-zone annotations, not part of the vector data) */}
+            {currentHole.terrain?.green && puttingMode ? slopeArrows.map((arrow) => (
+              <Text
+                key={arrow.key}
+                pointerEvents="none"
+                style={[
+                  styles.slopeArrowText,
+                  {
+                    left: arrow.x * scaleX - 5,
+                    top: arrow.y * scaleY - 9,
+                    opacity: arrow.opacity ?? 0.7
+                  }
+                ]}
+              >
+                {arrow.char}
+              </Text>
+            )) : null}
 
             {currentHole.terrain?.tee ? (
               <View
@@ -4365,8 +4500,10 @@ export default function App() {
                 })
               : null}
 
-            {/* Layer 4: sand bunkers (on top of fairway/green — bunkers are surface features) */}
-            {currentHole.hazards?.filter((h) => h.type === 'sandRect').map((h, i) => (
+            {/* Layer 4: sand bunkers (on top of fairway/green — bunkers are surface features).
+             *  For editorVectors courses these were already drawn inside the SVG block above;
+             *  only render rect sand here for hand-authored courses. */}
+            {!currentHole.editorVectors && currentHole.hazards?.filter((h) => h.type === 'sandRect').map((h, i) => (
               <View
                 key={`sand-${i}`}
                 style={[
