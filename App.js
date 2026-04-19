@@ -1494,7 +1494,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.5';
+const BUILD_VERSION = 'IGT v3.6';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1707,6 +1707,7 @@ export default function App() {
   const backDeviationRef = useRef(0); // backswing L/R deviation (-1 to 1)
   const transitionTimeRef = useRef(0); // timestamp when backswing locked into forward swing
   const backswingStartTimeRef = useRef(0); // timestamp when backswing began
+  const backswingPeakTimeRef = useRef(0); // timestamp of deepest backswing point (top of the swing)
   const shotTracerRef = useRef([]); // world positions for shot tracer
   const [shotTracer, setShotTracer] = useState([]);
   const swingLockedRef = useRef(false); // true once forward swing starts
@@ -2962,6 +2963,7 @@ export default function App() {
           swingTrailRef.current = [];
           fullSwingPathRef.current = [{ x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY, phase: 'start' }];
           backswingStartTimeRef.current = Date.now();
+          backswingPeakTimeRef.current = 0;
           transitionTimeRef.current = 0;
           setSwingPhase('backswing');
           powerRef.current = 0;
@@ -2990,6 +2992,11 @@ export default function App() {
               const backDevPx = currentX - swingStartRef.current.x;
               backDeviationRef.current = clamp(backDevPx / 50, -1, 1);
               swingLowestRef.current = { x: currentX, y: currentY };
+              // Every time we reach a new lowest point, restamp the "top of
+              // backswing" time. When the finger stalls, this stays frozen at
+              // the moment it stopped descending, so the pause duration can be
+              // measured as (transition - peak).
+              backswingPeakTimeRef.current = Date.now();
               swingTrailRef.current = [];
             } else if (peakPowerRef.current > 5 && dyFromLowest < -8) {
               // Finger reversed direction upward — LOCK power and start forward swing
@@ -3015,9 +3022,15 @@ export default function App() {
         },
         onPanResponderRelease: (evt) => {
           if (powerRef.current > 5) {
-            // Compute tempo + acceleration strictness from top-of-backswing to release
+            // Compute tempo from top-of-backswing → release. Two parts:
+            //   pauseMs   = time the finger sat still at the deepest point
+            //               (top of backswing) before forward motion began
+            //   forwardMs = time from the start of forward motion to release
             const now = Date.now();
             const forwardMs = transitionTimeRef.current > 0 ? now - transitionTimeRef.current : 999;
+            const pauseMs = backswingPeakTimeRef.current > 0 && transitionTimeRef.current > 0
+              ? Math.max(0, transitionTimeRef.current - backswingPeakTimeRef.current)
+              : 0;
             const releaseY = evt?.nativeEvent?.pageY ?? (swingLowestRef.current.y - 24);
             const forwardTravelPx = Math.max(1, swingLowestRef.current.y - releaseY);
             const accelPxPerMs = forwardTravelPx / Math.max(1, forwardMs);
@@ -3031,7 +3044,7 @@ export default function App() {
             const perfectLo = 85 - focusBias;
             const perfectHi = 165 + focusBias;
 
-            // Tighter tempo windows. Brief pause is rewarded, no pause or long pause punished.
+            // Forward-swing window. Brief pause is rewarded, no pause or long pause punished.
             if (forwardMs < perfectLo) {
               tempoMult = 1.55;
               tempoTag = 'Rushed';
@@ -3048,6 +3061,22 @@ export default function App() {
             } else {
               tempoMult = 1.45;
               tempoTag = 'Frozen';
+            }
+
+            // Pause-at-the-top enforcement. A brief pause (40–180ms) is ideal.
+            // Freezing at the top kills rhythm; a no-pause rip denies the beat.
+            // Focus widens the acceptable pause ceiling slightly.
+            const freezeThreshold = 360 + focusBias * 2;
+            const hesitateThreshold = 200 + focusBias;
+            if (pauseMs > freezeThreshold) {
+              tempoMult = Math.max(tempoMult, 1.55);
+              tempoTag = 'Frozen';
+            } else if (pauseMs > hesitateThreshold) {
+              tempoMult = Math.max(tempoMult, 1.22);
+              if (tempoTag === 'Perfect' || tempoTag === 'Smooth') tempoTag = 'Slow';
+            } else if (pauseMs < 25 && tempoTag === 'Perfect') {
+              tempoMult = Math.max(tempoMult, 1.05);
+              tempoTag = 'Snappy';
             }
 
             // Acceleration penalty: lazy forward acceleration or ultra-violent yank both hurt.
