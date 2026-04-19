@@ -1041,6 +1041,24 @@ const normalize = (v) => {
 };
 
 const pointInRect = (p, r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+const pointInPolygon = (point, polygon = []) => {
+  if (!polygon?.length) return false;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x;
+    const yi = polygon[i].y;
+    const xj = polygon[j].x;
+    const yj = polygon[j].y;
+    const intersects = yi > point.y !== yj > point.y && point.x < ((xj - xi) * (point.y - yi)) / ((yj - yi) || 0.000001) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+};
+const pointNearPolygon = (point, polygon = [], buffer = 0) => {
+  if (pointInPolygon(point, polygon)) return true;
+  return polygon.some((vertex) => Math.hypot(vertex.x - point.x, vertex.y - point.y) <= buffer);
+};
+const vectorShapeToPolygon = (shape) => shape?.points?.map((point) => ({ x: point.x, y: point.y })) || [];
 
 const pointInCircle = (p, c) => {
   const dx = p.x - c.x;
@@ -1065,15 +1083,23 @@ const expandRect = (rect, inset) => ({
   h: rect.h + inset * 2
 });
 const getSurfaceAtPoint = (hole, point) => {
-  const inSand = hole.hazards?.some((h) => h.type === 'sandRect' && pointInRect(point, h));
+  const editorVectors = hole.editorVectors;
+  const vectorSand = editorVectors?.hazards?.sand?.some((shape) => pointInPolygon(point, vectorShapeToPolygon(shape)));
+  const inSand = vectorSand || hole.hazards?.some((h) => h.type === 'sandRect' && pointInRect(point, h));
   if (inSand) return 'sand';
   const terrain = hole.terrain;
   if (terrain?.tee && pointInRect(point, terrain.tee)) return 'tee';
+  const greenPoly = editorVectors?.terrain?.green ? vectorShapeToPolygon(editorVectors.terrain.green) : null;
+  if (greenPoly?.length && pointInPolygon(point, greenPoly)) return 'green';
+  if (greenPoly?.length && pointNearPolygon(point, greenPoly, FRINGE_BUFFER)) return 'fringe';
   if (terrain?.green && pointInRect(point, terrain.green)) return 'green';
   if (terrain?.green && pointInRect(point, expandRect(terrain.green, FRINGE_BUFFER))) return 'fringe';
+  const fairwayPolys = editorVectors?.terrain?.fairway?.map(vectorShapeToPolygon) || [];
+  if (fairwayPolys.some((poly) => pointInPolygon(point, poly))) return 'fairway';
+  if (fairwayPolys.some((poly) => pointNearPolygon(point, poly, 12))) return 'secondCut';
   if (terrain?.fairway?.some((f) => pointInRect(point, f))) return 'fairway';
   if (terrain?.fairway?.some((f) => pointInRect(point, expandRect(f, 12)))) return 'secondCut';
-  const nearAnything = terrain?.fairway?.some((f) => pointInRect(point, expandRect(f, 30)));
+  const nearAnything = fairwayPolys.some((poly) => pointNearPolygon(point, poly, 30)) || terrain?.fairway?.some((f) => pointInRect(point, expandRect(f, 30)));
   if (!nearAnything) return 'deepRough';
   return 'rough';
 };
