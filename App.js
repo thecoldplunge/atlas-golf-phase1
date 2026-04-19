@@ -2222,13 +2222,18 @@ export default function App() {
       const dragFactor = Math.max(0, 1 - surfacePhysics.rollFriction * PUTT_PREVIEW_DT);
       vel.x *= dragFactor;
       vel.y *= dragFactor;
-      const slope = getGreenSlopeForce(currentHole, pos, surfaceName);
       const previewSpeed = magnitude(vel);
-      const previewSlopeCap = surfaceName === 'green' || surfaceName === 'fringe'
-        ? clamp(0.45 + previewSpeed / 2.5, 0.45, 1.25)
-        : Math.min(1.0, previewSpeed / 2.0);
-      vel.x += slope.x * previewSlopeCap * PUTT_PREVIEW_DT;
-      vel.y += slope.y * previewSlopeCap * PUTT_PREVIEW_DT;
+      if (previewSpeed < STOP_SPEED) {
+        vel.x = 0;
+        vel.y = 0;
+      } else {
+        const slope = getGreenSlopeForce(currentHole, pos, surfaceName);
+        const previewSlopeCap = surfaceName === 'green' || surfaceName === 'fringe'
+          ? clamp(0.45 + previewSpeed / 2.5, 0.45, 1.25)
+          : Math.min(1.0, previewSpeed / 2.0);
+        vel.x += slope.x * previewSlopeCap * PUTT_PREVIEW_DT;
+        vel.y += slope.y * previewSlopeCap * PUTT_PREVIEW_DT;
+      }
 
       const restitution = surfacePhysics.wallRestitution;
       let next = {
@@ -2245,7 +2250,9 @@ export default function App() {
         path.push({ x: pos.x, y: pos.y });
       }
 
-      if (magnitude(vel) < 0.3) {
+      if (magnitude(vel) < STOP_SPEED) {
+        vel.x = 0;
+        vel.y = 0;
         break;
       }
     }
