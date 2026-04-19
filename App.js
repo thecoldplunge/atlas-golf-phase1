@@ -11,6 +11,8 @@ import {
   Platform
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import testCourseData from './courses/test-course.json';
+const TEST_COURSE_HOLES = testCourseData.holes;
 
 // All holes are centered in a 700x700 region of the world starting at offset (170, 200)
 // This gives ~170 units of rough on left/right and ~200+ units top/bottom
@@ -746,6 +748,14 @@ const COURSES = [
     designer: 'Michael',
     holes: MICHAELS_COURSE_HOLES,
     description: '3 holes • Par 12',
+    difficulty: 'Hard'
+  },
+  {
+    id: 'test-course',
+    name: 'Test Course',
+    designer: 'Mike G',
+    holes: TEST_COURSE_HOLES,
+    description: '3 holes • Par 12 • AI-generated',
     difficulty: 'Hard'
   },
   {
