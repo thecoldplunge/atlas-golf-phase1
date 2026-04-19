@@ -1551,7 +1551,15 @@ const getAimAngleToCup = (ballPos, cup) => Math.atan2(cup.y - ballPos.y, cup.x -
 const TEMPO_THRESHOLDS = {
   backJerk: 0.38,
   forwardJerk: 0.50,
-  pauseTolerance: 10,          // ms beyond the 35ms natural-reversal floor
+  pauseTolerance: 0,           // ANY pause above the natural-reversal floor is penalized
+  pauseNaturalFloorMs: 20,     // subtracted from raw pause time for unavoidable finger reversal
+  // Exponential distance falloff: distanceMult = exp(-PAUSE_DISTANCE_K * pauseMs)
+  //   25ms  → 0.88  (12% carry loss)
+  //   50ms  → 0.78  (22%)
+  //  100ms  → 0.61  (39%)
+  //  200ms  → 0.37  (63%)
+  //  300ms  → 0.22  (78%)
+  pauseDistanceK: 0.005,
   followThroughCommitted: 0.60, // peak position ≥ this tags Committed
   followThroughCoasted: 0.30,   // peak position < this tags Coasted
   purePeakBack: 0.35,           // below → pure bonus eligible
@@ -1568,7 +1576,10 @@ const coachSwing = (tempoTag, metrics) => {
   const tips = [];
   const tags = (tempoTag || '').split(' + ').map((t) => t.trim());
   if (tags.includes('Paused')) {
-    tips.push(`You held at the top for ${Math.round(metrics.pauseMs)}ms. Reverse direction in one continuous motion — no hovering.`);
+    const carryLoss = Math.round((1 - (metrics.pauseDistanceMult ?? 1)) * 100);
+    tips.push(
+      `You held at the top for ${Math.round(metrics.pauseMs)}ms — that cost you ${carryLoss}% of carry and amplified your miss. Reverse direction in one continuous motion, no hovering.`,
+    );
   }
   if (tags.includes('Jerky Back')) {
     tips.push(`Backswing had uneven speed (${metrics.backJerk.toFixed(2)}, triggers above ${TEMPO_THRESHOLDS.backJerk}). Pull at a steady pace; avoid starts/stops and direction wobbles.`);
@@ -1659,9 +1670,9 @@ const evaluateTempo = (samples, { focus = 50, composure = 50 } = {}) => {
   const forwardJerk = coeffVariation(forwardSpeeds) + countReversals(forward) * 0.5;
 
   // Pause detection uses an ABSOLUTE speed threshold (0.08 px/ms ≈ finger
-  // essentially not moving) within ±220ms of the transition, minus a
-  // 35ms natural-reversal floor. Tight so real touchscreen holds get
-  // caught even when sparse move events merge a pause into one big gap.
+  // essentially not moving) within ±220ms of the transition, minus a short
+  // natural-reversal floor. Floor kept intentionally tight so any meaningful
+  // hover at the top gets caught and penalized.
   const pauseThreshAbs = 0.08;
   const transitionT = samples[transitionIndex].t;
   let pauseMsRaw = 0;
@@ -1673,7 +1684,16 @@ const evaluateTempo = (samples, { focus = 50, composure = 50 } = {}) => {
     const v = Math.hypot(samples[i].x - samples[i - 1].x, samples[i].y - samples[i - 1].y) / dt;
     if (v < pauseThreshAbs) pauseMsRaw += dt;
   }
-  const pauseMs = Math.max(0, pauseMsRaw - 35);
+  const pauseMs = Math.max(0, pauseMsRaw - TEMPO_THRESHOLDS.pauseNaturalFloorMs);
+
+  // EXPONENTIAL distance penalty on pauses — any pause bleeds carry. This is
+  // separate from the deviation multiplier below (which affects curve only).
+  // Composure softens the falloff slightly (high composure golfer absorbs a
+  // tiny hesitation better).
+  const composureSoften = clamp(1 - (composure - 50) * 0.004, 0.85, 1.15);
+  const pauseDistanceMult = pauseMs > 0
+    ? Math.exp(-TEMPO_THRESHOLDS.pauseDistanceK * pauseMs * composureSoften)
+    : 1.0;
 
   let peakIdx = 0;
   for (let i = 0; i < forwardSpeeds.length; i++) {
@@ -1685,11 +1705,16 @@ const evaluateTempo = (samples, { focus = 50, composure = 50 } = {}) => {
   const tags = [];
   const focusBias = clamp((focus - 50) / 100, -0.5, 0.5);
 
-  // Pause: natural reversal is ~35ms; anything past pauseTolerance ms
-  // extra is taxed. 100ms pause → ~1.5×, 200ms → ~2.0×, 300ms clamped.
-  const pauseTolerance = TEMPO_THRESHOLDS.pauseTolerance * (1 - focusBias * 0.4);
-  if (pauseMs > pauseTolerance) {
-    mult *= 1 + clamp((pauseMs - pauseTolerance) / 130, 0, 1.2);
+  // Pause deviation amplifier: EXPONENTIAL growth, no tolerance. Any detected
+  // pause amplifies aim deviation as well as cutting distance.
+  //   25ms  → mult × 1.13
+  //   50ms  → mult × 1.28
+  //  100ms  → mult × 1.65
+  //  200ms  → mult × 2.72
+  //  300ms  → mult × 4.48 (hard cap at 4.5×)
+  if (pauseMs > 0) {
+    const amp = Math.min(4.5, Math.exp(pauseMs * 0.005));
+    mult *= amp;
     tags.push('Paused');
   }
   if (backJerk > TEMPO_THRESHOLDS.backJerk) {
@@ -1732,7 +1757,15 @@ const evaluateTempo = (samples, { focus = 50, composure = 50 } = {}) => {
   return {
     tempoMult: +mult.toFixed(3),
     tempoTag: tags.length ? tags.join(' + ') : 'Smooth',
-    metrics: { backJerk, forwardJerk, pauseMs, followThrough, peakBack, peakForward },
+    metrics: {
+      backJerk,
+      forwardJerk,
+      pauseMs,
+      pauseDistanceMult: +pauseDistanceMult.toFixed(3),
+      followThrough,
+      peakBack,
+      peakForward,
+    },
   };
 };
 
@@ -3095,6 +3128,10 @@ export default function App() {
     const tempoAdjustedDeviation = clamp(deviation * tempoMult, -1, 1);
     if (sunk || ballMoving) return;
 
+    // Pause at top drains CARRY exponentially (separate from the deviation
+    // penalty above). tempoMetrics.pauseDistanceMult is 1.0 for a clean
+    // transition, <1.0 for any detectable hover.
+    const pauseDistanceMult = clamp(tempoMetrics?.pauseDistanceMult ?? 1.0, 0.1, 1.0);
     const launch = getLaunchData(tempoAdjustedDeviation);
     // Solve for the launch speed that actually delivers the aim-line carry.
     // The aim line shows club.carryYards * powerFactor * touchFactor, so the
@@ -3113,7 +3150,8 @@ export default function App() {
     const targetCarryWorld = (selectedClub.carryYards / YARDS_PER_WORLD)
       * powerFrac
       * launch.powerFactor
-      * launch.touchFactor;
+      * launch.touchFactor
+      * pauseDistanceMult;
     const expFactor = 1 - Math.exp(-0.14 * actualHangTime);
     const speed = expFactor > 0.001
       ? (targetCarryWorld * 0.14 / expFactor)
