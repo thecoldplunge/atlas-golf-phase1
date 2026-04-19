@@ -3037,9 +3037,8 @@ export default function App() {
 
   const aimDir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
   const aimPerp = { x: -aimDir.y, y: aimDir.x };
-  const previewOverpowerMult = powerPct > 100 ? 1.0 + (Math.pow(1.06, powerPct - 100) - 1) * 1.2 : 1.0;
-  const rawPreviewCurveDeg = shotMetrics.curveDeg + swingDeviation * 40 * previewOverpowerMult;
-  const totalPreviewCurveDeg = clamp(rawPreviewCurveDeg, -45, 45);
+  const previewLaunch = getLaunchData(swingDeviation, { powerPct, aimAngle });
+  const totalPreviewCurveDeg = previewLaunch.totalCurveDeg;
   const distanceToCupWorld = Math.hypot(currentHole.cup.x - ball.x, currentHole.cup.y - ball.y);
   const yardsToCup = Math.max(0, Math.round(distanceToCupWorld * YARDS_PER_WORLD));
   const windData = roundWind[safeHoleIndex] || { speed: 0, dir: 'N' };
