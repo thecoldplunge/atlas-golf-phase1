@@ -5703,6 +5703,13 @@ const styles = StyleSheet.create({
     color: '#f5fbef',
     fontWeight: '700'
   },
+  clubItemMeta: {
+    color: '#a9b8ab',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+    marginBottom: 6
+  },
   scorecardOverlay: {
     position: 'absolute',
     top: 0,
