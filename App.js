@@ -1281,6 +1281,16 @@ export default function App() {
   const safeHoleIndex = clamp(holeIndex, 0, Math.max(0, ACTIVE_HOLES.length - 1));
   const currentHole = ACTIVE_HOLES[safeHoleIndex] || ACTIVE_HOLES[0];
   const selectedClub = CLUBS[selectedClubIndex];
+  const selectedGolferStats = selectedGolfer?.stats || {};
+  const selectedMentalStats = selectedGolfer?.mental || {};
+  const selectedEquipmentItem = useMemo(() => {
+    for (const category of Object.values(equipmentCatalog)) {
+      const found = category.find((item) => item.clubKey === selectedClub.key);
+      if (found) return found;
+    }
+    return null;
+  }, [equipmentCatalog, selectedClub.key]);
+  const selectedClubStats = selectedEquipmentItem?.stats || {};
   const scaleX = pixelsPerWorld;
   const scaleY = pixelsPerWorld;
   const ballRadius = clamp(BALL_RADIUS_WORLD * pixelsPerWorld * 0.48 * 0.6, 3, 10);
@@ -2171,6 +2181,23 @@ export default function App() {
   const getLaunchData = (deviation = 0, options = {}) => {
     const shotMetrics = getShotControlMetrics();
     const lieSwingSens = (SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough).swingSensitivity || 1.0;
+    const golferPower = selectedGolferStats.power ?? 50;
+    const golferAccuracy = selectedGolferStats.accuracy ?? 50;
+    const golferTouch = selectedGolferStats.touch ?? 50;
+    const golferSpin = selectedGolferStats.spinControl ?? 50;
+    const golferPutting = selectedGolferStats.putting ?? 50;
+    const golferRecovery = selectedGolferStats.recovery ?? 50;
+    const focus = selectedMentalStats.focus ?? 50;
+    const composure = selectedMentalStats.composure ?? 50;
+    const courseManagement = selectedMentalStats.courseManagement ?? 50;
+    const clubDistance = selectedClubStats.distance ?? 50;
+    const clubAccuracy = selectedClubStats.accuracy ?? 50;
+    const clubForgiveness = selectedClubStats.forgiveness ?? 50;
+    const clubSpin = selectedClubStats.spin ?? 50;
+    const clubFeel = selectedClubStats.feel ?? 50;
+    const effectiveSkill = puttingMode
+      ? (golferPutting * 0.45 + golferTouch * 0.2 + focus * 0.15 + composure * 0.2)
+      : (golferAccuracy * 0.34 + focus * 0.22 + composure * 0.14 + courseManagement * 0.12 + clubAccuracy * 0.18);
     // Exponential overpower penalty: above 100%, deviation is amplified exponentially
     const effectivePowerForPenalty = options.powerPct ?? powerRef.current;
     let overpowerMult = 1.0;
@@ -2180,7 +2207,11 @@ export default function App() {
       overpowerMult = 1.0 + (Math.pow(1.06, overPct) - 1) * 1.2;
     }
     const baseSensitivity = 40; // up from 25 — more punishing baseline
-    const rawCurveDeg = deviation * baseSensitivity * lieSwingSens * overpowerMult;
+    const forgivenessFactor = clamp(1.18 - ((clubForgiveness - 50) * 0.004 + (effectiveSkill - 50) * 0.003 + (puttingMode ? (clubFeel - 50) * 0.002 : 0)), 0.7, 1.45);
+    const recoveryFactor = currentLie === 'rough' || currentLie === 'deepRough' || currentLie === 'sand' || currentLie === 'pluggedSand'
+      ? clamp(1.12 - (golferRecovery - 50) * 0.003, 0.82, 1.18)
+      : 1;
+    const rawCurveDeg = deviation * baseSensitivity * lieSwingSens * overpowerMult * forgivenessFactor * recoveryFactor;
     // Cap curve at ±45° — no golf shot curves more than that
     const swingCurveDeg = clamp(rawCurveDeg, -45, 45);
     const totalCurveDeg = shotMetrics.curveDeg + swingCurveDeg;
@@ -2189,7 +2220,16 @@ export default function App() {
     const finalAngle = baseAimAngle + degToRad(launchCurveDeg);
     const direction = { x: Math.cos(finalAngle), y: Math.sin(finalAngle) };
     const effectivePower = options.powerPct ?? powerRef.current;
-    const launchRatio = clamp(effectivePower / 125, 0, 1);
+    const powerFactor = puttingMode
+      ? clamp(1 + ((golferPutting - 50) * 0.0015 + (clubFeel - 50) * 0.0015), 0.88, 1.12)
+      : clamp(1 + ((golferPower - 50) * 0.003 + (clubDistance - 50) * 0.003), 0.75, 1.25);
+    const touchFactor = puttingMode
+      ? clamp(1 + ((golferTouch - 50) * 0.002 + (clubFeel - 50) * 0.002), 0.86, 1.14)
+      : clamp(1 + (golferTouch - 50) * 0.0015, 0.9, 1.1);
+    const launchRatio = clamp((effectivePower / 125) * powerFactor * touchFactor, 0, 1.1);
+    const spinFactor = puttingMode
+      ? clamp(1 + ((golferPutting - 50) * 0.001 + (clubFeel - 50) * 0.001), 0.9, 1.1)
+      : clamp(1 + ((golferSpin - 50) * 0.0025 + (clubSpin - 50) * 0.0025), 0.8, 1.25);
     return {
       shotMetrics,
       swingCurveDeg,
@@ -2197,7 +2237,10 @@ export default function App() {
       finalAngle,
       direction,
       effectivePower,
-      launchRatio
+      launchRatio,
+      powerFactor,
+      spinFactor,
+      skillSnapshot: { golferPower, golferAccuracy, golferTouch, golferSpin, golferPutting, golferRecovery, focus, composure, courseManagement, clubDistance, clubAccuracy, clubForgiveness, clubSpin, clubFeel }
     };
   };
 
@@ -2272,10 +2315,13 @@ export default function App() {
     if (sunk || ballMoving) return;
 
     const launch = getLaunchData(tempoAdjustedDeviation);
-    const speed = speedFromPower(launch.effectivePower, selectedClub);
+    const speed = speedFromPower(launch.effectivePower * launch.powerFactor, selectedClub);
     const liePhys = SURFACE_PHYSICS[currentLie] || SURFACE_PHYSICS.rough;
     const [penMin, penMax] = liePhys.powerPenalty;
-    const liePenalty = penMin + Math.random() * (penMax - penMin);
+    const recoveryBoost = currentLie === 'rough' || currentLie === 'deepRough' || currentLie === 'sand' || currentLie === 'pluggedSand'
+      ? clamp(1 + ((selectedGolferStats.recovery ?? 50) - 50) * 0.0035, 0.82, 1.18)
+      : 1;
+    const liePenalty = clamp((penMin + Math.random() * (penMax - penMin)) * recoveryBoost, 0.35, 1.05);
     const horizSpeed = speed * liePenalty;
 
     velocityRef.current = {
@@ -2295,7 +2341,7 @@ export default function App() {
     } else {
       // Real golf: all clubs peak ~90-105ft (Trackman PGA data)
       const targetHangTime = (3.2 + selectedClub.launch * 0.8) * launch.launchRatio;
-      const launchVz = (GRAVITY * targetHangTime * 0.5) * launch.shotMetrics.launchAdjust;
+      const launchVz = (GRAVITY * targetHangTime * 0.5) * launch.shotMetrics.launchAdjust * clamp(0.94 + (launch.spinFactor - 1) * 0.35, 0.82, 1.12);
       flightRef.current = {
         z: 0.08,
         vz: launchVz
