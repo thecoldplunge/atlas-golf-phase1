@@ -1494,7 +1494,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.6';
+const BUILD_VERSION = 'IGT v3.7';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1536,6 +1536,126 @@ const pointInCircle = (p, c) => {
 };
 
 const getAimAngleToCup = (ballPos, cup) => Math.atan2(cup.y - ballPos.y, cup.x - ballPos.x);
+// Evaluate the swing tempo based on the pointer's timestamped trajectory.
+// Returns { tempoMult, tempoTag, metrics }. tempoMult > 1 amplifies deviation
+// (penalty); < 1 dampens it (bonus). The algorithm rewards smooth acceleration
+// and a committed follow-through, and penalizes jerky motion, pausing at the
+// top, and decelerating before release. See sim-swing.js for the reference
+// implementation + scenario tests.
+const evaluateTempo = (samples, { focus = 50, composure = 50 } = {}) => {
+  const back = [];
+  const forward = [];
+  let transitionIndex = -1;
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i];
+    if (s.phase === 'forward') {
+      if (transitionIndex < 0) transitionIndex = i;
+      forward.push(s);
+    } else {
+      back.push(s);
+    }
+  }
+  if (back.length < 3 || forward.length < 3) {
+    return { tempoMult: 1.0, tempoTag: 'Normal', metrics: { reason: 'too-short' } };
+  }
+
+  const speeds = [];
+  for (let i = 1; i < samples.length; i++) {
+    const a = samples[i - 1];
+    const b = samples[i];
+    const dt = Math.max(1, b.t - a.t);
+    speeds.push({ t: b.t, v: Math.hypot(b.x - a.x, b.y - a.y) / dt, phase: b.phase });
+  }
+  const backSpeeds = speeds.filter((s) => s.phase !== 'forward');
+  const forwardSpeeds = speeds.filter((s) => s.phase === 'forward');
+  const peakBack = Math.max(0.001, ...backSpeeds.map((s) => s.v));
+  const peakForward = Math.max(0.001, ...forwardSpeeds.map((s) => s.v));
+
+  const jerkScore = (phaseSpeeds, peak) => {
+    if (phaseSpeeds.length < 3) return 0;
+    let sum = 0;
+    let count = 0;
+    for (let i = 2; i < phaseSpeeds.length; i++) {
+      const a0 = phaseSpeeds[i - 1].v - phaseSpeeds[i - 2].v;
+      const a1 = phaseSpeeds[i].v - phaseSpeeds[i - 1].v;
+      sum += Math.abs(a1 - a0);
+      count++;
+    }
+    return count > 0 ? (sum / count) / peak : 0;
+  };
+  const backJerk = jerkScore(backSpeeds, peakBack);
+  const forwardJerk = jerkScore(forwardSpeeds, peakForward);
+
+  const pauseThresh = peakBack * 0.12;
+  const transitionT = samples[transitionIndex].t;
+  let pauseMsRaw = 0;
+  for (let i = 1; i < samples.length; i++) {
+    const mid = (samples[i].t + samples[i - 1].t) / 2;
+    if (Math.abs(mid - transitionT) > 200) continue;
+    const dt = Math.max(0, samples[i].t - samples[i - 1].t);
+    if (dt <= 0) continue;
+    const v = Math.hypot(samples[i].x - samples[i - 1].x, samples[i].y - samples[i - 1].y) / dt;
+    if (v < pauseThresh) pauseMsRaw += dt;
+  }
+  const pauseMs = Math.max(0, pauseMsRaw - 30);
+
+  let peakIdx = 0;
+  for (let i = 0; i < forwardSpeeds.length; i++) {
+    if (forwardSpeeds[i].v > forwardSpeeds[peakIdx].v) peakIdx = i;
+  }
+  const releaseV = forwardSpeeds.length > 0 ? forwardSpeeds[forwardSpeeds.length - 1].v : 0;
+  const decelFrac = peakForward > 0 ? clamp(1 - releaseV / peakForward, 0, 1) : 0;
+  const followThrough = forwardSpeeds.length > 1 ? clamp(peakIdx / (forwardSpeeds.length - 1), 0, 1) : 0.5;
+
+  let mult = 1.0;
+  const tags = [];
+  const focusBias = clamp((focus - 50) / 100, -0.5, 0.5);
+
+  const pauseTolerance = 20 * (1 - focusBias * 0.4);
+  if (pauseMs > pauseTolerance) {
+    mult *= 1 + clamp((pauseMs - pauseTolerance) / 100, 0, 0.9);
+    tags.push('Paused');
+  }
+  if (backJerk > 0.18) {
+    mult *= 1 + clamp((backJerk - 0.18) * 2.0, 0, 0.5);
+    tags.push('Jerky Back');
+  }
+  if (forwardJerk > 0.30) {
+    mult *= 1 + clamp((forwardJerk - 0.30) * 1.8, 0, 0.5);
+    tags.push('Jerky Fwd');
+  }
+  if (decelFrac > 0.65) {
+    mult *= 1 + clamp((decelFrac - 0.65) * 1.4, 0, 0.5);
+    tags.push('Decel');
+  }
+  if (followThrough >= 0.70 && tags.length === 0) {
+    mult *= 0.88;
+    tags.push('Committed');
+  } else if (followThrough < 0.25) {
+    mult *= 1.15;
+    tags.push('Coasted');
+  }
+
+  if (mult > 1.0) {
+    const composureSoften = clamp(1 - (composure - 50) * 0.003, 0.85, 1.15);
+    mult = 1 + (mult - 1) * composureSoften;
+  }
+
+  const pureBonus = tags.length === 1 && tags[0] === 'Committed'
+    && backJerk < 0.12 && forwardJerk < 0.18 && pauseMs < 15 && decelFrac < 0.05;
+  if (pureBonus) {
+    mult = 0.78;
+    tags.length = 0;
+    tags.push('Pure');
+  }
+
+  return {
+    tempoMult: +mult.toFixed(3),
+    tempoTag: tags.length ? tags.join(' + ') : 'Smooth',
+    metrics: { backJerk, forwardJerk, pauseMs, decelFrac, followThrough, peakBack, peakForward },
+  };
+};
+
 const speedFromPower = (powerPct, club = CLUBS[0]) => {
   const powerFrac = clamp(powerPct / 100, 0, 1.2);
   const targetCarryWorld = (club.carryYards / YARDS_PER_WORLD) * powerFrac;
@@ -2907,7 +3027,16 @@ export default function App() {
     setBallHeight(flightRef.current.z);
     shotTracerRef.current = [];
     setShotTracer([]);
-    const tempoEmoji = tempoTag === 'Perfect' ? '✨' : tempoTag === 'Smooth' ? '👌' : tempoTag === 'Rushed' ? '⚡' : tempoTag === 'Slow' ? '🐢' : tempoTag === 'Frozen' ? '🧊' : tempoTag === 'Decel' ? '🪫' : tempoTag === 'Snappy' ? '💥' : '';
+    // Pick an emoji from the tempo tag. "Pure" and "Committed" are the
+    // two bonuses; everything else tags one or more penalties.
+    const tempoEmoji = tempoTag === 'Pure' ? '✨'
+      : tempoTag === 'Committed' ? '🎯'
+      : tempoTag === 'Smooth' ? '👌'
+      : tempoTag.includes('Paused') ? '🧊'
+      : tempoTag.includes('Jerky') ? '💥'
+      : tempoTag.includes('Decel') ? '🪫'
+      : tempoTag.includes('Coasted') ? '🐢'
+      : '';
     setTempoLabel(`${tempoEmoji}${tempoTag} • ${shotShapeLabel} • ${launch.effectivePower}%`);
     setStrokesCurrent((s) => s + 1);
     setShotControlOpen(false);
@@ -2978,11 +3107,12 @@ export default function App() {
         onPanResponderTerminationRequest: () => false,
         onShouldBlockNativeResponder: () => true,
         onPanResponderGrant: (evt) => {
+          const now = Date.now();
           swingStartRef.current = { x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY };
           swingLowestRef.current = { x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY };
           swingTrailRef.current = [];
-          fullSwingPathRef.current = [{ x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY, phase: 'start' }];
-          backswingStartTimeRef.current = Date.now();
+          fullSwingPathRef.current = [{ x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY, t: now, phase: 'start' }];
+          backswingStartTimeRef.current = now;
           transitionTimeRef.current = 0;
           setSwingPhase('backswing');
           powerRef.current = 0;
@@ -2996,7 +3126,7 @@ export default function App() {
           const currentX = evt.nativeEvent.pageX;
           const dy = currentY - swingStartRef.current.y;
 
-          fullSwingPathRef.current.push({ x: currentX, y: currentY, phase: swingLockedRef.current ? 'forward' : 'back' });
+          fullSwingPathRef.current.push({ x: currentX, y: currentY, t: Date.now(), phase: swingLockedRef.current ? 'forward' : 'back' });
 
           if (!swingLockedRef.current) {
             // BACKSWING: dragging down charges power
@@ -3036,64 +3166,31 @@ export default function App() {
         },
         onPanResponderRelease: (evt) => {
           if (powerRef.current > 5) {
-            // Compute tempo + acceleration strictness from top-of-backswing to release
-            const now = Date.now();
-            const forwardMs = transitionTimeRef.current > 0 ? now - transitionTimeRef.current : 999;
-            const releaseY = evt?.nativeEvent?.pageY ?? (swingLowestRef.current.y - 24);
-            const forwardTravelPx = Math.max(1, swingLowestRef.current.y - releaseY);
-            const accelPxPerMs = forwardTravelPx / Math.max(1, forwardMs);
-            const overpowerPct = Math.max(0, peakPowerRef.current - 100);
-            let tempoMult = 1.0;
-            let tempoTag = 'Normal';
+            // Final sample — record release point so decel/follow-through
+            // can read the pointer's speed at the very end of the swing.
+            const releaseNow = Date.now();
+            const releaseX = evt?.nativeEvent?.pageX ?? swingLowestRef.current.x;
+            const releaseY = evt?.nativeEvent?.pageY ?? swingLowestRef.current.y;
+            fullSwingPathRef.current.push({ x: releaseX, y: releaseY, t: releaseNow, phase: swingLockedRef.current ? 'forward' : 'back' });
 
-            // Focus widens the Perfect tempo window. 0 → ±15ms tighter, 100 → ±15ms wider.
+            // Evaluate tempo on the full timestamped trajectory.
             const focusStat = selectedMentalStats.focus ?? 50;
-            const focusBias = Math.round((focusStat - 50) * 0.3);
-            const perfectLo = 85 - focusBias;
-            const perfectHi = 165 + focusBias;
+            const composureStat = selectedMentalStats.composure ?? 50;
+            const overpowerPct = Math.max(0, peakPowerRef.current - 100);
+            const tempo = evaluateTempo(fullSwingPathRef.current, { focus: focusStat, composure: composureStat });
+            let { tempoMult, tempoTag } = tempo;
 
-            // Tighter tempo windows. Brief pause is rewarded, no pause or long pause punished.
-            if (forwardMs < perfectLo) {
-              tempoMult = 1.55;
-              tempoTag = 'Rushed';
-            } else if (forwardMs <= perfectHi) {
-              tempoMult = 0.86;
-              tempoTag = 'Perfect';
-              hapticDoubleTap();
-            } else if (forwardMs <= 240) {
-              tempoMult = 1.0;
-              tempoTag = 'Smooth';
-            } else if (forwardMs <= 320) {
-              tempoMult = 1.18;
-              tempoTag = 'Slow';
-            } else {
-              tempoMult = 1.45;
-              tempoTag = 'Frozen';
-            }
-
-            // Acceleration penalty: lazy forward acceleration or ultra-violent yank both hurt.
-            if (accelPxPerMs < 0.32) {
-              tempoMult *= 1.24;
-              tempoTag = tempoTag === 'Perfect' ? 'Decel' : tempoTag;
-            } else if (accelPxPerMs > 1.05) {
-              tempoMult *= 1.16;
-              if (tempoTag === 'Normal' || tempoTag === 'Smooth') tempoTag = 'Snappy';
-            }
-
-            // Overpower is high risk. 110% gets stricter, 120% gets much stricter.
+            // Overpower risk layers on top of tempo: swinging past 100%
+            // amplifies any tempo penalty (smooth commitment is harder
+            // when you're swinging out of your shoes).
             if (overpowerPct >= 20) {
               tempoMult *= 1.42;
             } else if (overpowerPct >= 10) {
               tempoMult *= 1.22;
             }
 
-            // Composure softens penalties above neutral (bonuses like Perfect stay unchanged).
-            // 0 composure → penalties ×1.15, 50 → unchanged, 100 → ×0.85.
-            if (tempoMult > 1.0) {
-              const composureStat = selectedMentalStats.composure ?? 50;
-              const composureFactor = clamp(1 - (composureStat - 50) * 0.003, 0.85, 1.15);
-              tempoMult = 1 + (tempoMult - 1) * composureFactor;
-            }
+            // Haptic reward for a Pure swing.
+            if (tempoTag === 'Pure') hapticDoubleTap();
 
             strikeBall(swingDeviationRef.current, { tempoMult, tempoTag });
           } else {
