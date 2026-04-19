@@ -1494,7 +1494,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.9';
+const BUILD_VERSION = 'IGT v3.10';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1857,6 +1857,13 @@ export default function App() {
   const swingLockedRef = useRef(false); // true once forward swing starts
   const [lastShotStats, setLastShotStats] = useState(null);
   const [showShotStats, setShowShotStats] = useState(false);
+  // Swing log: numbered, persisted telemetry for feedback on tempo tuning.
+  // Stored in localStorage so IDs persist across reloads. Last 50 swings.
+  const [swingLog, setSwingLog] = useState([]);
+  const [showSwingLog, setShowSwingLog] = useState(false);
+  const [swingLogToast, setSwingLogToast] = useState('');
+  const pendingSwingRef = useRef(null);
+  const nextSwingIdRef = useRef(1);
   const shotStartPosRef = useRef(null);
   const shotLandPosRef = useRef(null);
   const shotPeakHeightRef = useRef(0);
@@ -1892,6 +1899,60 @@ export default function App() {
   const holeIndexRef = useRef(0);
   const roundWindRef = useRef(roundWind);
   const [draggingSpinDot, setDraggingSpinDot] = useState(false);
+
+  // Load swing log from localStorage once on mount. Also seeds the ID
+  // counter so fresh swings continue numbering from where we left off.
+  useEffect(() => {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const stored = localStorage.getItem('atlasGolfSwingLog');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setSwingLog(parsed);
+          const maxId = parsed.reduce((m, e) => Math.max(m, e.idNum || 0), 0);
+          nextSwingIdRef.current = maxId + 1;
+        }
+      }
+    } catch (err) { /* ignore */ }
+  }, []);
+
+  const pushSwingLog = (entry) => {
+    setSwingLog((prev) => {
+      const next = [entry, ...prev].slice(0, 50);
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('atlasGolfSwingLog', JSON.stringify(next));
+        }
+      } catch (err) { /* ignore quota errors */ }
+      return next;
+    });
+  };
+
+  const copyToClipboard = async (text) => {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback: create a hidden textarea, select, execCommand
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      return true;
+    } catch { return false; }
+  };
+
+  const copySwingEntry = async (entry) => {
+    const ok = await copyToClipboard(JSON.stringify(entry, null, 2));
+    setSwingLogToast(ok ? `Swing #${entry.id} copied` : 'Copy failed');
+    setTimeout(() => setSwingLogToast(''), 1800);
+  };
 
   const safeHoleIndex = clamp(holeIndex, 0, Math.max(0, ACTIVE_HOLES.length - 1));
   const currentHole = ACTIVE_HOLES[safeHoleIndex] || ACTIVE_HOLES[0];
@@ -2354,9 +2415,26 @@ export default function App() {
               roll,
               totalDist,
               peakHeight: Math.round(shotPeakHeightRef.current * 3),
-              endLie
+              endLie,
+              swingId: pendingSwingRef.current?.id,
             } : null);
             setShowShotStats(true);
+            // Finalise the pending swing record and push to the log.
+            if (pendingSwingRef.current) {
+              const entry = {
+                ...pendingSwingRef.current,
+                shot: {
+                  carry,
+                  roll,
+                  totalDist,
+                  peakHeightFt: Math.round(shotPeakHeightRef.current * 3),
+                  curveDeg: Math.round(shotCurveDegRef.current * 10) / 10,
+                  endLie,
+                },
+              };
+              pushSwingLog(entry);
+              pendingSwingRef.current = null;
+            }
             shotStartPosRef.current = null;
             // Auto-select best club for remaining distance
             if (endLie !== 'green') {
@@ -3216,6 +3294,46 @@ export default function App() {
 
             // Haptic reward for a Pure swing.
             if (tempoTag === 'Pure') hapticDoubleTap();
+
+            // Stage a swing log record. Finalised with shot-result fields
+            // (carry / roll / total / endLie) when the ball comes to rest.
+            const idNum = nextSwingIdRef.current;
+            nextSwingIdRef.current = idNum + 1;
+            pendingSwingRef.current = {
+              id: String(idNum).padStart(4, '0'),
+              idNum,
+              timestamp: new Date().toISOString(),
+              version: BUILD_VERSION,
+              club: selectedClub.key,
+              clubName: selectedClub.name,
+              powerPct: Math.round(peakPowerRef.current),
+              overpowerPct,
+              golfer: {
+                id: selectedGolfer?.id,
+                name: selectedGolfer?.name,
+                stats: selectedGolferStats,
+                mental: selectedMentalStats,
+              },
+              clubEquipment: selectedEquipmentItem?.id || null,
+              clubStats: selectedClubStats,
+              tempo: {
+                tag: tempoTag,
+                mult: +tempoMult.toFixed(3),
+                metrics: tempo.metrics,
+              },
+              deviation: {
+                backPx: +swingDeviationRef.current.toFixed(3),
+                degrees: null, // filled by strikeBall via shot stats
+              },
+              startLie: currentLie,
+              samples: fullSwingPathRef.current.map((s) => ({
+                x: Math.round(s.x * 100) / 100,
+                y: Math.round(s.y * 100) / 100,
+                t: s.t,
+                phase: s.phase,
+              })),
+              shot: null, // filled when ball rests
+            };
 
             strikeBall(swingDeviationRef.current, { tempoMult, tempoTag });
           } else {
@@ -4748,7 +4866,12 @@ export default function App() {
         {showShotStats && lastShotStats && !ballMoving ? (
           <Pressable style={styles.shotStatsOverlay} onPress={() => setShowShotStats(false)}>
             <View style={styles.shotStatsCard}>
-              <Text style={styles.shotStatsTitle}>📊 Shot Stats</Text>
+              <View style={styles.shotStatsHeaderRow}>
+                <Text style={styles.shotStatsTitle}>📊 Shot Stats</Text>
+                {lastShotStats.swingId ? (
+                  <Text style={styles.shotStatsSwingId}>#{lastShotStats.swingId}</Text>
+                ) : null}
+              </View>
 
               {/* Swing Path Visualization */}
               {lastShotStats.swingPath && lastShotStats.swingPath.length > 2 ? (
@@ -4843,9 +4966,97 @@ export default function App() {
                   <Text style={styles.shotStatValue}>{(SURFACE_PHYSICS[lastShotStats.endLie] || SURFACE_PHYSICS.rough).emoji} {(SURFACE_PHYSICS[lastShotStats.endLie] || SURFACE_PHYSICS.rough).label}</Text>
                 </View>
               </View>
-              <Text style={styles.shotStatsDismiss}>Tap to dismiss</Text>
+              <View style={styles.shotStatsActions}>
+                <Pressable
+                  style={styles.shotStatsActionBtn}
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    const entry = swingLog.find((s) => s.id === lastShotStats.swingId);
+                    if (entry) copySwingEntry(entry);
+                  }}
+                >
+                  <Text style={styles.shotStatsActionText}>📋 Copy Swing JSON</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.shotStatsActionBtn}
+                  onPress={(e) => { e.stopPropagation?.(); setShowSwingLog(true); }}
+                >
+                  <Text style={styles.shotStatsActionText}>📜 Swing Log</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.shotStatsDismiss}>Tap outside to dismiss</Text>
             </View>
           </Pressable>
+        ) : null}
+
+        {/* Swing Log browser — opens on demand; lists recent swings
+            with tempo tag + per-swing copy button so you can paste any
+            swing's full telemetry into a feedback thread. */}
+        {showSwingLog ? (
+          <Pressable style={styles.swingLogOverlay} onPress={() => setShowSwingLog(false)}>
+            <Pressable style={styles.swingLogCard} onPress={(e) => e.stopPropagation?.()}>
+              <View style={styles.swingLogHeader}>
+                <Text style={styles.swingLogTitle}>📜 Swing Log</Text>
+                <Pressable onPress={() => setShowSwingLog(false)}>
+                  <Text style={styles.swingLogClose}>✕</Text>
+                </Pressable>
+              </View>
+              {swingLog.length === 0 ? (
+                <Text style={styles.swingLogEmpty}>No swings logged yet. Hit a shot to start.</Text>
+              ) : (
+                <ScrollView style={styles.swingLogScroll}>
+                  {swingLog.map((entry) => (
+                    <View key={entry.id} style={styles.swingLogRow}>
+                      <View style={styles.swingLogRowMain}>
+                        <Text style={styles.swingLogRowId}>#{entry.id}</Text>
+                        <Text style={styles.swingLogRowTag}>{entry.tempo?.tag || '—'}</Text>
+                        <Text style={styles.swingLogRowMult}>{entry.tempo?.mult?.toFixed(2) || '—'}×</Text>
+                      </View>
+                      <View style={styles.swingLogRowSub}>
+                        <Text style={styles.swingLogRowSubText}>
+                          {entry.club} · {entry.powerPct}% · {entry.shot?.totalDist ?? '—'}y
+                        </Text>
+                        <Pressable onPress={() => copySwingEntry(entry)}>
+                          <Text style={styles.swingLogRowCopy}>📋 Copy</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+              <View style={styles.swingLogFooter}>
+                <Pressable
+                  style={styles.swingLogFooterBtn}
+                  onPress={async () => {
+                    const ok = await copyToClipboard(JSON.stringify(swingLog, null, 2));
+                    setSwingLogToast(ok ? `All ${swingLog.length} swings copied` : 'Copy failed');
+                    setTimeout(() => setSwingLogToast(''), 1800);
+                  }}
+                >
+                  <Text style={styles.swingLogFooterBtnText}>📋 Copy All</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.swingLogFooterBtn, styles.swingLogFooterBtnDanger]}
+                  onPress={() => {
+                    setSwingLog([]);
+                    try { if (typeof localStorage !== 'undefined') localStorage.removeItem('atlasGolfSwingLog'); } catch {}
+                    nextSwingIdRef.current = 1;
+                    setSwingLogToast('Log cleared');
+                    setTimeout(() => setSwingLogToast(''), 1500);
+                  }}
+                >
+                  <Text style={styles.swingLogFooterBtnText}>🗑 Clear</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        ) : null}
+
+        {/* Transient toast for copy / clear confirmations */}
+        {swingLogToast ? (
+          <View pointerEvents="none" style={styles.swingLogToast}>
+            <Text style={styles.swingLogToastText}>{swingLogToast}</Text>
+          </View>
         ) : null}
       </View>
     </SafeAreaView>
@@ -6918,5 +7129,167 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textAlign: 'center',
     marginTop: 12
-  }
+  },
+  shotStatsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  shotStatsSwingId: {
+    color: '#9bd8ff',
+    fontSize: 13,
+    fontWeight: '800',
+    fontFamily: 'monospace',
+  },
+  shotStatsActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 14,
+    gap: 8,
+  },
+  shotStatsActionBtn: {
+    flex: 1,
+    backgroundColor: 'rgba(80,140,90,0.4)',
+    borderWidth: 1,
+    borderColor: 'rgba(150,220,170,0.4)',
+    borderRadius: 6,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  shotStatsActionText: {
+    color: '#d8f4dd',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  swingLogOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 120,
+  },
+  swingLogCard: {
+    backgroundColor: '#0f1f14',
+    borderWidth: 1,
+    borderColor: 'rgba(120,200,140,0.4)',
+    borderRadius: 10,
+    padding: 14,
+    width: '88%',
+    maxWidth: 420,
+    maxHeight: '80%',
+  },
+  swingLogHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  swingLogTitle: {
+    color: '#d8f4dd',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  swingLogClose: {
+    color: '#9bd8ff',
+    fontSize: 18,
+    fontWeight: '800',
+    paddingHorizontal: 6,
+  },
+  swingLogEmpty: {
+    color: 'rgba(200,220,200,0.6)',
+    textAlign: 'center',
+    paddingVertical: 20,
+    fontSize: 12,
+  },
+  swingLogScroll: {
+    maxHeight: 360,
+  },
+  swingLogRow: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(120,200,140,0.12)',
+    paddingVertical: 8,
+  },
+  swingLogRowMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  swingLogRowId: {
+    color: '#9bd8ff',
+    fontFamily: 'monospace',
+    fontWeight: '800',
+    fontSize: 13,
+    minWidth: 52,
+  },
+  swingLogRowTag: {
+    flex: 1,
+    color: '#d8f4dd',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  swingLogRowMult: {
+    color: '#f0c040',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    fontWeight: '700',
+  },
+  swingLogRowSub: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 2,
+    paddingLeft: 52,
+  },
+  swingLogRowSubText: {
+    color: 'rgba(200,220,200,0.65)',
+    fontSize: 11,
+  },
+  swingLogRowCopy: {
+    color: '#9bd8ff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  swingLogFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    gap: 8,
+  },
+  swingLogFooterBtn: {
+    flex: 1,
+    backgroundColor: 'rgba(80,140,90,0.35)',
+    borderRadius: 6,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  swingLogFooterBtnDanger: {
+    backgroundColor: 'rgba(180,60,60,0.35)',
+  },
+  swingLogFooterBtnText: {
+    color: '#d8f4dd',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  swingLogToast: {
+    position: 'absolute',
+    top: 60,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 130,
+  },
+  swingLogToastText: {
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    color: '#d8f4dd',
+    borderWidth: 1,
+    borderColor: 'rgba(120,200,140,0.5)',
+    borderRadius: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    fontSize: 12,
+    fontWeight: '700',
+    overflow: 'hidden',
+  },
 });
