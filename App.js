@@ -1538,19 +1538,16 @@ export default function App() {
             const shotCurveDeg = shotCurveDegRef.current;
             if (Math.abs(shotCurveDeg) > 0.01) {
               const aim = shotAimAngleRef.current;
-              const perpDir = { x: -Math.sin(aim), y: Math.cos(aim) };
-              const lateralAccel = shotCurveDeg * CURVE_FORCE;
-              // Apply curve as a direction change, not a speed boost
-              // Add lateral force but also slightly reduce forward component
               const fwdDir = { x: Math.cos(aim), y: Math.sin(aim) };
+              const perpDir = { x: -Math.sin(aim), y: Math.cos(aim) };
               const fwdSpeed = vel.x * fwdDir.x + vel.y * fwdDir.y;
-              const lateralDelta = lateralAccel * dt;
-              vel.x += perpDir.x * lateralDelta;
-              vel.y += perpDir.y * lateralDelta;
-              // Drag forward slightly to conserve energy (sliced balls don't go farther)
-              const fwdDrag = Math.max(0.998, 1 - Math.abs(lateralDelta) * 0.001);
-              vel.x *= fwdDrag;
-              vel.y *= fwdDrag;
+              const sideSpeed = vel.x * perpDir.x + vel.y * perpDir.y;
+              const sideTarget = clamp((shotCurveDeg / 85) * Math.max(0, fwdSpeed) * 0.55, -Math.max(0, fwdSpeed) * 0.65, Math.max(0, fwdSpeed) * 0.65);
+              const sideBlend = clamp(CURVE_FORCE * dt * 0.55, 0, 0.12);
+              const nextSideSpeed = sideSpeed + (sideTarget - sideSpeed) * sideBlend;
+              const nextFwdSpeed = Math.max(0, fwdSpeed * (1 - Math.abs(nextSideSpeed - sideSpeed) * 0.018));
+              vel.x = fwdDir.x * nextFwdSpeed + perpDir.x * nextSideSpeed;
+              vel.y = fwdDir.y * nextFwdSpeed + perpDir.y * nextSideSpeed;
             }
           }
 
@@ -2551,7 +2548,7 @@ export default function App() {
     rayToWorldEdge
   );
 
-  const aimLineDots = [0, 0.25, 0.5, 0.75, 1].map((pct) => {
+  const buildAimPoint = (pct) => {
     const worldDist = aimGuideWorld * pct;
     const previewCurveStrength = CURVE_FORCE * 0.55 + CURVE_LAUNCH_BLEND * 0.08;
     const curveOffset = Math.sin(pct * Math.PI * 0.95) * aimGuideWorld * degToRad(totalPreviewCurveDeg) * previewCurveStrength * pct;
@@ -2561,19 +2558,25 @@ export default function App() {
       y: ball.y + aimDir.y * worldDist + aimPerp.y * curveOffset + loftOffset
     };
     const screen = toScreen(point);
+    return { pct, point, x: screen.x, y: screen.y };
+  };
+
+  const aimCurvePoints = Array.from({ length: 17 }, (_, index) => buildAimPoint(index / 16));
+  const aimLineDots = [0, 0.25, 0.5, 0.75, 1].map((pct) => {
+    const built = buildAimPoint(pct);
     return {
       key: `aim-dot-${pct}`,
       pct,
-      x: screen.x,
-      y: screen.y,
+      x: built.x,
+      y: built.y,
       size: pct === 0 ? 0 : 4 + pct * 3,
       opacity: pct === 0 ? 0 : 0.5 + pct * 0.35,
       color: '#ffdd44'
     };
   });
 
-  const aimPathSegments = aimLineDots.slice(0, -1).map((dot, index) => {
-    const next = aimLineDots[index + 1];
+  const aimPathSegments = aimCurvePoints.slice(0, -1).map((dot, index) => {
+    const next = aimCurvePoints[index + 1];
     const dx = next.x - dot.x;
     const dy = next.y - dot.y;
     const length = Math.hypot(dx, dy);
