@@ -3304,8 +3304,8 @@ export default function App() {
           {/* Shot Tracer */}
           {shotTracer.length > 2 ? shotTracer.map((pt, i) => {
             if (i === 0) return null;
-            const sx = (pt.x - cameraRef.current.x) * pixelsPerWorld + viewportW / 2;
-            const sy = (pt.y - cameraRef.current.y) * pixelsPerWorld + viewportH / 2 - (pt.z || 0) * pixelsPerWorld * 0.35;
+            const sx = (pt.x - cameraRef.current.x) * pixelsPerWorld + viewWidth / 2;
+            const sy = (pt.y - cameraRef.current.y) * pixelsPerWorld + viewHeight / 2 - (pt.z || 0) * pixelsPerWorld * 0.35;
             const opacity = Math.max(0.05, (i / shotTracer.length) * 0.9);
             return (
               <View
