@@ -290,7 +290,7 @@ const CLUBS = [
   { key: '9I', name: '9-Iron',      short: '9I', v: 128, angle: 45, accMult: 0.9, powerRate: 1.3 },
   { key: 'PW', name: 'Pitch Wedge', short: 'PW', v: 112, angle: 51, accMult: 0.85, powerRate: 1.35 },
   { key: 'SW', name: 'Sand Wedge',  short: 'SW', v: 96,  angle: 58, accMult: 0.8, powerRate: 1.4 },
-  { key: 'PT', name: 'Putter',      short: 'PT', v: 72,  angle: 0,  accMult: 0.55, powerRate: 0.7 },
+  { key: 'PT', name: 'Putter',      short: 'PT', v: 110, angle: 0,  accMult: 0.55, powerRate: 0.55 },
 ];
 
 const GREEN_SLOPE = { angle: Math.PI * 0.3, mag: 7 };
@@ -702,37 +702,49 @@ function simulatePutt(startX, startY, aimAngle, accuracy, power, club, spinX) {
 }
 
 function drawShotPredict(ctx, points) {
-  ctx.fillStyle = 'rgba(0,0,0,0.28)';
-  for (let i = 2; i < points.length; i++) {
-    const p = points[i];
-    if (p.x < 0 || p.x > WORLD_W || p.y < 0 || p.y > WORLD_H) continue;
-    ctx.fillRect(Math.floor(p.x), Math.floor(p.y), 2, 1);
-  }
-  for (let i = 2; i < points.length; i++) {
-    const p = points[i];
-    if (p.x < 0 || p.x > WORLD_W || p.y < 0 || p.y > WORLD_H) continue;
-    const tp = i / points.length;
-    const a = 0.92 - 0.35 * tp;
-    ctx.fillStyle = `rgba(255,246,216,${a.toFixed(3)})`;
-    ctx.fillRect(Math.floor(p.x) - 1, Math.floor(p.y - p.z) - 1, 3, 3);
-  }
-  for (let i = 2; i < points.length; i++) {
-    const p = points[i];
-    if (p.x < 0 || p.x > WORLD_W || p.y < 0 || p.y > WORLD_H) continue;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(Math.floor(p.x), Math.floor(p.y - p.z), 1, 1);
-  }
-  if (points.length > 0) {
-    const last = points[points.length - 1];
-    const lx = Math.floor(last.x), ly = Math.floor(last.y);
-    ctx.fillStyle = '#e33838';
-    ctx.fillRect(lx - 3, ly, 7, 1);
-    ctx.fillRect(lx, ly - 3, 1, 7);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(lx - 1, ly - 1, 3, 3);
-    ctx.fillStyle = '#e33838';
-    ctx.fillRect(lx, ly, 1, 1);
-  }
+  if (points.length < 2) return;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255,246,216,0.35)';
+  ctx.lineWidth = 3.8;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y - points[0].z);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y - points[i].z);
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255,246,216,0.85)';
+  ctx.lineWidth = 2.0;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y - points[0].z);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y - points[i].z);
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255,255,255,1)';
+  ctx.lineWidth = 0.9;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y - points[0].z);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y - points[i].z);
+  ctx.stroke();
+
+  const last = points[points.length - 1];
+  const lx = Math.floor(last.x), ly = Math.floor(last.y);
+  ctx.fillStyle = '#e33838';
+  ctx.fillRect(lx - 3, ly, 7, 1);
+  ctx.fillRect(lx, ly - 3, 1, 7);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(lx - 1, ly - 1, 3, 3);
+  ctx.fillStyle = '#e33838';
+  ctx.fillRect(lx, ly, 1, 1);
+  ctx.restore();
 }
 
 function drawFlightTrail(ctx, trail) {
@@ -1369,7 +1381,10 @@ function drawMeter(ctx, viewW, viewH, dpr, label, value, isAccuracy) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
   ctx.fillStyle = '#f5f5ec';
-  ctx.fillText(label, x + w / 2, y - 6 * dpr);
+  const labelText = isAccuracy
+    ? `ACCURACY  ${value > 0.05 ? '→ ' + (value * 100 | 0) + '% fade' : value < -0.05 ? (-value * 100 | 0) + '% draw ←' : 'pure'}`
+    : `POWER  ${Math.round(value * 100)}%`;
+  ctx.fillText(labelText, x + w / 2, y - 6 * dpr);
   ctx.fillStyle = '#111';
   ctx.fillRect(x, y, w, h);
   if (isAccuracy) {
