@@ -1811,7 +1811,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.23 · GS spike v0.3';
+const BUILD_VERSION = 'IGT v3.24 · GS spike v0.3';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -2134,12 +2134,17 @@ const getSurfaceAtPoint = (hole, point) => {
   if (nearGreenPoly || nearGreenRect) return 'fringe';
   const fairwayPolys = editorVectors?.terrain?.fairway?.map(vectorShapeToPolygon) || [];
   if (fairwayPolys.some((poly) => pointInPolygon(point, poly))) return 'fairway';
-  if (fairwayPolys.some((poly) => pointNearPolygon(point, poly, 12))) return 'secondCut';
+  if (fairwayPolys.some((poly) => pointNearPolygon(point, poly, 20))) return 'secondCut';
   if (terrain?.fairway?.some((f) => pointInRect(point, f))) return 'fairway';
-  if (terrain?.fairway?.some((f) => pointInRect(point, expandRect(f, 12)))) return 'secondCut';
-  const nearAnything = fairwayPolys.some((poly) => pointNearPolygon(point, poly, 30)) || terrain?.fairway?.some((f) => pointInRect(point, expandRect(f, 30)));
-  if (!nearAnything) return 'deepRough';
-  return 'rough';
+  if (terrain?.fairway?.some((f) => pointInRect(point, expandRect(f, 20)))) return 'secondCut';
+  // Wider rough corridor so missing the fairway doesn't instantly mean
+  // "brutal deepRough". Anything within ~80 units of a fairway/green is
+  // playable rough. Further afield falls back to the hole's background
+  // (rough by default on most custom courses; deepRough only when the
+  // course author explicitly set that background).
+  const nearAnything = fairwayPolys.some((poly) => pointNearPolygon(point, poly, 80)) || terrain?.fairway?.some((f) => pointInRect(point, expandRect(f, 80)));
+  if (nearAnything) return 'rough';
+  return hole.background === 'deepRough' ? 'deepRough' : (hole.background === 'desert' ? 'desert' : 'rough');
 };
 const estimateStraightDistance = (powerPct, club, strike = { launch: 1, spin: 1 }, distanceMult = 1) => {
   const shotRatio = clamp(powerPct / 100, 0, 1.2);
@@ -3679,14 +3684,13 @@ export default function App() {
       };
       flightRef.current = { z: 0, vz: 0 };
     } else {
-      // Short shots used to fly as high as long ones because hang time scaled
-      // linearly with launchRatio. Combining two fixes:
-      //   1) Power-curve the launchRatio (^1.3) so partial-power shots stay
-      //      flatter. Full shots (ratio=1) unchanged.
-      //   2) Lower the hang-time base from (3.2 + launch*0.8) to
-      //      (2.4 + launch*0.55) so arcs are lower across the board.
-      const trajectoryScale = Math.pow(clamp(launch.launchRatio, 0, 1.1), 1.3);
-      const targetHangTime = (2.4 + selectedClub.launch * 0.55) * trajectoryScale;
+      // Launch vz was still using the flattened formula from the previous
+      // "short shots balloon" fix (hang-time base 2.4 + launch*0.55 and a
+      // ^1.3 power-curve on launchRatio). That left shots visibly low. Back
+      // to the original linear mapping with the (3.2 + launch*0.8) base so
+      // peak heights match the old feel; short-shot feel is now tuned via
+      // the softer wind force (v3.22) instead of squashing the trajectory.
+      const targetHangTime = (3.2 + selectedClub.launch * 0.8) * clamp(launch.launchRatio, 0, 1.1);
       const launchVz = (GRAVITY * targetHangTime * 0.5) * launch.shotMetrics.launchAdjust * clamp(0.94 + (launch.spinFactor - 1) * 0.35, 0.82, 1.12);
       flightRef.current = {
         z: 0.08,
