@@ -1832,7 +1832,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.26 · GS spike v0.6';
+const BUILD_VERSION = 'IGT v3.27 · GS spike v0.6';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -3525,16 +3525,23 @@ export default function App() {
           };
           const vn = vel.x * normal.x + vel.y * normal.y;
           if (isAirborne) {
-            // Branch/trunk hit in the air: soft restitution, heavy tangential
-            // damping, and kill upward motion so the ball drops into the base.
+            // Branches absorb the ball's energy instead of reflecting it.
+            // Previously this code applied a 1.2x restitution reflection
+            // AND a 0.4x tangential damp — a ball flying into a canopy
+            // would reverse direction and plummet, which showed up on
+            // screen as a sharp right-angle kink in the trajectory.
+            // New behavior: zero out the component of velocity heading
+            // INTO the tree (no pass-through, no bounce back) and bleed
+            // the tangential component so the ball glances off and falls.
             if (vn < 0) {
-              vel.x -= (1 + 0.2) * vn * normal.x;
-              vel.y -= (1 + 0.2) * vn * normal.y;
+              vel.x -= vn * normal.x;
+              vel.y -= vn * normal.y;
             }
-            vel.x *= 0.4;
-            vel.y *= 0.4;
+            const absorb = 0.65;
+            vel.x *= absorb;
+            vel.y *= absorb;
             if (flight) {
-              flight.vz = Math.min(flight.vz, 0) * 0.3;
+              flight.vz = Math.min(flight.vz, 0) * 0.7;
             }
           } else if (vn < 0) {
             vel.x -= (1 + restitution) * vn * normal.x;
