@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dimensions,
   PanResponder,
@@ -1042,6 +1042,13 @@ const COURSES = [
 
 const WORLD = { w: 1040, h: 1100 };
 const CAMERA_ZOOM = 3.2;
+// Discrete zoom steps applied on top of CAMERA_ZOOM. 1.0x matches the prior
+// default; 0.4x gives a near-full-hole overview; 2.4x is tight-to-the-ball.
+// Resets to the default at every new shot; putting-mode default is one notch
+// tighter so the player can read the line more precisely.
+const ZOOM_STEPS = [0.4, 0.6, 1.0, 1.4, 1.8, 2.4];
+const DEFAULT_ZOOM_INDEX = 2; // 1.0x
+const PUTTING_ZOOM_INDEX = 3; // 1.4x — normal default + 1
 const IS_WEB = Platform.OS === 'web';
 const MANUAL_PAN_GRACE_MS = 2200;
 const BALL_RADIUS_WORLD = 2.4;
@@ -1145,7 +1152,6 @@ const hapticDoubleTap = () => {
     playTick(0.08);
   } catch (e) { /* silent */ }
 };
-const PUTTING_ZOOM_MULT = 1.8;
 const SLOPE_FORCE = 7.5 * 0.6 * PHYSICS_CONFIG.greenSlopeInfluence;
 const PUTT_PREVIEW_DT = 1 / 120;
 const PUTT_PREVIEW_MAX_TICKS = 1400;
@@ -2198,12 +2204,23 @@ export default function App() {
   const [puttTargetPowerPct, setPuttTargetPowerPct] = useState(null);
   const [puttSwingFeedback, setPuttSwingFeedback] = useState('');
   const basePixelsPerWorld = Math.max(viewWidth / WORLD.w, viewHeight / WORLD.h);
-  const cameraZoom = CAMERA_ZOOM * (puttingMode ? PUTTING_ZOOM_MULT : 1);
+  const [zoomLevel, setZoomLevel] = useState(DEFAULT_ZOOM_INDEX);
+  const cameraZoom = CAMERA_ZOOM * ZOOM_STEPS[zoomLevel];
   const pixelsPerWorld = basePixelsPerWorld * cameraZoom;
+  const zoomIn = useCallback(() => setZoomLevel((z) => Math.min(ZOOM_STEPS.length - 1, z + 1)), []);
+  const zoomOut = useCallback(() => setZoomLevel((z) => Math.max(0, z - 1)), []);
   const halfVpW = (viewWidth / 2) / pixelsPerWorld;
   const halfVpH = (viewHeight / 2) / pixelsPerWorld;
 
   const [holeIndex, setHoleIndex] = useState(0);
+  // Reset zoom when entering/leaving putting mode (putting gets +1 step) and
+  // on hole change. New-shot reset happens explicitly in strikeBall.
+  useEffect(() => {
+    setZoomLevel(puttingMode ? PUTTING_ZOOM_INDEX : DEFAULT_ZOOM_INDEX);
+  }, [puttingMode]);
+  useEffect(() => {
+    setZoomLevel(DEFAULT_ZOOM_INDEX);
+  }, [holeIndex]);
   const [strokesCurrent, setStrokesCurrent] = useState(0);
   const [scores, setScores] = useState(Array(ACTIVE_HOLES.length).fill(null));
   const [holeScores, setHoleScores] = useState([]); // array of {hole: number, par: number, strokes: number, name: string}
@@ -3437,6 +3454,9 @@ export default function App() {
     // Apply tempo multiplier to deviation — rushed/slow swings are less accurate
     const tempoAdjustedDeviation = clamp(deviation * tempoMult, -1, 1);
     if (sunk || ballMoving) return;
+    // Each new shot resets zoom to its mode-appropriate default so the player
+    // always lines up the next shot at a predictable zoom level.
+    setZoomLevel(puttingMode ? PUTTING_ZOOM_INDEX : DEFAULT_ZOOM_INDEX);
 
     // Pause at top drains CARRY exponentially (separate from the deviation
     // penalty above). tempoMetrics.pauseDistanceMult is 1.0 for a clean
@@ -4519,6 +4539,27 @@ export default function App() {
           <View style={StyleSheet.absoluteFill} pointerEvents="box-none" {...aimResponder.panHandlers}>
             <View style={styles.courseTintTop} pointerEvents="none" />
             <View style={styles.courseTintBottom} pointerEvents="none" />
+
+            {/* Zoom controls — right edge, mid-height. Resets on each shot. */}
+            <View style={styles.zoomStack} pointerEvents="box-none">
+              <Pressable
+                style={[styles.zoomBtn, zoomLevel >= ZOOM_STEPS.length - 1 && styles.zoomBtnDisabled]}
+                onPress={zoomIn}
+                disabled={zoomLevel >= ZOOM_STEPS.length - 1}
+              >
+                <Text style={styles.zoomBtnText}>+</Text>
+              </Pressable>
+              <View style={styles.zoomBadge} pointerEvents="none">
+                <Text style={styles.zoomBadgeText}>{ZOOM_STEPS[zoomLevel].toFixed(1)}x</Text>
+              </View>
+              <Pressable
+                style={[styles.zoomBtn, zoomLevel <= 0 && styles.zoomBtnDisabled]}
+                onPress={zoomOut}
+                disabled={zoomLevel <= 0}
+              >
+                <Text style={styles.zoomBtnText}>−</Text>
+              </Pressable>
+            </View>
 
           <View
             style={[
@@ -5819,6 +5860,43 @@ const styles = StyleSheet.create({
     right: 0,
     height: '44%',
     backgroundColor: 'rgba(255,255,255,0.05)'
+  },
+  zoomStack: {
+    position: 'absolute',
+    right: 10,
+    top: '35%',
+    alignItems: 'center',
+    gap: 6
+  },
+  zoomBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(10,14,20,0.75)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  zoomBtnDisabled: {
+    opacity: 0.35
+  },
+  zoomBtnText: {
+    color: '#f4f7ef',
+    fontSize: 22,
+    fontWeight: '700',
+    lineHeight: 24
+  },
+  zoomBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: 'rgba(10,14,20,0.55)'
+  },
+  zoomBadgeText: {
+    color: '#cfd6dd',
+    fontSize: 10,
+    fontWeight: '700'
   },
   courseTintBottom: {
     position: 'absolute',
