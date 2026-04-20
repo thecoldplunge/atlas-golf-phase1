@@ -1840,7 +1840,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.37 · GS spike v0.11.1';
+const BUILD_VERSION = 'IGT v3.38 · GS spike v0.12';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -2351,7 +2351,11 @@ export default function App() {
       opacity: 0.3 + Math.random() * 0.5
     }));
   }, [viewWidth, viewHeight]);
-  const [gameScreen, setGameScreen] = useState('menu'); // 'menu' | 'golfer-select' | 'club-select' | 'courses' | 'editor' | 'playing'
+  const [gameScreen, setGameScreen] = useState('menu'); // 'menu' | 'golfer-select' | 'club-select' | 'courses' | 'editor' | 'playing' | 'golf-story'
+  // What to navigate to after the Character → Bag flow. 'course' = normal
+  // round picker, 'golf-story' = launch the Golf Story spike with the
+  // chosen golfer + bag.
+  const [selectionTarget, setSelectionTarget] = useState('course');
   const [selectedGolfer, setSelectedGolfer] = useState(JSON.parse(JSON.stringify(GOLFERS[0])));
   const [selectedBag, setSelectedBag] = useState([...DEFAULT_BAG]);
   const [bagPickerCategory, setBagPickerCategory] = useState('drivers');
@@ -4517,7 +4521,7 @@ export default function App() {
 
               <Pressable
                 style={styles.spaceMenuBtnActive}
-                onPress={() => setGameScreen('golfer-select')}
+                onPress={() => { setSelectionTarget('course'); setGameScreen('golfer-select'); }}
               >
                 <Text style={styles.spaceMenuBtnLeft}>EXHIBITION</Text>
                 <Text style={styles.spaceMenuBtnRight}>QUICK 9 &gt;</Text>
@@ -4529,7 +4533,7 @@ export default function App() {
 
               <Pressable
                 style={styles.spaceMenuBtnActive}
-                onPress={() => setGameScreen('golf-story')}
+                onPress={() => { setSelectionTarget('golf-story'); setGameScreen('golfer-select'); }}
               >
                 <Text style={styles.spaceMenuBtnLeft}>GOLF STORY</Text>
                 <Text style={styles.spaceMenuBtnRight}>TOUCH v0.11 &gt;</Text>
@@ -4562,7 +4566,14 @@ export default function App() {
 
   // ═══════════════ GOLF STORY SPIKE SCREEN ═══════════════
   if (gameScreen === 'golf-story') {
-    return <GolfStoryScreen onExit={() => setGameScreen('menu')} />;
+    return (
+      <GolfStoryScreen
+        onExit={() => setGameScreen('menu')}
+        selectedGolfer={selectedGolfer}
+        selectedBag={selectedBag}
+        equipmentCatalog={equipmentCatalog}
+      />
+    );
   }
 
   // ═══════════════ GOLFER SELECT SCREEN ═══════════════
@@ -4759,9 +4770,9 @@ export default function App() {
             <Pressable
               style={[styles.golferSelectBtn, !canProceed && styles.disabled]}
               disabled={!canProceed}
-              onPress={() => setGameScreen('courses')}
+              onPress={() => setGameScreen(selectionTarget === 'golf-story' ? 'golf-story' : 'courses')}
             >
-              <Text style={styles.golferSelectBtnText}>PLAY →</Text>
+              <Text style={styles.golferSelectBtnText}>{selectionTarget === 'golf-story' ? 'GOLF STORY →' : 'PLAY →'}</Text>
             </Pressable>
           </View>
           </View>
