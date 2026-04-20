@@ -1119,6 +1119,13 @@ const PHYSICS_CONFIG = {
 };
 const CURVE_FORCE = PHYSICS_CONFIG.curveForce;
 const CURVE_LAUNCH_BLEND = PHYSICS_CONFIG.curveLaunchBlend;
+// Magnus-style curve tuning. CURVE_STRENGTH is the per-unit-forward-speed
+// sideways acceleration factor when spinNorm=±1. Ball deflection grows
+// progressively during flight (like a real hook/slice), so the aim preview
+// and the actual flight both banana smoothly out to the landing spot.
+// Tuned so spinNorm=±1 gives ~30yd side deflection on a full driver.
+const CURVE_STRENGTH = 0.12;
+const CURVE_SPIN_DECAY_PER_SEC = 0.995;
 
 // Haptic feedback: vibrate on Android/Chrome, audio tick on iOS Safari
 const hapticBuzz = (pattern = 30) => {
@@ -1832,7 +1839,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.27 · GS spike v0.7';
+const BUILD_VERSION = 'IGT v3.28 · GS spike v0.7';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -2198,6 +2205,47 @@ const getSurfaceAtPoint = (hole, point) => {
   if (nearAnything) return 'rough';
   return hole.background === 'deepRough' ? 'deepRough' : (hole.background === 'desert' ? 'desert' : 'rough');
 };
+// Simulate the ball's horizontal trajectory so the aim-line preview uses
+// the exact same Magnus-curve physics as the live flight. Returns the path
+// (array of world-space points) from ball start to wherever the ball would
+// come to rest — carry only; rolling afterward uses the landing surface.
+const simulateAimTrajectory = ({
+  startPos,
+  aimAngleRad,
+  initialHorizSpeed,
+  spinNorm = 0,
+  totalCarryWorld,
+  maxTime = 6,
+  dt = 1 / 60
+}) => {
+  const fwdDir = { x: Math.cos(aimAngleRad), y: Math.sin(aimAngleRad) };
+  const perpDir = { x: -Math.sin(aimAngleRad), y: Math.cos(aimAngleRad) };
+  const vel = { x: fwdDir.x * initialHorizSpeed, y: fwdDir.y * initialHorizSpeed };
+  let pos = { ...startPos };
+  let spin = spinNorm;
+  let traveled = 0;
+  const path = [{ ...pos }];
+  for (let t = 0; t < maxTime; t += dt) {
+    const fwdSpeed = vel.x * fwdDir.x + vel.y * fwdDir.y;
+    if (fwdSpeed > 0.5) {
+      const sideAccel = spin * fwdSpeed * CURVE_STRENGTH;
+      vel.x += perpDir.x * sideAccel * dt;
+      vel.y += perpDir.y * sideAccel * dt;
+    }
+    const drag = Math.max(0, 1 - 0.14 * dt);
+    vel.x *= drag;
+    vel.y *= drag;
+    spin *= Math.pow(CURVE_SPIN_DECAY_PER_SEC, 60 * dt);
+    pos = { x: pos.x + vel.x * dt, y: pos.y + vel.y * dt };
+    traveled += Math.hypot(vel.x, vel.y) * dt;
+    path.push({ ...pos });
+    // Stop when we've traveled the expected carry distance (ball "lands").
+    if (traveled >= totalCarryWorld) break;
+    if (Math.hypot(vel.x, vel.y) < 0.5) break;
+  }
+  return path;
+};
+
 const estimateStraightDistance = (powerPct, club, strike = { launch: 1, spin: 1 }, distanceMult = 1) => {
   const shotRatio = clamp(powerPct / 100, 0, 1.2);
   return (club.carryYards * shotRatio * strike.launch * distanceMult) / YARDS_PER_WORLD;
@@ -2364,6 +2412,9 @@ export default function App() {
   const shotCarryRef = useRef(0);
   const shotRollRef = useRef(0);
   const shotCurveDegRef = useRef(0);
+  // Normalized shot spin (-1 hook … 0 straight … +1 slice). Consumed every
+  // tick by the Magnus curve physics; decays over flight.
+  const shotSpinNormRef = useRef(0);
   const shotAimAngleRef = useRef(getAimAngleToCup(ACTIVE_HOLES[0].ballStart, ACTIVE_HOLES[0].cup));
   const shotWindResistRef = useRef(1);
   const [currentLie, setCurrentLie] = useState('tee');
@@ -2848,20 +2899,26 @@ export default function App() {
             vel.x += wDir.x * wForce;
             vel.y += wDir.y * wForce;
 
-            // Shape force: bend in air relative to strike aim axis.
-            const shotCurveDeg = shotCurveDegRef.current;
-            if (Math.abs(shotCurveDeg) > 0.01) {
+            // Magnus-style progressive curve: sideways acceleration grows
+            // with forward speed × spin, so the ball starts straight and
+            // banana-curves out over the flight. Old model set a steady-
+            // state side velocity each tick — shots looked like a straight
+            // diagonal instead of a curve, and the aim preview bent in a
+            // different shape (a sine wave that came back toward the line).
+            // Now flight + preview share the same math. Only applies while
+            // the ball is in the air.
+            if (flight.z > 0.3 && Math.abs(shotSpinNormRef.current) > 0.005) {
               const aim = shotAimAngleRef.current;
               const fwdDir = { x: Math.cos(aim), y: Math.sin(aim) };
               const perpDir = { x: -Math.sin(aim), y: Math.cos(aim) };
               const fwdSpeed = vel.x * fwdDir.x + vel.y * fwdDir.y;
-              const sideSpeed = vel.x * perpDir.x + vel.y * perpDir.y;
-              const sideTarget = clamp((shotCurveDeg / 85) * Math.max(0, fwdSpeed) * 0.55, -Math.max(0, fwdSpeed) * 0.65, Math.max(0, fwdSpeed) * 0.65);
-              const sideBlend = clamp(CURVE_FORCE * dt * 0.55, 0, 0.12);
-              const nextSideSpeed = sideSpeed + (sideTarget - sideSpeed) * sideBlend;
-              const nextFwdSpeed = Math.max(0, fwdSpeed * (1 - Math.abs(nextSideSpeed - sideSpeed) * 0.018));
-              vel.x = fwdDir.x * nextFwdSpeed + perpDir.x * nextSideSpeed;
-              vel.y = fwdDir.y * nextFwdSpeed + perpDir.y * nextSideSpeed;
+              if (fwdSpeed > 1) {
+                const sideAccel = shotSpinNormRef.current * fwdSpeed * CURVE_STRENGTH;
+                vel.x += perpDir.x * sideAccel * dt;
+                vel.y += perpDir.y * sideAccel * dt;
+              }
+              // Spin gradually bleeds off while airborne.
+              shotSpinNormRef.current *= Math.pow(CURVE_SPIN_DECAY_PER_SEC, 60 * dt);
             }
           }
 
@@ -3740,6 +3797,8 @@ export default function App() {
       y: launch.direction.y * horizSpeed
     };
     shotCurveDegRef.current = launch.totalCurveDeg;
+    // Normalize curveDeg (-85…+85) to spin (-1…+1) for Magnus physics.
+    shotSpinNormRef.current = clamp(launch.totalCurveDeg / 85, -1.2, 1.2);
     shotAimAngleRef.current = aimAngle;
     // Course Management reduces in-air wind drift (reads line and plays it).
     // 0 CIQ → wind ×1.30, 50 → ×1.0, 100 → ×0.70.
@@ -4172,15 +4231,42 @@ export default function App() {
     rayToWorldEdge
   );
 
+  // Aim preview shares the same Magnus-curve physics as the live flight.
+  // Estimate the shot's initial horizontal speed from the preview's
+  // hang-time and carry formulas, then step the trajectory forward. The
+  // yellow curve on screen is the ball's actual predicted path, and it
+  // matches what the ball does when you swing.
+  const previewSpinNorm = clamp(totalPreviewCurveDeg / 85, -1.2, 1.2);
+  const previewTrajectoryPath = useMemo(() => {
+    if (aimGuideWorld <= 0) return [];
+    // Estimate initial horizontal speed with the same formula strikeBall
+    // uses, so the preview's banana shape matches the live shot. Hang time
+    // formula is (3.2 + launch*0.8) × launchRatio; speed = carry × 0.14 ÷
+    // (1 - exp(-0.14 × hangTime)).
+    const stockRatio = clamp(aimGuideWorld / (selectedClub.carryYards / YARDS_PER_WORLD), 0.2, 1.2);
+    const estHangTime = (3.2 + selectedClub.launch * 0.8) * stockRatio;
+    const expFactor = 1 - Math.exp(-0.14 * estHangTime);
+    const estHoriz = expFactor > 0.001 ? aimGuideWorld * 0.14 / expFactor : aimGuideWorld * 2;
+    return simulateAimTrajectory({
+      startPos: { x: ball.x, y: ball.y },
+      aimAngleRad: aimAngle,
+      initialHorizSpeed: estHoriz,
+      spinNorm: previewSpinNorm,
+      totalCarryWorld: aimGuideWorld
+    });
+  }, [ball.x, ball.y, aimAngle, aimGuideWorld, previewSpinNorm, selectedClub.launch, selectedClub.carryYards]);
+
   const buildAimPoint = (pct) => {
-    const worldDist = aimGuideWorld * pct;
-    const previewCurveStrength = CURVE_FORCE * 0.55 + CURVE_LAUNCH_BLEND * 0.08;
-    const curveOffset = Math.sin(pct * Math.PI * 0.95) * aimGuideWorld * degToRad(totalPreviewCurveDeg) * previewCurveStrength * pct;
-    const loftOffset = -(shotMetrics.launchAdjust - 1) * 10 * Math.sin(pct * Math.PI) * 0.4;
-    const point = {
-      x: ball.x + aimDir.x * worldDist + aimPerp.x * curveOffset,
-      y: ball.y + aimDir.y * worldDist + aimPerp.y * curveOffset + loftOffset
-    };
+    // Pick the sampled trajectory point closest to this pct along the path.
+    const n = previewTrajectoryPath.length;
+    if (n === 0) {
+      const worldDist = aimGuideWorld * pct;
+      const point = { x: ball.x + aimDir.x * worldDist, y: ball.y + aimDir.y * worldDist };
+      const screen = toScreen(point);
+      return { pct, point, x: screen.x, y: screen.y };
+    }
+    const idx = Math.min(n - 1, Math.max(0, Math.floor(pct * (n - 1))));
+    const point = previewTrajectoryPath[idx];
     const screen = toScreen(point);
     return { pct, point, x: screen.x, y: screen.y };
   };
