@@ -1,0 +1,760 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>IGT — Earth Texture Gallery · v1</title>
+  <style>
+    :root {
+      --bg: #0f1511;
+      --panel: #16201a;
+      --panel-edge: #2a3a30;
+      --ink: #e8f0e4;
+      --muted: #8fa296;
+      --accent: #a8d87a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 32px;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+      line-height: 1.45;
+    }
+    h1 { font-size: 32px; margin: 0 0 6px; letter-spacing: -0.02em; }
+    h2 { font-size: 20px; margin: 40px 0 14px; color: var(--accent); letter-spacing: 0.02em; text-transform: uppercase; }
+    h3 { font-size: 13px; margin: 14px 0 8px; color: var(--muted); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+    p, li { color: var(--ink); font-size: 14px; }
+    p.muted, li.muted { color: var(--muted); }
+    .intro { max-width: 760px; color: #c8d4c4; font-size: 15px; }
+    .intro code { background: #22302a; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+    .palette {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+      max-width: 1200px;
+    }
+    .swatch {
+      background: var(--panel);
+      border: 1px solid var(--panel-edge);
+      border-radius: 10px;
+      overflow: hidden;
+      padding: 0;
+    }
+    .swatch .chip { height: 72px; }
+    .swatch .meta { padding: 8px 10px 10px; font-size: 12px; }
+    .swatch .meta b { color: var(--ink); display: block; font-size: 13px; margin-bottom: 2px; }
+    .swatch .meta span { color: var(--muted); font-family: SFMono-Regular, Menlo, monospace; font-size: 11px; }
+    .row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+      margin-top: 12px;
+      max-width: 1400px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--panel-edge);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .card .art { display: block; }
+    .card .footer {
+      padding: 10px 14px 14px;
+      font-size: 13px;
+    }
+    .card .footer b { color: var(--ink); }
+    .card .footer p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    .card .tag {
+      display: inline-block;
+      background: #22302a;
+      color: var(--accent);
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-right: 6px;
+      font-weight: 600;
+    }
+    .trees {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      max-width: 1400px;
+    }
+    .tree-card {
+      background: var(--panel);
+      border: 1px solid var(--panel-edge);
+      border-radius: 10px;
+      padding: 14px;
+      text-align: center;
+    }
+    .tree-card svg { display: block; margin: 0 auto; }
+    .tree-card .label { margin-top: 8px; font-size: 12px; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; }
+    .tree-card .label b { color: var(--ink); display: block; font-size: 13px; margin-bottom: 2px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+    .scene { background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 12px; overflow: hidden; }
+    .toolbar {
+      position: sticky; top: 0;
+      background: rgba(15,21,17,0.94);
+      backdrop-filter: blur(6px);
+      padding: 14px 0 12px;
+      margin: -12px 0 20px;
+      border-bottom: 1px solid var(--panel-edge);
+      z-index: 10;
+    }
+    .toolbar .chips { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--muted); }
+    .toolbar .chips b { color: var(--ink); }
+    footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--panel-edge); color: var(--muted); font-size: 13px; max-width: 1400px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>IGT Texture Gallery — Earth v1</h1>
+  <p class="intro">
+    Soft-pixel modern retro, Golf-Story-inspired. Earth only; per-planet variants come later.
+    Pick one variant per surface (<code>A</code>/<code>B</code>/<code>C</code>) and a tree set.
+    Once you pick, I wire them into <code>designer/shared/theme.js</code> and both the designer
+    canvas and the game SVG layer update.
+  </p>
+</header>
+
+<div class="toolbar">
+  <div class="chips">
+    <span><b>Pick format:</b></span>
+    <span>Fairway: <b>__</b></span>
+    <span>Green: <b>__</b></span>
+    <span>Rough: <b>__</b></span>
+    <span>Deep Rough: <b>__</b></span>
+    <span>Sand: <b>__</b></span>
+    <span>Water: <b>__</b></span>
+    <span>Tree set: <b>__</b></span>
+  </div>
+</div>
+
+<h2>Earth Palette · v1</h2>
+<p class="muted">Warm, earthy, slightly desaturated. Closer to Golf Story than to Augusta broadcast TV.</p>
+<div class="palette">
+  <div class="swatch"><div class="chip" style="background:#8bc24c"></div><div class="meta"><b>Fairway</b><span>#8bc24c</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#a3d155"></div><div class="meta"><b>Green</b><span>#a3d155</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#6fa544"></div><div class="meta"><b>Fringe</b><span>#6fa544</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#4f8c34"></div><div class="meta"><b>Rough</b><span>#4f8c34</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#2a5a24"></div><div class="meta"><b>Deep Rough</b><span>#2a5a24</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#e8d7a3"></div><div class="meta"><b>Sand</b><span>#e8d7a3</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#c9b27a"></div><div class="meta"><b>Sand rim</b><span>#c9b27a</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#4fb8c9"></div><div class="meta"><b>Water</b><span>#4fb8c9</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#8fe0e8"></div><div class="meta"><b>Water hi-lite</b><span>#8fe0e8</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#6b4423"></div><div class="meta"><b>Tree trunk</b><span>#6b4423</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#e8e4d8; color:#2a1f1a"></div><div class="meta"><b>Birch bark</b><span>#e8e4d8</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#2a1f1a"></div><div class="meta"><b>Outline</b><span>#2a1f1a</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#1f4a1c"></div><div class="meta"><b>Canopy shadow</b><span>#1f4a1c</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#3e7a2a"></div><div class="meta"><b>Canopy base</b><span>#3e7a2a</span></div></div>
+</div>
+<p class="muted" style="margin-top:6px; font-size: 12px;">
+Palette references: Golf Story fairway <code style="font-size: 11px;">#7FB23A–#8BC24C</code>, Sports Story water <code style="font-size: 11px;">#4FB8C9–#5FC9D8</code>, tree canopy always 3 shades + 1 dark outline + warm brown trunk. Drop shadows are flat ellipses at ~50% black-green, no directional offset.
+</p>
+
+<h2>Fairway</h2>
+<p class="muted">The lit, mowed corridor. Should read as "hit here, you're safe" at a glance.</p>
+<div class="row">
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <defs>
+        <pattern id="fA" patternUnits="userSpaceOnUse" width="16" height="16">
+          <rect width="16" height="16" fill="#86c15c"/>
+          <rect x="0"  y="0" width="2" height="16" fill="rgba(255,255,255,0.12)"/>
+          <rect x="8"  y="0" width="8" height="16" fill="rgba(0,0,0,0.09)"/>
+        </pattern>
+      </defs>
+      <rect width="320" height="160" fill="url(#fA)"/>
+    </svg>
+    <div class="footer"><span class="tag">A</span><b>Vertical mowing stripes</b><p>Current style, tightened. Reads like freshly mowed fairway; strong direction cue.</p></div>
+  </div>
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <defs>
+        <pattern id="fB" patternUnits="userSpaceOnUse" width="22" height="22" patternTransform="rotate(30)">
+          <rect width="22" height="22" fill="#86c15c"/>
+          <rect x="0"  y="0" width="11" height="22" fill="rgba(0,0,0,0.08)"/>
+          <rect x="0"  y="0" width="1"  height="22" fill="rgba(255,255,255,0.15)"/>
+        </pattern>
+      </defs>
+      <rect width="320" height="160" fill="url(#fB)"/>
+    </svg>
+    <div class="footer"><span class="tag">B</span><b>Diagonal stripes (Augusta)</b><p>Same stripe width, rotated 30°. More prestigious, slightly harder to read on short holes.</p></div>
+  </div>
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <defs>
+        <pattern id="fC" patternUnits="userSpaceOnUse" width="24" height="24">
+          <rect width="24" height="24" fill="#86c15c"/>
+          <circle cx="4"  cy="5"  r="1.4" fill="rgba(255,255,255,0.14)"/>
+          <circle cx="16" cy="11" r="1.4" fill="rgba(255,255,255,0.14)"/>
+          <circle cx="9"  cy="18" r="1.4" fill="rgba(255,255,255,0.14)"/>
+          <circle cx="20" cy="3"  r="1.0" fill="rgba(0,0,0,0.08)"/>
+          <circle cx="2"  cy="14" r="1.0" fill="rgba(0,0,0,0.08)"/>
+        </pattern>
+      </defs>
+      <rect width="320" height="160" fill="url(#fC)"/>
+    </svg>
+    <div class="footer"><span class="tag">C</span><b>Flat with grass stipple (Golf Story)</b><p>No stripes — just a sparse grass-highlight stipple. Cozy, rural, closer to Golf Story. My rec.</p></div>
+  </div>
+
+</div>
+
+<h2>Putting Green</h2>
+<p class="muted">Brighter than fairway, subtly different texture. Must read as "this is where you putt."</p>
+<div class="row">
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <defs>
+        <pattern id="gA" patternUnits="userSpaceOnUse" width="18" height="18" patternTransform="rotate(45)">
+          <rect width="18" height="18" fill="#a3d96a"/>
+          <rect x="0" y="0" width="2" height="18" fill="rgba(255,255,255,0.12)"/>
+        </pattern>
+      </defs>
+      <rect width="320" height="160" fill="url(#gA)"/>
+    </svg>
+    <div class="footer"><span class="tag">A</span><b>Diagonal mowing</b><p>Current style, tightened brightness. Classic putting-green look.</p></div>
+  </div>
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <defs>
+        <radialGradient id="gB" cx="50%" cy="50%" r="80%">
+          <stop offset="0%" stop-color="#b9e67a"/>
+          <stop offset="100%" stop-color="#7fc350"/>
+        </radialGradient>
+      </defs>
+      <rect width="320" height="160" fill="url(#gB)"/>
+    </svg>
+    <div class="footer"><span class="tag">B</span><b>Radial sheen</b><p>Center brighter than edges. Gives greens a "lit from above" feel. No pattern.</p></div>
+  </div>
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <defs>
+        <pattern id="gC" patternUnits="userSpaceOnUse" width="14" height="14">
+          <rect width="14" height="14" fill="#a3d96a"/>
+          <circle cx="3"  cy="4" r="0.9" fill="rgba(255,255,255,0.18)"/>
+          <circle cx="10" cy="9" r="0.9" fill="rgba(255,255,255,0.18)"/>
+        </pattern>
+      </defs>
+      <rect width="320" height="160" fill="url(#gC)"/>
+    </svg>
+    <div class="footer"><span class="tag">C</span><b>Tight grass stipple</b><p>Small dense highlight dots, no stripes. Cleanest at small scale. Pairs well with Fairway C.</p></div>
+  </div>
+
+</div>
+
+<h2>Rough</h2>
+<p class="muted">Missed-fairway territory. Darker, visibly tufty. Golf Story uses a very readable grass-blade motif here.</p>
+<div class="row">
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <defs>
+        <pattern id="rA" patternUnits="userSpaceOnUse" width="20" height="20">
+          <rect width="20" height="20" fill="#3b6a2d"/>
+          <path d="M 3 14 q 1 -5 2 0 M 8 17 q 1 -4 2 0 M 13 12 q 1 -5 2 0 M 17 16 q 1 -4 2 0" fill="none" stroke="rgba(180,220,140,0.35)" stroke-width="1" stroke-linecap="round"/>
+        </pattern>
+      </defs>
+      <rect width="320" height="160" fill="url(#rA)"/>
+    </svg>
+    <div class="footer"><span class="tag">A</span><b>Grass blade strokes</b><p>Small curved blade strokes every ~20px. Most Golf-Story-accurate rough.</p></div>
+  </div>
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <defs>
+        <pattern id="rB" patternUnits="userSpaceOnUse" width="18" height="18">
+          <rect width="18" height="18" fill="#3b6a2d"/>
+          <circle cx="5"  cy="7"  r="1.6" fill="rgba(150,200,110,0.30)"/>
+          <circle cx="13" cy="13" r="1.6" fill="rgba(150,200,110,0.30)"/>
+          <circle cx="15" cy="3"  r="1.0" fill="rgba(40,80,30,0.45)"/>
+        </pattern>
+      </defs>
+      <rect width="320" height="160" fill="url(#rB)"/>
+    </svg>
+    <div class="footer"><span class="tag">B</span><b>Tuft dots</b><p>Soft highlight + shadow dots, no strokes. Reads as rough but more abstract than A.</p></div>
+  </div>
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <defs>
+        <pattern id="rC" patternUnits="userSpaceOnUse" width="22" height="22" patternTransform="rotate(-45)">
+          <rect width="22" height="22" fill="#3b6a2d"/>
+          <path d="M 0 11 L 22 11" stroke="rgba(0,0,0,0.12)" stroke-width="1"/>
+          <path d="M 11 0 L 11 22" stroke="rgba(0,0,0,0.12)" stroke-width="1"/>
+        </pattern>
+      </defs>
+      <rect width="320" height="160" fill="url(#rC)"/>
+    </svg>
+    <div class="footer"><span class="tag">C</span><b>Crosshatch</b><p>Darker crosshatch suggests tangled grass. Reads well at distance; busy up close.</p></div>
+  </div>
+
+</div>
+
+<h2>Deep Rough</h2>
+<p class="muted">The "don't go here" band. Darker than rough, coarser.</p>
+<div class="row">
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <defs>
+        <pattern id="dA" patternUnits="userSpaceOnUse" width="18" height="18">
+          <rect width="18" height="18" fill="#1f3e1a"/>
+          <path d="M 3 14 q 1 -6 2 0 M 8 16 q 1 -6 2 0 M 13 12 q 1 -6 2 0" fill="none" stroke="rgba(100,150,80,0.40)" stroke-width="1" stroke-linecap="round"/>
+        </pattern>
+      </defs>
+      <rect width="320" height="160" fill="url(#dA)"/>
+    </svg>
+    <div class="footer"><span class="tag">A</span><b>Tall blade strokes</b><p>Same motif as Rough A, longer strokes, on darker base.</p></div>
+  </div>
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <defs>
+        <pattern id="dB" patternUnits="userSpaceOnUse" width="16" height="16">
+          <rect width="16" height="16" fill="#1f3e1a"/>
+          <circle cx="4"  cy="5"  r="2.4" fill="rgba(40,70,30,0.6)"/>
+          <circle cx="11" cy="10" r="2.4" fill="rgba(40,70,30,0.6)"/>
+        </pattern>
+      </defs>
+      <rect width="320" height="160" fill="url(#dB)"/>
+    </svg>
+    <div class="footer"><span class="tag">B</span><b>Clumps</b><p>Dense dark clumps — shrubby. Good contrast against rough.</p></div>
+  </div>
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <rect width="320" height="160" fill="#1f3e1a"/>
+    </svg>
+    <div class="footer"><span class="tag">C</span><b>Flat (no texture)</b><p>Baseline. Relies on color alone. Cheapest to render, reads cleanest from altitude.</p></div>
+  </div>
+
+</div>
+
+<h2>Sand Bunker</h2>
+<p class="muted">Warm tan. Needs to read as soft / loose at a glance.</p>
+<div class="row">
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <defs>
+        <pattern id="sA" patternUnits="userSpaceOnUse" width="18" height="18">
+          <rect width="18" height="18" fill="#e8d7a3"/>
+          <circle cx="3"  cy="4"  r="0.9" fill="rgba(170,130,70,0.35)"/>
+          <circle cx="10" cy="9"  r="0.9" fill="rgba(170,130,70,0.35)"/>
+          <circle cx="14" cy="3"  r="0.7" fill="rgba(170,130,70,0.35)"/>
+          <circle cx="6"  cy="14" r="0.7" fill="rgba(170,130,70,0.35)"/>
+        </pattern>
+      </defs>
+      <rect width="320" height="160" fill="url(#sA)"/>
+    </svg>
+    <div class="footer"><span class="tag">A</span><b>Grain stipple</b><p>Fine warm-brown dots on pale cream. Matches Golf Story's wheat-colored sand.</p></div>
+  </div>
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <defs>
+        <radialGradient id="sB" cx="50%" cy="50%" r="70%">
+          <stop offset="0%"  stop-color="#efe0b0"/>
+          <stop offset="100%" stop-color="#c9b27a"/>
+        </radialGradient>
+      </defs>
+      <rect width="320" height="160" fill="url(#sB)"/>
+    </svg>
+    <div class="footer"><span class="tag">B</span><b>Inset shadow</b><p>Bright center fading to a darker rim — reads as a depression. Common for bunkers.</p></div>
+  </div>
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <defs>
+        <pattern id="sC1" patternUnits="userSpaceOnUse" width="18" height="18">
+          <rect width="18" height="18" fill="#e8d7a3"/>
+          <circle cx="4"  cy="5" r="0.9" fill="rgba(170,130,70,0.35)"/>
+          <circle cx="12" cy="11" r="0.9" fill="rgba(170,130,70,0.35)"/>
+        </pattern>
+      </defs>
+      <!-- base + stipple -->
+      <rect width="320" height="160" fill="url(#sC1)"/>
+      <!-- crisp 2px inner-rim shadow (Neo Turf Masters / Golf Story) -->
+      <rect x="2" y="2" width="316" height="156" fill="none" stroke="#c9b27a" stroke-width="3"/>
+    </svg>
+    <div class="footer"><span class="tag">C</span><b>Stipple + crisp rim (Golf Story)</b><p>Cream fill, fine grain dots, and a crisp 2px darker-tan inner rim. Sharpest bunker read. My rec.</p></div>
+  </div>
+
+</div>
+
+<h2>Water</h2>
+<p class="muted">Should stop the eye. Layered blues, subtle ripples.</p>
+<div class="row">
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="wA1" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%"  stop-color="#5fc9d8"/>
+          <stop offset="100%" stop-color="#3aa3b4"/>
+        </linearGradient>
+        <pattern id="wA2" patternUnits="userSpaceOnUse" width="40" height="18">
+          <path d="M 0 9 Q 10 6 20 9 T 40 9" stroke="rgba(143,224,232,0.40)" stroke-width="1.2" fill="none"/>
+        </pattern>
+      </defs>
+      <rect width="320" height="160" fill="url(#wA1)"/>
+      <rect width="320" height="160" fill="url(#wA2)"/>
+    </svg>
+    <div class="footer"><span class="tag">A</span><b>Gradient + soft waves</b><p>Cyan-turquoise gradient with curvy highlight lines. Reads as gentle rippling water.</p></div>
+  </div>
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <defs>
+        <pattern id="wB" patternUnits="userSpaceOnUse" width="38" height="26">
+          <rect width="38" height="26" fill="#4fb8c9"/>
+          <rect x="0"  y="6"  width="14" height="2" fill="#8fe0e8"/>
+          <rect x="20" y="6"  width="10" height="2" fill="#8fe0e8"/>
+          <rect x="6"  y="18" width="18" height="2" fill="#8fe0e8"/>
+        </pattern>
+      </defs>
+      <rect width="320" height="160" fill="url(#wB)"/>
+    </svg>
+    <div class="footer"><span class="tag">B</span><b>Broken-line ripples (Golf Story)</b><p>Cyan base with dashed horizontal highlight segments. The exact Golf Story / Sports Story water treatment. My rec.</p></div>
+  </div>
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
+      <defs>
+        <pattern id="wC" patternUnits="userSpaceOnUse" width="16" height="16">
+          <rect width="16" height="16" fill="#4fb8c9"/>
+          <circle cx="4" cy="4" r="0.9" fill="rgba(143,224,232,0.6)"/>
+          <circle cx="11" cy="10" r="0.9" fill="rgba(143,224,232,0.6)"/>
+          <circle cx="8" cy="14" r="0.6" fill="rgba(0,0,0,0.18)"/>
+        </pattern>
+      </defs>
+      <rect width="320" height="160" fill="url(#wC)"/>
+    </svg>
+    <div class="footer"><span class="tag">C</span><b>Sparkle dots</b><p>Scattered light + dark dots. Busier, more "pond" less "ocean." Works at close zoom.</p></div>
+  </div>
+
+</div>
+
+<h2>Trees</h2>
+<p class="muted">Three complete canopy sets. Each renders all five species with a consistent treatment. Pick the whole set.</p>
+
+<h3>Set 1 · Golf Story Chunky</h3>
+<p class="muted">3 canopy tones + dark 1.2px outline + warm brown trunk + flat-ellipse drop shadow. Per research, this is the Golf Story recipe.</p>
+<div class="trees">
+
+  <!-- PINE -->
+  <div class="tree-card">
+    <svg width="120" height="140" viewBox="-60 -70 120 140">
+      <ellipse cx="0" cy="50" rx="22" ry="6" fill="rgba(26,36,20,0.5)"/>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="-4" y="20" width="8" height="28" fill="#6b4423"/>
+        <path d="M -28 22 L 0 -40 L 28 22 Z" fill="#3e7a2a"/>
+        <path d="M -24 6 L 0 -34 L 24 6 Z" fill="#4f8c34"/>
+        <path d="M -18 -10 L 0 -28 L 18 -10 Z" fill="#6fa544"/>
+      </g>
+    </svg>
+    <div class="label"><b>Pine</b>3-layer stack</div>
+  </div>
+
+  <!-- OAK -->
+  <div class="tree-card">
+    <svg width="120" height="140" viewBox="-60 -70 120 140">
+      <ellipse cx="0" cy="50" rx="24" ry="7" fill="rgba(26,36,20,0.5)"/>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="-3" y="20" width="6" height="24" fill="#6b4423"/>
+        <circle cx="0" cy="0" r="28" fill="#3e7a2a"/>
+      </g>
+      <g fill="#4f8c34"><circle cx="-8" cy="-6" r="12"/></g>
+      <g fill="#6fa544"><circle cx="10" cy="-8" r="9"/><circle cx="2" cy="-18" r="6"/></g>
+    </svg>
+    <div class="label"><b>Oak</b>Canopy + highlights</div>
+  </div>
+
+  <!-- PALM -->
+  <div class="tree-card">
+    <svg width="120" height="140" viewBox="-60 -70 120 140">
+      <ellipse cx="0" cy="50" rx="20" ry="5" fill="rgba(26,36,20,0.5)"/>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="-3" y="10" width="6" height="36" fill="#8b5e3c"/>
+      </g>
+      <rect x="-3" y="14" width="6" height="1.5" fill="rgba(0,0,0,0.35)"/>
+      <rect x="-3" y="22" width="6" height="1.5" fill="rgba(0,0,0,0.35)"/>
+      <rect x="-3" y="30" width="6" height="1.5" fill="rgba(0,0,0,0.35)"/>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <ellipse cx="-16" cy="4" rx="18" ry="6" fill="#4f8c34" transform="rotate(-20 -16 4)"/>
+        <ellipse cx="16" cy="4"  rx="18" ry="6" fill="#4f8c34" transform="rotate(20 16 4)"/>
+        <ellipse cx="0"  cy="-10" rx="20" ry="6" fill="#6fa544"/>
+        <ellipse cx="-14" cy="-4" rx="16" ry="5" fill="#6fa544" transform="rotate(-40 -14 -4)"/>
+        <ellipse cx="14"  cy="-4" rx="16" ry="5" fill="#6fa544" transform="rotate(40 14 -4)"/>
+      </g>
+      <circle cx="0" cy="0" r="3" fill="#1f4a1c"/>
+    </svg>
+    <div class="label"><b>Palm</b>Fan of fronds</div>
+  </div>
+
+  <!-- BIRCH -->
+  <div class="tree-card">
+    <svg width="120" height="140" viewBox="-60 -70 120 140">
+      <ellipse cx="0" cy="50" rx="18" ry="5" fill="rgba(26,36,20,0.5)"/>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="-2" y="12" width="4" height="34" fill="#e8e4d8"/>
+        <ellipse cx="0" cy="-4" rx="20" ry="24" fill="#6fa544"/>
+      </g>
+      <rect x="-2" y="16" width="4" height="2" fill="#2a1f1a"/>
+      <rect x="-2" y="24" width="4" height="2" fill="#2a1f1a"/>
+      <rect x="-2" y="34" width="4" height="2" fill="#2a1f1a"/>
+      <ellipse cx="-5" cy="-12" rx="10" ry="12" fill="#a3d155"/>
+    </svg>
+    <div class="label"><b>Birch</b>Light canopy, white bark</div>
+  </div>
+
+  <!-- CYPRESS -->
+  <div class="tree-card">
+    <svg width="120" height="140" viewBox="-60 -70 120 140">
+      <ellipse cx="0" cy="50" rx="16" ry="5" fill="rgba(26,36,20,0.5)"/>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <ellipse cx="0" cy="8" rx="12" ry="38" fill="#1f4a1c"/>
+      </g>
+      <ellipse cx="-2" cy="0" rx="8" ry="32" fill="#3e7a2a"/>
+    </svg>
+    <div class="label"><b>Cypress</b>Tall teardrop (2-tone)</div>
+  </div>
+
+</div>
+
+<h3>Set 2 · Neo Turf Tight</h3>
+<p class="muted">Crisper edges, higher contrast, slightly pixel-chunky. Shorter trees, denser canopies.</p>
+<div class="trees">
+
+  <div class="tree-card">
+    <svg width="120" height="140" viewBox="-60 -70 120 140">
+      <ellipse cx="0" cy="48" rx="20" ry="5" fill="rgba(20,18,12,0.3)"/>
+      <rect x="-3" y="24" width="6" height="24" fill="#5a3a1e"/>
+      <path d="M -26 26 L 0 -34 L 26 26 Z" fill="#274f26"/>
+      <path d="M -26 26 L 0 -34 L -4 -20 L -20 16 Z" fill="#3a7535"/>
+    </svg>
+    <div class="label"><b>Pine</b>Sharp silhouette</div>
+  </div>
+
+  <div class="tree-card">
+    <svg width="120" height="140" viewBox="-60 -70 120 140">
+      <ellipse cx="0" cy="48" rx="22" ry="5" fill="rgba(20,18,12,0.3)"/>
+      <rect x="-3" y="20" width="6" height="24" fill="#5a3a1e"/>
+      <circle cx="0" cy="0" r="26" fill="#274f26"/>
+      <path d="M -26 0 A 26 26 0 0 1 10 -24 L 0 0 Z" fill="#3a7535"/>
+    </svg>
+    <div class="label"><b>Oak</b>Half-lit canopy</div>
+  </div>
+
+  <div class="tree-card">
+    <svg width="120" height="140" viewBox="-60 -70 120 140">
+      <ellipse cx="0" cy="48" rx="16" ry="4" fill="rgba(20,18,12,0.3)"/>
+      <rect x="-3" y="4" width="6" height="42" fill="#6b3f22"/>
+      <ellipse cx="0" cy="-4" rx="24" ry="7" fill="#2c5d2e"/>
+      <ellipse cx="-18" cy="-6" rx="10" ry="3" fill="#3a7535" transform="rotate(-30 -18 -6)"/>
+      <ellipse cx="18" cy="-6" rx="10" ry="3" fill="#3a7535" transform="rotate(30 18 -6)"/>
+    </svg>
+    <div class="label"><b>Palm</b>Wide fronds</div>
+  </div>
+
+  <div class="tree-card">
+    <svg width="120" height="140" viewBox="-60 -70 120 140">
+      <ellipse cx="0" cy="48" rx="14" ry="4" fill="rgba(20,18,12,0.3)"/>
+      <rect x="-2" y="8" width="4" height="38" fill="#eaebe5"/>
+      <line x1="-2" y1="18" x2="2" y2="18" stroke="#1c1a12" stroke-width="1.2"/>
+      <line x1="-2" y1="28" x2="2" y2="28" stroke="#1c1a12" stroke-width="1.2"/>
+      <line x1="-2" y1="38" x2="2" y2="38" stroke="#1c1a12" stroke-width="1.2"/>
+      <ellipse cx="0" cy="-2" rx="16" ry="22" fill="#7bc05c"/>
+    </svg>
+    <div class="label"><b>Birch</b>Stark bark bands</div>
+  </div>
+
+  <div class="tree-card">
+    <svg width="120" height="140" viewBox="-60 -70 120 140">
+      <ellipse cx="0" cy="48" rx="12" ry="4" fill="rgba(20,18,12,0.3)"/>
+      <ellipse cx="0" cy="6" rx="10" ry="40" fill="#1d4a22"/>
+      <path d="M -2 -34 L -2 44 L 2 44 L 2 -34 Z" fill="#3a7535"/>
+    </svg>
+    <div class="label"><b>Cypress</b>Flame silhouette</div>
+  </div>
+
+</div>
+
+<h3>Set 3 · Stardew Soft</h3>
+<p class="muted">Softer, rounder, brighter. Warmer greens, visible highlight. Most "cozy cute".</p>
+<div class="trees">
+
+  <div class="tree-card">
+    <svg width="120" height="140" viewBox="-60 -70 120 140">
+      <ellipse cx="0" cy="48" rx="22" ry="6" fill="rgba(20,18,12,0.28)"/>
+      <rect x="-4" y="18" width="8" height="28" rx="2" fill="#6b3f22"/>
+      <ellipse cx="0" cy="0" rx="22" ry="24" fill="#3c7a3a"/>
+      <ellipse cx="0" cy="-4" rx="18" ry="18" fill="#64b257"/>
+      <ellipse cx="-4" cy="-10" rx="8" ry="7" fill="#9bd87a"/>
+    </svg>
+    <div class="label"><b>Pine</b>Rounded & soft</div>
+  </div>
+
+  <div class="tree-card">
+    <svg width="120" height="140" viewBox="-60 -70 120 140">
+      <ellipse cx="0" cy="48" rx="26" ry="7" fill="rgba(20,18,12,0.28)"/>
+      <rect x="-4" y="20" width="8" height="26" rx="2" fill="#6b3f22"/>
+      <ellipse cx="-8" cy="2" rx="18" ry="16" fill="#3c7a3a"/>
+      <ellipse cx="8" cy="-2" rx="20" ry="18" fill="#3c7a3a"/>
+      <ellipse cx="0" cy="-8" rx="16" ry="14" fill="#64b257"/>
+      <ellipse cx="-6" cy="-14" rx="6" ry="5" fill="#9bd87a"/>
+    </svg>
+    <div class="label"><b>Oak</b>Cloudy canopy</div>
+  </div>
+
+  <div class="tree-card">
+    <svg width="120" height="140" viewBox="-60 -70 120 140">
+      <ellipse cx="0" cy="48" rx="18" ry="5" fill="rgba(20,18,12,0.28)"/>
+      <path d="M -3 10 Q -5 30 -2 46 Q 2 30 3 10 Z" fill="#7a4a28"/>
+      <ellipse cx="-18" cy="0" rx="20" ry="7" fill="#3c7a3a" transform="rotate(-18 -18 0)"/>
+      <ellipse cx="18" cy="0"  rx="20" ry="7" fill="#3c7a3a" transform="rotate(18 18 0)"/>
+      <ellipse cx="-8" cy="-14" rx="18" ry="7" fill="#64b257" transform="rotate(-40 -8 -14)"/>
+      <ellipse cx="8"  cy="-14" rx="18" ry="7" fill="#64b257" transform="rotate(40 8 -14)"/>
+      <circle cx="0" cy="4" r="3" fill="#5a3a1e"/>
+    </svg>
+    <div class="label"><b>Palm</b>Droopy fronds</div>
+  </div>
+
+  <div class="tree-card">
+    <svg width="120" height="140" viewBox="-60 -70 120 140">
+      <ellipse cx="0" cy="48" rx="18" ry="5" fill="rgba(20,18,12,0.28)"/>
+      <rect x="-2" y="12" width="4" height="34" rx="1" fill="#f0ede0"/>
+      <ellipse cx="0" cy="-6" rx="22" ry="24" fill="#8ccf6a"/>
+      <ellipse cx="-5" cy="-14" rx="10" ry="10" fill="#c7e597"/>
+    </svg>
+    <div class="label"><b>Birch</b>Bright & airy</div>
+  </div>
+
+  <div class="tree-card">
+    <svg width="120" height="140" viewBox="-60 -70 120 140">
+      <ellipse cx="0" cy="48" rx="14" ry="4" fill="rgba(20,18,12,0.28)"/>
+      <ellipse cx="0" cy="6" rx="12" ry="38" fill="#2a5d2c"/>
+      <ellipse cx="-3" cy="-4" rx="7" ry="28" fill="#4a8a4a"/>
+      <ellipse cx="-3" cy="-14" rx="4" ry="14" fill="#7ab26e"/>
+    </svg>
+    <div class="label"><b>Cypress</b>Plush silhouette</div>
+  </div>
+
+</div>
+
+<h2>Mini-scene preview</h2>
+<p class="muted">Fast comparison: current live textures vs. proposed Earth v1 (Fairway C · Green A · Rough A · Sand C · Water B · Tree Set 1).</p>
+<div class="row" style="grid-template-columns: 1fr 1fr;">
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 200" width="100%" height="auto" preserveAspectRatio="xMidYMid meet">
+      <rect width="320" height="200" fill="#2a5220"/>
+      <rect x="40" y="60" width="200" height="48" fill="#5aad42" rx="20"/>
+      <circle cx="250" cy="90" r="22" fill="#3f8a3a"/>
+      <circle cx="250" cy="90" r="18" fill="#4ec96a"/>
+      <rect x="100" y="120" width="60" height="30" fill="#3f88bc" rx="8"/>
+      <circle cx="80" cy="74" r="7" fill="#6e5a46"/>
+      <circle cx="180" cy="60" r="7" fill="#6e5a46"/>
+      <circle cx="60" cy="130" r="7" fill="#6e5a46"/>
+    </svg>
+    <div class="footer"><span class="tag">NOW</span><b>Current shipping textures</b><p>Flat fills, brown circles for trees.</p></div>
+  </div>
+
+  <div class="card">
+    <svg class="art" viewBox="0 0 320 200" width="100%" height="auto" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <pattern id="previewRough" patternUnits="userSpaceOnUse" width="20" height="20">
+          <rect width="20" height="20" fill="#4f8c34"/>
+          <path d="M 3 14 q 1 -5 2 0 M 8 17 q 1 -4 2 0 M 13 12 q 1 -5 2 0 M 17 16 q 1 -4 2 0" fill="none" stroke="rgba(30,60,20,0.45)" stroke-width="1" stroke-linecap="round"/>
+        </pattern>
+        <pattern id="previewFairway" patternUnits="userSpaceOnUse" width="24" height="24">
+          <rect width="24" height="24" fill="#8bc24c"/>
+          <circle cx="4"  cy="5"  r="1.2" fill="rgba(255,255,255,0.14)"/>
+          <circle cx="16" cy="11" r="1.2" fill="rgba(255,255,255,0.14)"/>
+          <circle cx="9"  cy="18" r="1.2" fill="rgba(255,255,255,0.14)"/>
+          <circle cx="20" cy="3"  r="1.0" fill="rgba(0,0,0,0.08)"/>
+          <circle cx="2"  cy="14" r="1.0" fill="rgba(0,0,0,0.08)"/>
+        </pattern>
+        <pattern id="previewGreen" patternUnits="userSpaceOnUse" width="18" height="18" patternTransform="rotate(45)">
+          <rect width="18" height="18" fill="#a3d155"/>
+          <rect x="0" y="0" width="2" height="18" fill="rgba(255,255,255,0.12)"/>
+        </pattern>
+        <pattern id="previewSand1" patternUnits="userSpaceOnUse" width="18" height="18">
+          <rect width="18" height="18" fill="#e8d7a3"/>
+          <circle cx="4" cy="5" r="0.9" fill="rgba(170,130,70,0.35)"/>
+          <circle cx="12" cy="11" r="0.9" fill="rgba(170,130,70,0.35)"/>
+        </pattern>
+        <pattern id="previewWater" patternUnits="userSpaceOnUse" width="38" height="26">
+          <rect width="38" height="26" fill="#4fb8c9"/>
+          <rect x="0"  y="6"  width="14" height="2" fill="#8fe0e8"/>
+          <rect x="20" y="6"  width="10" height="2" fill="#8fe0e8"/>
+          <rect x="6"  y="18" width="18" height="2" fill="#8fe0e8"/>
+        </pattern>
+      </defs>
+      <!-- backdrop: rough -->
+      <rect width="320" height="200" fill="url(#previewRough)"/>
+      <!-- fairway corridor -->
+      <rect x="40" y="60" width="200" height="48" fill="url(#previewFairway)" rx="22"/>
+      <!-- fringe + green -->
+      <circle cx="252" cy="88" r="24" fill="#6fa544"/>
+      <circle cx="252" cy="88" r="19" fill="url(#previewGreen)"/>
+      <!-- water -->
+      <rect x="100" y="120" width="60" height="30" fill="url(#previewWater)" rx="6"/>
+      <!-- bunker: stipple + crisp rim -->
+      <ellipse cx="90" cy="86" rx="18" ry="12" fill="url(#previewSand1)" stroke="#c9b27a" stroke-width="2"/>
+      <!-- cup + flag -->
+      <circle cx="252" cy="88" r="2.5" fill="#f8fafc"/>
+      <line x1="252" y1="88" x2="252" y2="72" stroke="#f8fafc" stroke-width="1.2"/>
+      <polygon points="252,72 262,76 252,80" fill="#e85c4a"/>
+      <!-- pine trees (Set 1 with outlines) -->
+      <g transform="translate(62,74) scale(0.35)">
+        <ellipse cx="0" cy="50" rx="22" ry="6" fill="rgba(26,36,20,0.5)"/>
+        <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+          <rect x="-4" y="20" width="8" height="28" fill="#6b4423"/>
+          <path d="M -28 22 L 0 -40 L 28 22 Z" fill="#3e7a2a"/>
+          <path d="M -24 6 L 0 -34 L 24 6 Z" fill="#4f8c34"/>
+          <path d="M -18 -10 L 0 -28 L 18 -10 Z" fill="#6fa544"/>
+        </g>
+      </g>
+      <g transform="translate(190,52) scale(0.35)">
+        <ellipse cx="0" cy="50" rx="22" ry="6" fill="rgba(26,36,20,0.5)"/>
+        <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+          <rect x="-4" y="20" width="8" height="28" fill="#6b4423"/>
+          <path d="M -28 22 L 0 -40 L 28 22 Z" fill="#3e7a2a"/>
+          <path d="M -24 6 L 0 -34 L 24 6 Z" fill="#4f8c34"/>
+          <path d="M -18 -10 L 0 -28 L 18 -10 Z" fill="#6fa544"/>
+        </g>
+      </g>
+      <!-- oak -->
+      <g transform="translate(52,150) scale(0.35)">
+        <ellipse cx="0" cy="50" rx="24" ry="7" fill="rgba(26,36,20,0.5)"/>
+        <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+          <rect x="-3" y="20" width="6" height="24" fill="#6b4423"/>
+          <circle cx="0" cy="0" r="28" fill="#3e7a2a"/>
+        </g>
+        <circle cx="-8" cy="-6" r="12" fill="#4f8c34"/>
+        <circle cx="10" cy="-8" r="9"  fill="#6fa544"/>
+        <circle cx="2"  cy="-18" r="6" fill="#6fa544"/>
+      </g>
+    </svg>
+    <div class="footer"><span class="tag">v1 DRAFT</span><b>Earth v1 mini-hole</b><p>Fairway C · Green A · Rough A · Sand C · Water B · Tree Set 1. My recommended picks.</p></div>
+  </div>
+
+</div>
+
+<footer>
+  <p><b>Next step:</b> reply with your picks (e.g. "Fairway C, Green A, Rough A, Deep Rough B, Sand C, Water B, Tree Set 1") and I'll wire them into <code>designer/shared/theme.js</code>. Both the designer canvas and the game SVG layer will pick up the new textures the next time you regenerate / reload.</p>
+  <p class="muted">File: <code>docs/textures/preview-gallery.html</code> · Open locally or view via GitHub raw.</p>
+</footer>
+
+</body>
+</html>
