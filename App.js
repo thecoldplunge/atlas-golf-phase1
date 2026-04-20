@@ -1840,7 +1840,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.38 · GS spike v0.12';
+const BUILD_VERSION = 'IGT v3.39 · GS spike v0.12';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1985,8 +1985,49 @@ const evaluateTempo = (samples, { focus = 50, composure = 50 } = {}) => {
       back.push(s);
     }
   }
-  if (back.length < 3 || forward.length < 3) {
+  if (back.length < 3 && forward.length < 3) {
+    // Truly not enough signal in either direction — treat as a canceled/
+    // incomplete swing with a neutral mult. The release handler gates on
+    // powerRef > 5 so this only fires on a real tap-and-drop.
     return { tempoMult: 1.0, tempoTag: 'Normal', metrics: { reason: 'too-short' } };
+  }
+  // If there's a backswing but almost no recorded forward motion, the player
+  // released without a real transition (held then flicked, or let go at the
+  // top). That used to silently fall through as 'Normal' and let a 120%
+  // backswing fire at full carry — exactly the "power goes to infinity"
+  // bug. Estimate the top-of-backswing pause from the trailing back samples
+  // and return a Rushed result with hard distance + deviation penalties.
+  if (forward.length < 3) {
+    const tailCount = Math.min(back.length, 12);
+    let hoverMs = 0;
+    for (let i = back.length - tailCount + 1; i < back.length; i++) {
+      const a = back[i - 1];
+      const b = back[i];
+      const dt = Math.max(0, b.t - a.t);
+      if (dt <= 0) continue;
+      const v = Math.hypot(b.x - a.x, b.y - a.y) / dt;
+      if (v < 0.08) hoverMs += dt;
+    }
+    const pauseMs = Math.max(0, hoverMs - TEMPO_THRESHOLDS.pauseNaturalFloorMs);
+    const pauseDistanceMult = pauseMs > 0
+      ? Math.exp(-TEMPO_THRESHOLDS.pauseDistanceK * pauseMs)
+      : 1.0;
+    // Flat 1.8x deviation mult — even without a full forward trace, a
+    // release like this should spray and lose distance.
+    return {
+      tempoMult: 1.8,
+      tempoTag: pauseMs > 120 ? 'Paused + Rushed' : 'Rushed',
+      metrics: {
+        backJerk: 0,
+        forwardJerk: 0,
+        pauseMs,
+        pauseDistanceMult: +pauseDistanceMult.toFixed(3),
+        followThrough: 0,
+        peakBack: 0,
+        peakForward: 0,
+        reason: 'no-forward',
+      },
+    };
   }
 
   const speeds = [];
