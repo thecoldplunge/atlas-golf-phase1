@@ -9,6 +9,7 @@ const WORLD_H = MAP_H * TILE;
 const GRAVITY = 70;
 const HOLE_RADIUS = 4;
 const YARDS_PER_TILE = 10;
+const MAX_LEAVES = 14;
 
 const T_ROUGH = 0;
 const T_FAIRWAY = 1;
@@ -17,6 +18,7 @@ const T_SAND = 3;
 const T_WATER = 4;
 const T_FRINGE = 5;
 const T_TEE = 6;
+const T_SHORE = 7;
 
 function hRand(x, y, seed) {
   let n = (((x | 0) & 0xffff) * 73856093) ^ (((y | 0) & 0xffff) * 19349663) ^ (((seed | 0) & 0xffff) * 83492791);
@@ -51,6 +53,14 @@ const SURFACES = [
   {
     type: T_SAND,
     shape: { kind: 'circle', cx: 13.9, cy: 7.4, r: 1.1 },
+  },
+  {
+    type: T_SHORE,
+    shape: { kind: 'polygon', points: [
+      [1.05, 12.7], [3, 12.45], [4.85, 12.75], [5.75, 13.55], [6.15, 15.05],
+      [6.2, 17.05], [5.85, 18.6], [4.95, 19.3], [3.55, 19.65], [1.9, 19.55],
+      [0.55, 18.75], [0.25, 17.0], [0.35, 15.1], [0.7, 13.7],
+    ]},
   },
   {
     type: T_WATER,
@@ -138,10 +148,12 @@ const COLORS = {
   fringeA: '#6db847', fringeB: '#5ca636', fringeC: '#4a8f24', fringeD: '#85cf5c',
   teeA: '#6fc045', teeB: '#5ab030', teeC: '#4a9420',
   sandA: '#ecd6a0', sandB: '#d8bd78', sandC: '#b8995c', sandD: '#f7e7ba',
+  shoreA: '#9d7946', shoreB: '#7d5a32', shoreC: '#5c4322', shoreD: '#b88c58',
   waterA: '#4b9bd9', waterB: '#3a82c0', waterC: '#a8d6f0', waterD: '#2b6fab',
   trunkDark: '#3f2610', trunk: '#5a3a1a', trunkHi: '#7d5428',
   tree0: '#163016', tree1: '#224a22', tree2: '#2e6b2e',
   tree3: '#3f8c3f', tree4: '#5db35d', tree5: '#8ed88e',
+  bushShadow: '#1e4a1e',
   shadow: 'rgba(0,0,0,0.3)',
   skin: '#f1b884', skinShadow: '#d49864',
   hat: '#c83030', hatDark: '#8a1e1e', hatHi: '#ea5a5a', hatBand: '#161616',
@@ -156,6 +168,7 @@ const COLORS = {
   flowerStem: '#2d6a24', flowerCenter: '#fbe043',
   pebble: '#7e7966', pebbleHi: '#a9a38d',
 };
+const LEAF_COLORS = ['#d88a2e', '#e8a840', '#c66a22', '#88a028', '#a88a44', '#d4b048'];
 
 function hexToRgb(hex) {
   const n = parseInt(hex.slice(1), 16);
@@ -173,6 +186,7 @@ function paletteFor(type) {
     case T_FRINGE:  return [RGB.fringeA, RGB.fringeB, RGB.fringeC, RGB.fringeD];
     case T_TEE:     return [RGB.teeA, RGB.teeB, RGB.teeC, RGB.teeA];
     case T_SAND:    return [RGB.sandA, RGB.sandB, RGB.sandC, RGB.sandD];
+    case T_SHORE:   return [RGB.shoreA, RGB.shoreB, RGB.shoreC, RGB.shoreD];
     case T_WATER:   return [RGB.waterA, RGB.waterD, RGB.waterB, RGB.waterC];
     default:        return [RGB.roughA, RGB.roughB, RGB.roughC, RGB.roughD];
   }
@@ -182,7 +196,7 @@ function pixelColor(x, y, type) {
   const [base, mid, dark, light] = paletteFor(type);
   let c = base;
   const noise = hRand(x, y, 1);
-  if (type !== T_WATER && type !== T_SAND && noise > 0.52 && noise < 0.66) c = mid;
+  if (type !== T_WATER && type !== T_SAND && type !== T_SHORE && noise > 0.52 && noise < 0.66) c = mid;
   if (type === T_FAIRWAY) {
     const tx = (x / TILE) | 0;
     const ty = (y / TILE) | 0;
@@ -198,6 +212,9 @@ function pixelColor(x, y, type) {
     if ((x + y) % 3 === 0) c = mid;
   } else if (type === T_SAND) {
     if (noise > 0.55) c = mid;
+  } else if (type === T_SHORE) {
+    if (noise > 0.5) c = mid;
+    if (noise > 0.74) c = dark;
   } else if (type === T_WATER) {
     const j = y % 4;
     const row = (y / 4) | 0;
@@ -208,11 +225,12 @@ function pixelColor(x, y, type) {
   }
   const dThresh = type === T_GREEN ? 0.97
                 : type === T_FAIRWAY || type === T_FRINGE ? 0.96
-                : type === T_SAND ? 0.93 : 0.92;
+                : type === T_SAND || type === T_SHORE ? 0.92 : 0.92;
   if (hRand(x, y, 10) > dThresh) c = dark;
   const lThresh = type === T_ROUGH ? 0.98 : 0.97;
   if (hRand(x, y, 20) > lThresh) c = light;
   if (type === T_SAND && hRand(x, y, 30) > 0.97) c = light;
+  if (type === T_SHORE && hRand(x, y, 35) > 0.96) c = light;
   if (type === T_WATER && hRand(x, y, 40) > 0.985) c = light;
   return c;
 }
@@ -230,25 +248,40 @@ function buildWorldImageData() {
   return new ImageData(data, WORLD_W, WORLD_H);
 }
 
+const WATER_PIXELS = (() => {
+  const out = [];
+  for (let y = 0; y < WORLD_H; y += 2) {
+    for (let x = 0; x < WORLD_W; x += 2) {
+      if (surfaceAtPixel(x + 0.5, y + 0.5) === T_WATER) {
+        out.push([x, y]);
+      }
+    }
+  }
+  return out;
+})();
+
 const CLUBS = [
-  { key: 'DR', name: 'Driver',      short: 'DR', v: 225, angle: 20, accMult: 1.25 },
-  { key: '3W', name: '3-Wood',      short: '3W', v: 205, angle: 24, accMult: 1.15 },
-  { key: '5W', name: '5-Wood',      short: '5W', v: 190, angle: 28, accMult: 1.08 },
-  { key: '5I', name: '5-Iron',      short: '5I', v: 170, angle: 33, accMult: 1.0 },
-  { key: '7I', name: '7-Iron',      short: '7I', v: 148, angle: 39, accMult: 0.95 },
-  { key: '9I', name: '9-Iron',      short: '9I', v: 128, angle: 45, accMult: 0.9 },
-  { key: 'PW', name: 'Pitch Wedge', short: 'PW', v: 112, angle: 51, accMult: 0.85 },
-  { key: 'SW', name: 'Sand Wedge',  short: 'SW', v: 96,  angle: 58, accMult: 0.8 },
-  { key: 'PT', name: 'Putter',      short: 'PT', v: 62,  angle: 0,  accMult: 0.6 },
+  { key: 'DR', name: 'Driver',      short: 'DR', v: 225, angle: 20, accMult: 1.25, powerRate: 1.2 },
+  { key: '3W', name: '3-Wood',      short: '3W', v: 205, angle: 24, accMult: 1.15, powerRate: 1.2 },
+  { key: '5W', name: '5-Wood',      short: '5W', v: 190, angle: 28, accMult: 1.08, powerRate: 1.2 },
+  { key: '5I', name: '5-Iron',      short: '5I', v: 170, angle: 33, accMult: 1.0, powerRate: 1.2 },
+  { key: '7I', name: '7-Iron',      short: '7I', v: 148, angle: 39, accMult: 0.95, powerRate: 1.25 },
+  { key: '9I', name: '9-Iron',      short: '9I', v: 128, angle: 45, accMult: 0.9, powerRate: 1.3 },
+  { key: 'PW', name: 'Pitch Wedge', short: 'PW', v: 112, angle: 51, accMult: 0.85, powerRate: 1.35 },
+  { key: 'SW', name: 'Sand Wedge',  short: 'SW', v: 96,  angle: 58, accMult: 0.8, powerRate: 1.4 },
+  { key: 'PT', name: 'Putter',      short: 'PT', v: 72,  angle: 0,  accMult: 0.55, powerRate: 0.7 },
 ];
 
+const GREEN_SLOPE = { angle: Math.PI * 0.3, mag: 7 };
+
 const SURFACE_PROPS = {
-  [T_GREEN]:   { bounceKeep: 0.22, rollDecel: 0.9, label: 'Green' },
+  [T_GREEN]:   { bounceKeep: 0.22, rollDecel: 0.85, label: 'Green', slopeAng: GREEN_SLOPE.angle, slopeMag: GREEN_SLOPE.mag },
   [T_FAIRWAY]: { bounceKeep: 0.38, rollDecel: 0.55, label: 'Fairway' },
   [T_ROUGH]:   { bounceKeep: 0.18, rollDecel: 2.2, label: 'Rough' },
   [T_FRINGE]:  { bounceKeep: 0.24, rollDecel: 0.8, label: 'Fringe' },
   [T_TEE]:     { bounceKeep: 0.36, rollDecel: 0.6, label: 'Tee Box' },
   [T_SAND]:    { bounceKeep: 0.06, rollDecel: 4.5, label: 'Bunker' },
+  [T_SHORE]:   { bounceKeep: 0.12, rollDecel: 3.0, label: 'Dirt' },
   [T_WATER]:   { bounceKeep: 0, rollDecel: 0, label: 'Water', hazard: true },
 };
 
@@ -261,16 +294,37 @@ function surfacePropsAt(wx, wy) {
 }
 
 const TREES = [
-  { x: 3.5, y: 8 }, { x: 16.5, y: 6.5 }, { x: 2.5, y: 11.5 }, { x: 17.5, y: 14 },
+  { x: 3.5, y: 8 }, { x: 16.5, y: 6.5 }, { x: 2.5, y: 11.2 }, { x: 17.5, y: 14 },
   { x: 4.5, y: 22 }, { x: 14.5, y: 24.5 }, { x: 1.5, y: 3.5 }, { x: 18.5, y: 2.5 },
   { x: 2.5, y: 27.5 }, { x: 17.5, y: 28 }, { x: 6.5, y: 27.5 }, { x: 13.5, y: 21.5 },
   { x: 1.5, y: 20.5 }, { x: 15.5, y: 19.5 }, { x: 0.5, y: 9 }, { x: 19.5, y: 10 },
-  { x: 2, y: 23.5 }, { x: 16.5, y: 10.5 }, { x: 1, y: 12.5 }, { x: 16.5, y: 16.5 },
+  { x: 2, y: 23.5 }, { x: 16.5, y: 10.5 }, { x: 16.5, y: 16.5 },
   { x: 18.5, y: 19 }, { x: 0.5, y: 26 }, { x: 19.5, y: 23 }, { x: 4, y: 25.5 },
   { x: 15, y: 28 },
 ];
 const FLAG = { x: 9.5, y: 5.5 };
 const TEE = { x: 9.5, y: 24.8 };
+
+const BUSHES = (() => {
+  const out = [];
+  for (let ty = 0; ty < MAP_H; ty++) {
+    for (let tx = 0; tx < MAP_W; tx++) {
+      const cx = (tx + 0.5) * TILE;
+      const cy = (ty + 0.5) * TILE;
+      const t = surfaceAtPixel(cx, cy);
+      if (t !== T_ROUGH) continue;
+      if (hRand(tx, ty, 800) < 0.90) continue;
+      const px = tx * TILE + Math.floor(hRand(tx, ty, 801) * (TILE - 4)) + 2;
+      const py = ty * TILE + Math.floor(hRand(tx, ty, 802) * (TILE - 4)) + 2;
+      let tooClose = false;
+      for (const tr of TREES) {
+        if (Math.hypot(tr.x * TILE - px, tr.y * TILE - py) < 18) { tooClose = true; break; }
+      }
+      if (!tooClose) out.push({ x: px / TILE, y: py / TILE, variant: Math.floor(hRand(tx, ty, 803) * 3) });
+    }
+  }
+  return out;
+})();
 
 const PROPS = (() => {
   const out = [];
@@ -304,6 +358,12 @@ const PROPS = (() => {
           const px = tx * TILE + Math.floor(hRand(tx, ty, 601) * (TILE - 2)) + 1;
           const py = ty * TILE + Math.floor(hRand(tx, ty, 602) * (TILE - 2)) + 1;
           if (surfaceAtPixel(px, py) === T_FAIRWAY) out.push({ kind: 'daisy', x: px, y: py });
+        }
+      } else if (type === T_SHORE) {
+        if (hRand(tx, ty, 650) > 0.7) {
+          const px = tx * TILE + Math.floor(hRand(tx, ty, 651) * (TILE - 2)) + 1;
+          const py = ty * TILE + Math.floor(hRand(tx, ty, 652) * (TILE - 2)) + 1;
+          if (surfaceAtPixel(px, py) === T_SHORE) out.push({ kind: 'pebble', x: px, y: py });
         }
       }
     }
@@ -342,8 +402,38 @@ function drawProp(ctx, p) {
   }
 }
 
-function drawTree(ctx, px, py) {
+function drawBush(ctx, px, py, variant, time, windStrength) {
   const x = Math.floor(px), y = Math.floor(py);
+  const seed = (x * 0.31 + y * 0.67);
+  const sway = Math.sin(time * 0.0024 + seed) * windStrength * 0.8;
+  const swayFloor = Math.floor(sway);
+  ctx.fillStyle = COLORS.shadow;
+  ctx.beginPath(); ctx.ellipse(x, y + 1, 5, 1.8, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = COLORS.bushShadow;
+  ctx.beginPath(); ctx.ellipse(x + swayFloor * 0.4, y - 1, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = COLORS.tree1;
+  ctx.beginPath(); ctx.ellipse(x + swayFloor * 0.6, y - 2, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = COLORS.tree2;
+  ctx.beginPath(); ctx.ellipse(x - 1 + swayFloor, y - 3, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = COLORS.tree3;
+  ctx.fillRect(x - 2 + swayFloor, y - 4, 2, 1);
+  ctx.fillRect(x + swayFloor, y - 4, 1, 1);
+  if (variant === 1) {
+    ctx.fillStyle = COLORS.flowerRed;
+    ctx.fillRect(x + swayFloor - 1, y - 3, 1, 1);
+    ctx.fillRect(x + swayFloor + 1, y - 2, 1, 1);
+  } else if (variant === 2) {
+    ctx.fillStyle = COLORS.flowerYellow;
+    ctx.fillRect(x + swayFloor, y - 4, 1, 1);
+    ctx.fillRect(x + swayFloor - 2, y - 3, 1, 1);
+  }
+}
+
+function drawTree(ctx, px, py, time, windStrength) {
+  const x = Math.floor(px), y = Math.floor(py);
+  const seed = (x * 0.29 + y * 0.71);
+  const sway = Math.sin(time * 0.0018 + seed) * windStrength * 1.4;
+  const swayFloor = Math.floor(sway);
   ctx.fillStyle = COLORS.shadow;
   ctx.beginPath();
   ctx.ellipse(x + 1, y + 2, 13, 4, 0, 0, Math.PI * 2);
@@ -355,25 +445,25 @@ function drawTree(ctx, px, py) {
   ctx.fillStyle = COLORS.trunkHi;
   ctx.fillRect(x - 2, y - 6, 1, 5);
   ctx.fillStyle = COLORS.tree0;
-  ctx.beginPath(); ctx.ellipse(x + 2, y - 12, 12, 9, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x + 2 + swayFloor, y - 12, 12, 9, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = COLORS.tree1;
-  ctx.beginPath(); ctx.ellipse(x + 1, y - 13, 11, 8, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x + 1 + swayFloor, y - 13, 11, 8, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = COLORS.tree2;
-  ctx.beginPath(); ctx.ellipse(x, y - 14, 9, 7, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x + swayFloor, y - 14, 9, 7, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = COLORS.tree3;
-  ctx.beginPath(); ctx.ellipse(x - 2, y - 15, 7, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x - 2 + swayFloor, y - 15, 7, 5, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = COLORS.tree4;
-  ctx.beginPath(); ctx.ellipse(x - 3, y - 16, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x - 3 + swayFloor, y - 16, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = COLORS.tree5;
-  ctx.fillRect(x - 4, y - 17, 2, 1);
-  ctx.fillRect(x - 3, y - 17, 1, 1);
+  ctx.fillRect(x - 4 + swayFloor, y - 17, 2, 1);
+  ctx.fillRect(x - 3 + swayFloor, y - 17, 1, 1);
   ctx.fillStyle = COLORS.tree0;
-  ctx.fillRect(x + 5, y - 10, 1, 1);
-  ctx.fillRect(x + 6, y - 13, 1, 1);
-  ctx.fillRect(x - 7, y - 12, 1, 1);
+  ctx.fillRect(x + 5 + swayFloor, y - 10, 1, 1);
+  ctx.fillRect(x + 6 + swayFloor, y - 13, 1, 1);
+  ctx.fillRect(x - 7 + swayFloor, y - 12, 1, 1);
   ctx.fillStyle = COLORS.tree4;
-  ctx.fillRect(x + 4, y - 15, 1, 1);
-  ctx.fillRect(x - 6, y - 14, 1, 1);
+  ctx.fillRect(x + 4 + swayFloor, y - 15, 1, 1);
+  ctx.fillRect(x - 6 + swayFloor, y - 14, 1, 1);
 }
 
 function drawFlag(ctx, px, py, time) {
@@ -493,25 +583,98 @@ function drawBall(ctx, px, py, z) {
   ctx.fillRect(x - 1, y - 2 - lift, 1, 1);
 }
 
-function drawAimLine(ctx, startX, startY, aimAngle, length, time) {
-  const dx = Math.sin(aimAngle);
-  const dy = -Math.cos(aimAngle);
-  const steps = Math.max(6, Math.floor(length / 5));
-  ctx.fillStyle = '#fff6d8';
-  for (let i = 2; i <= steps; i++) {
-    const t = i / steps;
-    const px = Math.floor(startX + dx * length * t);
-    const py = Math.floor(startY + dy * length * t);
-    const anim = (Math.floor(time * 0.008) + i) & 1;
-    if (anim) ctx.fillRect(px, py, 1, 1);
+function drawLeaf(ctx, leaf, time) {
+  const x = Math.floor(leaf.x), y = Math.floor(leaf.y);
+  const wob = Math.sin(time * 0.01 + leaf.phase);
+  ctx.fillStyle = leaf.color;
+  if (wob > 0) {
+    ctx.fillRect(x, y, 2, 1);
+    ctx.fillRect(x, y + 1, 1, 1);
+  } else {
+    ctx.fillRect(x, y, 1, 2);
+    ctx.fillRect(x + 1, y, 1, 1);
   }
-  const tx = Math.floor(startX + dx * length);
-  const ty = Math.floor(startY + dy * length);
-  ctx.fillStyle = COLORS.flagRed;
-  ctx.fillRect(tx - 2, ty, 5, 1);
-  ctx.fillRect(tx, ty - 2, 1, 5);
-  ctx.fillStyle = '#fff6d8';
-  ctx.fillRect(tx, ty, 1, 1);
+}
+
+function drawWaterSparkles(ctx, time) {
+  const phase = time * 0.0016;
+  ctx.fillStyle = COLORS.waterC;
+  for (let i = 0; i < WATER_PIXELS.length; i++) {
+    const [wx, wy] = WATER_PIXELS[i];
+    const s = Math.sin(phase + wx * 0.09 + wy * 0.06);
+    if (s > 0.85) ctx.fillRect(wx, wy, 1, 1);
+  }
+  ctx.fillStyle = COLORS.waterD;
+  for (let i = 0; i < WATER_PIXELS.length; i += 3) {
+    const [wx, wy] = WATER_PIXELS[i];
+    const s = Math.sin(phase * 1.3 + wx * 0.05 + wy * 0.08);
+    if (s > 0.88) ctx.fillRect(wx + 1, wy, 1, 1);
+  }
+}
+
+function simulateFlight(startX, startY, aimAngle, accuracy, power, club, windX, windY, stopAtGround) {
+  const v0 = club.v * power;
+  const angleRad = (club.angle * Math.PI) / 180;
+  const defl = ((accuracy * 18 * club.accMult) * Math.PI) / 180;
+  const dir = aimAngle + defl;
+  const cosAng = club.angle === 0 ? 1 : Math.cos(angleRad);
+  let vx = v0 * cosAng * Math.sin(dir);
+  let vy = v0 * cosAng * -Math.cos(dir);
+  let vz = club.angle === 0 ? 0 : v0 * Math.sin(angleRad);
+  let x = startX, y = startY, z = 0;
+  const stepDt = 0.04;
+  const maxSteps = 180;
+  const points = [];
+  for (let s = 0; s < maxSteps; s++) {
+    const hf = Math.min(1, z / 15);
+    vx += windX * hf * stepDt;
+    vy += windY * hf * stepDt;
+    vz -= GRAVITY * stepDt;
+    const d = 0.1 * stepDt;
+    vx *= 1 - d;
+    vy *= 1 - d;
+    vz *= 1 - d * 0.5;
+    x += vx * stepDt;
+    y += vy * stepDt;
+    z += vz * stepDt;
+    points.push({ x, y, z });
+    if (stopAtGround && z <= 0 && s > 1) break;
+  }
+  return points;
+}
+
+function drawShotPredict(ctx, points) {
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  for (let i = 2; i < points.length; i += 3) {
+    const p = points[i];
+    if (p.x < 0 || p.x > WORLD_W || p.y < 0 || p.y > WORLD_H) continue;
+    ctx.fillRect(Math.floor(p.x), Math.floor(p.y), 1, 1);
+  }
+  for (let i = 2; i < points.length; i += 2) {
+    const p = points[i];
+    if (p.x < 0 || p.x > WORLD_W || p.y < 0 || p.y > WORLD_H) continue;
+    const a = 0.95 - 0.55 * (i / points.length);
+    ctx.fillStyle = `rgba(255,246,216,${a})`;
+    ctx.fillRect(Math.floor(p.x), Math.floor(p.y - p.z), 1, 1);
+  }
+  if (points.length > 0) {
+    const last = points[points.length - 1];
+    const lx = Math.floor(last.x), ly = Math.floor(last.y);
+    ctx.fillStyle = COLORS.flagRed;
+    ctx.fillRect(lx - 2, ly, 5, 1);
+    ctx.fillRect(lx, ly - 2, 1, 5);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(lx, ly, 1, 1);
+  }
+}
+
+function drawFlightTrail(ctx, trail) {
+  for (let i = 0; i < trail.length; i++) {
+    const p = trail[i];
+    const a = 0.75 * (i / trail.length);
+    ctx.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
+    ctx.fillRect(Math.floor(p.x), Math.floor(p.y - p.z), 1, 1);
+  }
 }
 
 function computeCarry(club, power) {
@@ -532,6 +695,7 @@ function launchBall(b, aimAngle, power, accuracyOffset, club) {
   b.vz = club.angle === 0 ? 0 : v0 * Math.sin(angleRad);
   b.z = 0;
   b.state = 'flying';
+  b.trail = [];
 }
 
 function stepBall(b, dt, windX, windY, flagX, flagY) {
@@ -547,16 +711,10 @@ function stepBall(b, dt, windX, windY, flagX, flagY) {
     b.x += b.vx * dt;
     b.y += b.vy * dt;
     b.z += b.vz * dt;
-    if (b.x < 0 || b.x > WORLD_W || b.y < 0 || b.y > WORLD_H) {
-      b.state = 'ob';
-      return;
-    }
+    if (b.x < 0 || b.x > WORLD_W || b.y < 0 || b.y > WORLD_H) { b.state = 'ob'; return; }
     if (b.z < 5) {
       const dcx = b.x - flagX, dcy = b.y - flagY;
-      if (Math.hypot(dcx, dcy) < HOLE_RADIUS && Math.hypot(b.vx, b.vy) < 90) {
-        b.state = 'holed';
-        return;
-      }
+      if (Math.hypot(dcx, dcy) < HOLE_RADIUS && Math.hypot(b.vx, b.vy) < 90) { b.state = 'holed'; return; }
     }
     if (b.z <= 0) {
       b.z = 0;
@@ -578,6 +736,10 @@ function stepBall(b, dt, windX, windY, flagX, flagY) {
     const sp = surfacePropsAt(b.x, b.y);
     if (sp.hazard) { b.state = 'hazard'; return; }
     if (sp.ob) { b.state = 'ob'; return; }
+    if (sp.slopeMag) {
+      b.vx += Math.sin(sp.slopeAng) * sp.slopeMag * dt;
+      b.vy += -Math.cos(sp.slopeAng) * sp.slopeMag * dt;
+    }
     const speed = Math.hypot(b.vx, b.vy);
     if (speed < 4) {
       b.state = 'stopped';
@@ -590,14 +752,9 @@ function stepBall(b, dt, windX, windY, flagX, flagY) {
     b.vy *= factor;
     b.x += b.vx * dt;
     b.y += b.vy * dt;
-    if (b.x < 0 || b.x > WORLD_W || b.y < 0 || b.y > WORLD_H) {
-      b.state = 'ob';
-      return;
-    }
+    if (b.x < 0 || b.x > WORLD_W || b.y < 0 || b.y > WORLD_H) { b.state = 'ob'; return; }
     const dcx = b.x - flagX, dcy = b.y - flagY;
-    if (Math.hypot(dcx, dcy) < HOLE_RADIUS && speed < 60) {
-      b.state = 'holed';
-    }
+    if (Math.hypot(dcx, dcy) < HOLE_RADIUS && speed < 60) b.state = 'holed';
   }
 }
 
@@ -606,6 +763,29 @@ const SW = {
   FLYING: 'flying', ROLLING: 'rolling', STOPPED: 'stopped',
   HAZARD: 'hazard', OB: 'ob', HOLED: 'holed',
 };
+
+function spawnLeaf(windX, windY) {
+  const fromLeft = windX >= 0;
+  const fromTop = windY >= 0;
+  const side = Math.random();
+  let x, y;
+  if (side < 0.5) {
+    x = fromLeft ? -6 - Math.random() * 20 : WORLD_W + 6 + Math.random() * 20;
+    y = Math.random() * WORLD_H;
+  } else {
+    x = Math.random() * WORLD_W;
+    y = fromTop ? -6 - Math.random() * 20 : WORLD_H + 6 + Math.random() * 20;
+  }
+  return {
+    x, y,
+    vx: windX * 0.8 + (Math.random() - 0.5) * 6,
+    vy: windY * 0.8 + (Math.random() - 0.5) * 6,
+    age: 0,
+    maxAge: 10 + Math.random() * 10,
+    color: LEAF_COLORS[Math.floor(Math.random() * LEAF_COLORS.length)],
+    phase: Math.random() * Math.PI * 2,
+  };
+}
 
 export default function GolfStoryScreen({ onExit }) {
   const canvasRef = useRef(null);
@@ -617,6 +797,7 @@ export default function GolfStoryScreen({ onExit }) {
     state: 'rest',
     lastGoodX: TEE.x * TILE - 4,
     lastGoodY: TEE.y * TILE + 2,
+    trail: [],
   });
   const swingRef = useRef({
     state: SW.IDLE,
@@ -628,9 +809,9 @@ export default function GolfStoryScreen({ onExit }) {
     accuracyPhase: 0,
     strokeCount: 0,
     messageTimer: 0,
-    hudVersion: 0,
   });
   const windRef = useRef({ x: 0, y: 0, angle: 0, speed: 0, mph: 0 });
+  const leavesRef = useRef([]);
   const keysRef = useRef({});
   const rafRef = useRef(null);
 
@@ -667,7 +848,7 @@ export default function GolfStoryScreen({ onExit }) {
     window.addEventListener('resize', resize);
 
     const windAngle = Math.random() * Math.PI * 2;
-    const windSpeed = 4 + Math.random() * 18;
+    const windSpeed = 5 + Math.random() * 18;
     windRef.current = {
       x: Math.sin(windAngle) * windSpeed,
       y: -Math.cos(windAngle) * windSpeed,
@@ -676,10 +857,17 @@ export default function GolfStoryScreen({ onExit }) {
       mph: Math.round(windSpeed * 0.55),
     };
 
+    for (let i = 0; i < MAX_LEAVES; i++) {
+      const l = spawnLeaf(windRef.current.x, windRef.current.y);
+      l.age = Math.random() * l.maxAge;
+      l.x = Math.random() * WORLD_W;
+      l.y = Math.random() * WORLD_H;
+      leavesRef.current.push(l);
+    }
+
     swingRef.current.strokeCount = 1;
-    const b = ballRef.current;
-    const aim = Math.atan2(FLAG.x * TILE - b.x, -(FLAG.y * TILE - b.y));
-    swingRef.current.aimAngle = aim;
+    const b0 = ballRef.current;
+    swingRef.current.aimAngle = Math.atan2(FLAG.x * TILE - b0.x, -(FLAG.y * TILE - b0.y));
 
     const flushHud = () => {
       const sw = swingRef.current;
@@ -713,6 +901,7 @@ export default function GolfStoryScreen({ onExit }) {
       ball.z = 0; ball.vx = 0; ball.vy = 0; ball.vz = 0;
       ball.state = 'rest';
       ball.lastGoodX = ball.x; ball.lastGoodY = ball.y;
+      ball.trail = [];
       p.x = ball.x + 4; p.y = ball.y - 2;
       p.facing = 'N'; p.moving = false;
       swingRef.current.state = SW.IDLE;
@@ -729,6 +918,7 @@ export default function GolfStoryScreen({ onExit }) {
         if (Math.hypot(p.x - ball.x, p.y - ball.y) < 26) {
           sw.state = SW.AIMING;
           sw.aimAngle = Math.atan2(FLAG.x * TILE - ball.x, -(FLAG.y * TILE - ball.y));
+          if (surfaceAt(ball.x, ball.y) === T_GREEN) sw.clubIdx = CLUBS.length - 1;
           flushHud();
         }
       } else if (sw.state === SW.AIMING) {
@@ -797,6 +987,19 @@ export default function GolfStoryScreen({ onExit }) {
       const sw = swingRef.current;
       const w = windRef.current;
 
+      for (const leaf of leavesRef.current) {
+        leaf.vx += w.x * 0.35 * dt + (Math.random() - 0.5) * 2 * dt;
+        leaf.vy += w.y * 0.35 * dt + (Math.random() - 0.5) * 2 * dt;
+        leaf.vx *= 1 - 0.25 * dt;
+        leaf.vy *= 1 - 0.25 * dt;
+        leaf.x += leaf.vx * dt;
+        leaf.y += leaf.vy * dt;
+        leaf.age += dt;
+        if (leaf.age > leaf.maxAge || leaf.x < -30 || leaf.x > WORLD_W + 30 || leaf.y < -30 || leaf.y > WORLD_H + 30) {
+          Object.assign(leaf, spawnLeaf(w.x, w.y));
+        }
+      }
+
       if (sw.state === SW.IDLE) {
         const speed = 44;
         let vx = 0, vy = 0;
@@ -813,9 +1016,8 @@ export default function GolfStoryScreen({ onExit }) {
         if (p.moving) p.walkPhase += dt * 8; else p.walkPhase = 0;
       } else if (sw.state === SW.AIMING) {
         const rotSpeed = 1.6;
-        let rotated = false;
-        if (k.arrowleft || k.a) { sw.aimAngle -= rotSpeed * dt; rotated = true; }
-        if (k.arrowright || k.d) { sw.aimAngle += rotSpeed * dt; rotated = true; }
+        if (k.arrowleft || k.a) sw.aimAngle -= rotSpeed * dt;
+        if (k.arrowright || k.d) sw.aimAngle += rotSpeed * dt;
         const dx = Math.sin(sw.aimAngle), dy = -Math.cos(sw.aimAngle);
         if (Math.abs(dx) > Math.abs(dy)) p.facing = dx > 0 ? 'E' : 'W';
         else p.facing = dy > 0 ? 'S' : 'N';
@@ -823,7 +1025,8 @@ export default function GolfStoryScreen({ onExit }) {
         p.x = ball.x + 4;
         p.y = ball.y - 2;
       } else if (sw.state === SW.POWER) {
-        sw.powerPhase += dt * 1.2;
+        const rate = CLUBS[sw.clubIdx].powerRate || 1.2;
+        sw.powerPhase += dt * rate;
         const u = sw.powerPhase % 2;
         sw.power = u < 1 ? u : 2 - u;
         p.x = ball.x + 4; p.y = ball.y - 2; p.moving = false;
@@ -834,6 +1037,10 @@ export default function GolfStoryScreen({ onExit }) {
         p.x = ball.x + 4; p.y = ball.y - 2; p.moving = false;
       } else if (sw.state === SW.FLYING || sw.state === SW.ROLLING) {
         stepBall(ball, dt, w.x, w.y, flagX, flagY);
+        if (sw.state === SW.FLYING) {
+          ball.trail.push({ x: ball.x, y: ball.y, z: ball.z });
+          if (ball.trail.length > 40) ball.trail.shift();
+        }
         if (ball.state === 'rolling') sw.state = SW.ROLLING;
         else if (ball.state === 'stopped') sw.state = SW.STOPPED;
         else if (ball.state === 'hazard') { sw.state = SW.HAZARD; sw.messageTimer = 2.2; sw.strokeCount++; flushHud(); }
@@ -842,6 +1049,7 @@ export default function GolfStoryScreen({ onExit }) {
       } else if (sw.state === SW.STOPPED) {
         p.x = ball.x + 4; p.y = ball.y - 2; p.facing = 'N';
         ball.state = 'rest';
+        ball.trail = [];
         sw.state = SW.IDLE;
         flushHud();
       } else if (sw.state === SW.HAZARD || sw.state === SW.OB) {
@@ -850,6 +1058,7 @@ export default function GolfStoryScreen({ onExit }) {
           ball.x = ball.lastGoodX; ball.y = ball.lastGoodY;
           ball.vx = 0; ball.vy = 0; ball.vz = 0; ball.z = 0;
           ball.state = 'rest';
+          ball.trail = [];
           p.x = ball.x + 4; p.y = ball.y - 2; p.facing = 'N';
           sw.state = SW.IDLE;
           flushHud();
@@ -859,7 +1068,7 @@ export default function GolfStoryScreen({ onExit }) {
       }
 
       hudAccum += dt;
-      if (hudAccum > 0.12 && (sw.state === SW.POWER || sw.state === SW.ACCURACY)) {
+      if (hudAccum > 0.1 && (sw.state === SW.POWER || sw.state === SW.ACCURACY)) {
         hudAccum = 0;
         setHud((h) => ({ ...h, power: sw.power, accuracy: sw.accuracy }));
       }
@@ -883,16 +1092,25 @@ export default function GolfStoryScreen({ onExit }) {
       ctx.translate(-camX, -camY);
 
       if (staticRef.current) ctx.drawImage(staticRef.current, 0, 0);
+      drawWaterSparkles(ctx, now);
 
       if (sw.state === SW.AIMING || sw.state === SW.POWER || sw.state === SW.ACCURACY) {
         const club = CLUBS[sw.clubIdx];
-        const powerScale = sw.state === SW.POWER || sw.state === SW.ACCURACY ? Math.max(0.15, sw.power) : 1.0;
-        const aimLen = computeCarry(club, powerScale);
-        drawAimLine(ctx, ball.x, ball.y, sw.aimAngle, aimLen, now);
+        const powerForPredict = sw.state === SW.AIMING ? 1.0 : Math.max(0.15, sw.power);
+        const accForPredict = sw.state === SW.ACCURACY ? sw.accuracy : 0;
+        const pts = simulateFlight(ball.x, ball.y, sw.aimAngle, accForPredict, powerForPredict, club, w.x, w.y, true);
+        drawShotPredict(ctx, pts);
       }
+
+      if (sw.state === SW.FLYING && ball.trail.length > 1) {
+        drawFlightTrail(ctx, ball.trail);
+      }
+
+      const windStrength = Math.min(1, w.speed / 16);
 
       const drawables = [];
       for (const t of TREES) drawables.push({ kind: 'tree', x: t.x * TILE, y: t.y * TILE });
+      for (const b of BUSHES) drawables.push({ kind: 'bush', x: b.x * TILE, y: b.y * TILE, variant: b.variant });
       drawables.push({ kind: 'flag', x: FLAG.x * TILE, y: FLAG.y * TILE });
       drawables.push({ kind: 'ball', x: ball.x, y: ball.y, z: ball.z });
       const showGolfer = !(sw.state === SW.FLYING || sw.state === SW.ROLLING || sw.state === SW.HOLED);
@@ -901,11 +1119,14 @@ export default function GolfStoryScreen({ onExit }) {
       }
       drawables.sort((a, b2) => a.y - b2.y);
       for (const d of drawables) {
-        if (d.kind === 'tree') drawTree(ctx, d.x, d.y);
+        if (d.kind === 'tree') drawTree(ctx, d.x, d.y, now, windStrength);
+        else if (d.kind === 'bush') drawBush(ctx, d.x, d.y, d.variant, now, windStrength);
         else if (d.kind === 'flag') drawFlag(ctx, d.x, d.y, now);
         else if (d.kind === 'ball') drawBall(ctx, d.x, d.y, d.z || 0);
         else if (d.kind === 'golfer') drawGolfer(ctx, d.x, d.y, d.facing, d.phase);
       }
+
+      for (const leaf of leavesRef.current) drawLeaf(ctx, leaf, now);
 
       ctx.restore();
 
@@ -1001,7 +1222,7 @@ export default function GolfStoryScreen({ onExit }) {
 function hintForState(state) {
   switch (state) {
     case SW.IDLE: return 'Arrows: walk  ·  SPACE near ball: aim';
-    case SW.AIMING: return '← → rotate aim  ·  ↑ ↓ change club  ·  SPACE: swing  ·  ESC: cancel';
+    case SW.AIMING: return '← → aim  ·  ↑ ↓ club  ·  SPACE: swing  ·  ESC: cancel';
     case SW.POWER: return 'SPACE to lock POWER';
     case SW.ACCURACY: return 'SPACE to lock ACCURACY — center is pure';
     case SW.FLYING: case SW.ROLLING: return '…';
@@ -1107,9 +1328,7 @@ const styles = StyleSheet.create({
     fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
   },
   windRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  windArrow: {
-    color: '#fff6d8', fontSize: 22, marginRight: 4,
-  },
+  windArrow: { color: '#fff6d8', fontSize: 22, marginRight: 4 },
   messageBox: {
     position: 'absolute', top: '40%', left: 16, right: 16,
     backgroundColor: '#0e1a12', borderWidth: 3, borderColor: '#fbe043',
