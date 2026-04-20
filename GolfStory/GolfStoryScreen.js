@@ -2,10 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 const TILE = 16;
-const MAP_W = 20;
-const MAP_H = 30;
-const WORLD_W = MAP_W * TILE;
-const WORLD_H = MAP_H * TILE;
 const GRAVITY = 70;
 const HOLE_RADIUS = 4;
 const YARDS_PER_TILE = 10;
@@ -51,64 +47,199 @@ function fbm(x, y) {
   return a + b + c;
 }
 
-const SURFACES = [
+const HOLES = [
   {
-    type: T_FAIRWAY,
-    shape: { kind: 'polygon', points: [
-      [7.2, 8.8], [10, 8.6], [12.8, 8.8], [13.4, 9.4], [13.9, 10.4],
-      [14.2, 11.8], [14.3, 13.5], [14.1, 15.5], [13.9, 17.5],
-      [13.7, 19.3], [13.4, 20.8], [13, 21.9], [12.6, 22.8],
-      [12.2, 23.6], [11.8, 24.4], [11.4, 25.1], [11.1, 25.7],
-      [9, 25.7], [8.9, 25.1], [8.5, 24.4], [8.1, 23.6],
-      [7.7, 22.8], [7.3, 21.9], [7, 20.8], [6.7, 19.3],
-      [6.4, 17.5], [6.2, 15.5], [6, 13.5], [6.1, 11.8],
-      [6.3, 10.4], [6.8, 9.4],
-    ]},
+    name: 'Hole 1', par: 3, width: 20, height: 30,
+    tee: { x: 9.5, y: 24.8 },
+    flag: { x: 9.5, y: 5.5 },
+    greenSlope: { angle: Math.PI * 0.3, mag: 7 },
+    surfaces: [
+      { type: T_FAIRWAY, shape: { kind: 'polygon', points: [
+        [7.2, 8.8], [10, 8.6], [12.8, 8.8], [13.4, 9.4], [13.9, 10.4],
+        [14.2, 11.8], [14.3, 13.5], [14.1, 15.5], [13.9, 17.5],
+        [13.7, 19.3], [13.4, 20.8], [13, 21.9], [12.6, 22.8],
+        [12.2, 23.6], [11.8, 24.4], [11.4, 25.1], [11.1, 25.7],
+        [9, 25.7], [8.9, 25.1], [8.5, 24.4], [8.1, 23.6],
+        [7.7, 22.8], [7.3, 21.9], [7, 20.8], [6.7, 19.3],
+        [6.4, 17.5], [6.2, 15.5], [6, 13.5], [6.1, 11.8],
+        [6.3, 10.4], [6.8, 9.4],
+      ]}},
+      { type: T_SAND, shape: { kind: 'polygon', points: [
+        [12.9, 10.8], [13.8, 10.7], [14.6, 11], [14.9, 11.8],
+        [14.8, 12.8], [14.4, 13.6], [13.6, 13.8], [12.9, 13.5],
+        [12.5, 12.6], [12.6, 11.5],
+      ]}},
+      { type: T_SAND, shape: { kind: 'circle', cx: 13.9, cy: 7.4, r: 1.1 }},
+      { type: T_SHORE, shape: { kind: 'polygon', points: [
+        [1.05, 12.7], [3, 12.45], [4.85, 12.75], [5.75, 13.55], [6.15, 15.05],
+        [6.2, 17.05], [5.85, 18.6], [4.95, 19.3], [3.55, 19.65], [1.9, 19.55],
+        [0.55, 18.75], [0.25, 17.0], [0.35, 15.1], [0.7, 13.7],
+      ]}},
+      { type: T_WATER, shape: { kind: 'polygon', points: [
+        [1.5, 13.2], [3, 13], [4.8, 13.3], [5.6, 14], [5.9, 15.3],
+        [5.9, 17], [5.6, 18.4], [4.8, 19], [3.5, 19.3], [2, 19.2],
+        [1, 18.4], [0.7, 17], [0.8, 15.3], [1.1, 14],
+      ]}},
+      { type: T_FRINGE, shape: { kind: 'annulus', cx: 9.5, cy: 5.5, inner: 3.2, outer: 4.05 }},
+      { type: T_GREEN, shape: { kind: 'circle', cx: 9.5, cy: 5.5, r: 3.2 }},
+      { type: T_TEE, shape: { kind: 'rect', x: 8.7, y: 24.2, w: 1.6, h: 1.1 }},
+    ],
+    trees: [
+      { x: 3.5, y: 8 }, { x: 16.5, y: 6.5 }, { x: 2.5, y: 11.2 }, { x: 17.5, y: 14 },
+      { x: 4.5, y: 22 }, { x: 14.5, y: 24.5 }, { x: 1.5, y: 3.5 }, { x: 18.5, y: 2.5 },
+      { x: 2.5, y: 27.5 }, { x: 17.5, y: 28 }, { x: 6.5, y: 27.5 }, { x: 13.5, y: 21.5 },
+      { x: 1.5, y: 20.5 }, { x: 15.5, y: 19.5 }, { x: 0.5, y: 9 }, { x: 19.5, y: 10 },
+      { x: 2, y: 23.5 }, { x: 16.5, y: 10.5 }, { x: 16.5, y: 16.5 },
+      { x: 18.5, y: 19 }, { x: 0.5, y: 26 }, { x: 19.5, y: 23 }, { x: 4, y: 25.5 },
+      { x: 15, y: 28 },
+    ],
   },
   {
-    type: T_SAND,
-    shape: { kind: 'polygon', points: [
-      [12.9, 10.8], [13.8, 10.7], [14.6, 11], [14.9, 11.8],
-      [14.8, 12.8], [14.4, 13.6], [13.6, 13.8], [12.9, 13.5],
-      [12.5, 12.6], [12.6, 11.5],
-    ]},
+    name: 'Hole 2', par: 4, width: 22, height: 48,
+    tee: { x: 11, y: 45.5 },
+    flag: { x: 13, y: 5 },
+    greenSlope: { angle: Math.PI * 1.05, mag: 8 },
+    surfaces: [
+      { type: T_FAIRWAY, shape: { kind: 'polygon', points: [
+        [9, 46], [13, 46], [13.8, 44.5], [14.5, 41], [15, 37], [15.5, 32],
+        [16, 27], [16.2, 22], [16, 17], [15.5, 13], [14.7, 10], [13.5, 8],
+        [11.5, 7], [9.8, 7.3], [8.7, 9], [8, 12], [7.3, 16],
+        [7, 21], [7, 27], [7.2, 33], [7.6, 38], [8, 42.5], [8.5, 45.5]
+      ]}},
+      { type: T_SAND, shape: { kind: 'circle', cx: 16, cy: 7, r: 1.2 }},
+      { type: T_SAND, shape: { kind: 'polygon', points: [
+        [8.5, 27.5], [9.5, 27.3], [10.2, 28], [10, 29], [9, 29.2], [8.3, 28.5]
+      ]}},
+      { type: T_SHORE, shape: { kind: 'polygon', points: [
+        [0.1, 8], [2, 7.7], [4, 8.1], [5.5, 9.6], [6.1, 12.5], [6.3, 18],
+        [6.3, 26], [6.2, 33], [5.9, 38.5], [5.3, 42.5], [4, 43.8], [2, 43.5], [0.1, 42.2]
+      ]}},
+      { type: T_WATER, shape: { kind: 'polygon', points: [
+        [0.4, 8.5], [2, 8.2], [3.8, 8.7], [5, 10.3], [5.5, 13], [5.7, 18.5],
+        [5.7, 26], [5.5, 32.5], [5.2, 37.5], [4.6, 41.3], [3.2, 42.5], [1.5, 42.3], [0.4, 41]
+      ]}},
+      { type: T_FRINGE, shape: { kind: 'annulus', cx: 13, cy: 5, inner: 2.7, outer: 3.45 }},
+      { type: T_GREEN, shape: { kind: 'circle', cx: 13, cy: 5, r: 2.7 }},
+      { type: T_TEE, shape: { kind: 'rect', x: 10.2, y: 45.1, w: 1.6, h: 1.0 }},
+    ],
+    trees: [
+      // Right edge
+      { x: 19, y: 5 }, { x: 20, y: 9 }, { x: 19.5, y: 13 }, { x: 20, y: 17 },
+      { x: 19.5, y: 21 }, { x: 20, y: 25 }, { x: 19.5, y: 29 }, { x: 20, y: 33 },
+      { x: 19.5, y: 37 }, { x: 20, y: 41 }, { x: 19, y: 45 }, { x: 18, y: 47 },
+      // Top
+      { x: 16, y: 2.5 }, { x: 13, y: 2 }, { x: 10, y: 2.5 }, { x: 7, y: 2 },
+      // Behind tee
+      { x: 8, y: 47 }, { x: 13, y: 47 }, { x: 21, y: 46.5 },
+      // Water-left (small islands/tufts)
+      { x: 0.5, y: 3 }, { x: 2, y: 3 }, { x: 0.5, y: 45 }, { x: 2, y: 46 },
+      // Trees along right-of-fairway
+      { x: 18, y: 10 }, { x: 17.5, y: 19 }, { x: 18, y: 28 }, { x: 17.8, y: 36 },
+    ],
   },
   {
-    type: T_SAND,
-    shape: { kind: 'circle', cx: 13.9, cy: 7.4, r: 1.1 },
-  },
-  {
-    type: T_SHORE,
-    shape: { kind: 'polygon', points: [
-      [1.05, 12.7], [3, 12.45], [4.85, 12.75], [5.75, 13.55], [6.15, 15.05],
-      [6.2, 17.05], [5.85, 18.6], [4.95, 19.3], [3.55, 19.65], [1.9, 19.55],
-      [0.55, 18.75], [0.25, 17.0], [0.35, 15.1], [0.7, 13.7],
-    ]},
-  },
-  {
-    type: T_WATER,
-    shape: { kind: 'polygon', points: [
-      [1.5, 13.2], [3, 13], [4.8, 13.3], [5.6, 14], [5.9, 15.3],
-      [5.9, 17], [5.6, 18.4], [4.8, 19], [3.5, 19.3], [2, 19.2],
-      [1, 18.4], [0.7, 17], [0.8, 15.3], [1.1, 14],
-    ]},
-  },
-  {
-    type: T_FRINGE,
-    shape: { kind: 'annulus', cx: 9.5, cy: 5.5, inner: 3.2, outer: 4.05 },
-  },
-  {
-    type: T_GREEN,
-    shape: { kind: 'circle', cx: 9.5, cy: 5.5, r: 3.2 },
-  },
-  {
-    type: T_TEE,
-    shape: { kind: 'rect', x: 8.7, y: 24.2, w: 1.6, h: 1.1 },
+    name: 'Hole 3', par: 5, width: 26, height: 58,
+    tee: { x: 22, y: 55.5 },
+    flag: { x: 4, y: 5 },
+    greenSlope: { angle: Math.PI * 0.55, mag: 7 },
+    surfaces: [
+      { type: T_FAIRWAY, shape: { kind: 'polygon', points: [
+        // Tee leg (bottom-right)
+        [20, 56.2], [23, 56.2],
+        [23.3, 54], [23.3, 49], [23.2, 43], [22.8, 38],
+        // Corner curving left
+        [22.3, 34], [21.4, 30.5], [19.8, 28], [17, 26.5], [14, 25.7], [10, 25.3],
+        // Approach leg (going up-left)
+        [7, 24.8], [4.8, 23.8], [3.5, 21.5], [3.1, 18], [3, 14], [3.1, 10],
+        [3.3, 6], [3.1, 4.5], [2.3, 4.3],
+        // Around green area, come back down inside
+        [1.6, 5], [1.4, 10], [1.5, 16], [1.7, 22], [2.1, 27], [3, 31],
+        [4.8, 32.5], [8, 33.3], [12, 33.8], [15.5, 34], [18, 34.5],
+        // Back down east side of dogleg
+        [20, 35.5], [20.6, 39], [20.8, 44], [20.6, 49], [20.3, 53], [20, 56.2]
+      ]}},
+      // Fairway bunker inside the elbow
+      { type: T_SAND, shape: { kind: 'circle', cx: 17.5, cy: 29.5, r: 1.3 }},
+      // Greenside pot bunker
+      { type: T_SAND, shape: { kind: 'polygon', points: [
+        [5.3, 7], [6.2, 6.8], [6.8, 7.5], [6.5, 8.3], [5.6, 8.4], [5, 7.7]
+      ]}},
+      { type: T_FRINGE, shape: { kind: 'annulus', cx: 4, cy: 5, inner: 2.5, outer: 3.2 }},
+      { type: T_GREEN, shape: { kind: 'circle', cx: 4, cy: 5, r: 2.5 }},
+      { type: T_TEE, shape: { kind: 'rect', x: 21.2, y: 55.1, w: 1.6, h: 1.0 }},
+    ],
+    trees: [
+      // The forest inside the dogleg (y=35-55, x=8-19)
+      { x: 10, y: 40 }, { x: 12, y: 38 }, { x: 14, y: 40 }, { x: 16, y: 38 },
+      { x: 11, y: 43 }, { x: 13, y: 44 }, { x: 15, y: 43 }, { x: 17, y: 41 },
+      { x: 9, y: 46 }, { x: 12, y: 47 }, { x: 14, y: 48 }, { x: 16, y: 47 },
+      { x: 18, y: 44 }, { x: 10, y: 50 }, { x: 13, y: 50 }, { x: 15, y: 51 },
+      { x: 11, y: 53 }, { x: 14, y: 54 }, { x: 8, y: 43 }, { x: 9, y: 37 },
+      { x: 11, y: 35.5 }, { x: 13, y: 35.5 }, { x: 15, y: 36 }, { x: 17, y: 37 },
+      { x: 18, y: 49 }, { x: 18, y: 53 }, { x: 16, y: 55 }, { x: 13, y: 55.5 },
+      // West edge
+      { x: 0.5, y: 9 }, { x: 0.5, y: 15 }, { x: 0.5, y: 21 }, { x: 0.5, y: 27 },
+      { x: 0.5, y: 33 }, { x: 0.5, y: 40 }, { x: 0.5, y: 46 }, { x: 0.5, y: 52 },
+      // East edge
+      { x: 25, y: 5 }, { x: 25, y: 10 }, { x: 25, y: 15 }, { x: 25, y: 20 },
+      { x: 25, y: 25 }, { x: 25, y: 30 }, { x: 25, y: 36 }, { x: 25, y: 42 },
+      { x: 25, y: 48 }, { x: 25, y: 53 }, { x: 24.5, y: 57 },
+      // Top
+      { x: 3, y: 2 }, { x: 6, y: 2 }, { x: 9, y: 2 }, { x: 13, y: 2 }, { x: 19, y: 2 },
+      // Behind tee
+      { x: 20, y: 57.5 }, { x: 23, y: 57.5 },
+    ],
   },
 ];
 
-for (const surf of SURFACES) {
-  const s = surf.shape;
+function rotateShape90CCW(shape, H) {
+  if (shape.kind === 'polygon') {
+    return { kind: 'polygon', points: shape.points.map(([x, y]) => [H - y, x]) };
+  }
+  if (shape.kind === 'circle') {
+    return { kind: 'circle', cx: H - shape.cy, cy: shape.cx, r: shape.r };
+  }
+  if (shape.kind === 'annulus') {
+    return { kind: 'annulus', cx: H - shape.cy, cy: shape.cx, inner: shape.inner, outer: shape.outer };
+  }
+  if (shape.kind === 'rect') {
+    return { kind: 'rect', x: H - shape.y - shape.h, y: shape.x, w: shape.h, h: shape.w };
+  }
+  return shape;
+}
+
+function rotateHole90CCW(h) {
+  const H = h.height;
+  return {
+    name: h.name,
+    par: h.par,
+    width: h.height,
+    height: h.width,
+    tee: { x: H - h.tee.y, y: h.tee.x },
+    flag: { x: H - h.flag.y, y: h.flag.x },
+    greenSlope: { angle: h.greenSlope.angle + Math.PI / 2, mag: h.greenSlope.mag },
+    surfaces: h.surfaces.map((s) => ({ type: s.type, shape: rotateShape90CCW(s.shape, H) })),
+    trees: h.trees.map((t) => ({ x: H - t.y, y: t.x })),
+  };
+}
+
+let ORIENTATION = 'portrait';
+let MAP_W = HOLES[0].width;
+let MAP_H = HOLES[0].height;
+let WORLD_W = MAP_W * TILE;
+let WORLD_H = MAP_H * TILE;
+let SURFACES = null;
+let TREES = null;
+let FLAG = null;
+let TEE = null;
+let GREEN_SLOPE = null;
+let BUSHES = null;
+let PROPS = null;
+let WATER_PIXELS = null;
+let CURRENT_HOLE = null;
+
+function addBbox(surf) {
+  const s = Object.assign({}, surf.shape);
   if (s.kind === 'circle') {
     s._bbox = [(s.cx - s.r) * TILE, (s.cy - s.r) * TILE, (s.cx + s.r) * TILE, (s.cy + s.r) * TILE];
   } else if (s.kind === 'annulus') {
@@ -123,6 +254,7 @@ for (const surf of SURFACES) {
     }
     s._bbox = [x0 * TILE, y0 * TILE, x1 * TILE, y1 * TILE];
   }
+  return { type: surf.type, shape: s };
 }
 
 function pointInShape(x, y, shape) {
@@ -271,7 +403,7 @@ function buildWorldImageData() {
   return new ImageData(data, WORLD_W, WORLD_H);
 }
 
-const WATER_PIXELS = (() => {
+function computeWaterPixels() {
   const out = [];
   for (let y = 0; y < WORLD_H; y += 2) {
     for (let x = 0; x < WORLD_W; x += 2) {
@@ -279,7 +411,7 @@ const WATER_PIXELS = (() => {
     }
   }
   return out;
-})();
+}
 
 const CLUBS = [
   { key: 'DR', name: 'Driver',      short: 'DR', v: 225, angle: 20, accMult: 1.25, powerRate: 1.2 },
@@ -293,16 +425,14 @@ const CLUBS = [
   { key: 'PT', name: 'Putter',      short: 'PT', v: 110, angle: 0,  accMult: 0.55, powerRate: 0.55 },
 ];
 
-const GREEN_SLOPE = { angle: Math.PI * 0.3, mag: 7 };
-
 const SURFACE_PROPS = {
-  [T_GREEN]:   { bounceKeep: 0.32, rollDecel: 0.85, label: 'Green', slopeAng: GREEN_SLOPE.angle, slopeMag: GREEN_SLOPE.mag },
-  [T_FAIRWAY]: { bounceKeep: 0.55, rollDecel: 0.55, label: 'Fairway' },
-  [T_ROUGH]:   { bounceKeep: 0.26, rollDecel: 2.2, label: 'Rough' },
-  [T_FRINGE]:  { bounceKeep: 0.38, rollDecel: 0.8, label: 'Fringe' },
-  [T_TEE]:     { bounceKeep: 0.52, rollDecel: 0.6, label: 'Tee Box' },
-  [T_SAND]:    { bounceKeep: 0.1,  rollDecel: 4.5, label: 'Bunker' },
-  [T_SHORE]:   { bounceKeep: 0.2,  rollDecel: 3.0, label: 'Dirt' },
+  [T_GREEN]:   { bounceKeep: 0.20, rollDecel: 0.85, label: 'Green', slopeAng: 0, slopeMag: 0 },
+  [T_FAIRWAY]: { bounceKeep: 0.28, rollDecel: 0.78, label: 'Fairway' },
+  [T_ROUGH]:   { bounceKeep: 0.15, rollDecel: 2.9,  label: 'Rough' },
+  [T_FRINGE]:  { bounceKeep: 0.22, rollDecel: 1.05, label: 'Fringe' },
+  [T_TEE]:     { bounceKeep: 0.26, rollDecel: 0.82, label: 'Tee Box' },
+  [T_SAND]:    { bounceKeep: 0.05, rollDecel: 5.5,  label: 'Bunker' },
+  [T_SHORE]:   { bounceKeep: 0.12, rollDecel: 3.8,  label: 'Dirt' },
   [T_WATER]:   { bounceKeep: 0, rollDecel: 0, label: 'Water', hazard: true },
 };
 
@@ -314,19 +444,7 @@ function surfacePropsAt(wx, wy) {
   return SURFACE_PROPS[s] || SURFACE_PROPS[T_ROUGH];
 }
 
-const TREES = [
-  { x: 3.5, y: 8 }, { x: 16.5, y: 6.5 }, { x: 2.5, y: 11.2 }, { x: 17.5, y: 14 },
-  { x: 4.5, y: 22 }, { x: 14.5, y: 24.5 }, { x: 1.5, y: 3.5 }, { x: 18.5, y: 2.5 },
-  { x: 2.5, y: 27.5 }, { x: 17.5, y: 28 }, { x: 6.5, y: 27.5 }, { x: 13.5, y: 21.5 },
-  { x: 1.5, y: 20.5 }, { x: 15.5, y: 19.5 }, { x: 0.5, y: 9 }, { x: 19.5, y: 10 },
-  { x: 2, y: 23.5 }, { x: 16.5, y: 10.5 }, { x: 16.5, y: 16.5 },
-  { x: 18.5, y: 19 }, { x: 0.5, y: 26 }, { x: 19.5, y: 23 }, { x: 4, y: 25.5 },
-  { x: 15, y: 28 },
-];
-const FLAG = { x: 9.5, y: 5.5 };
-const TEE = { x: 9.5, y: 24.8 };
-
-const BUSHES = (() => {
+function computeBushes() {
   const out = [];
   for (let ty = 0; ty < MAP_H; ty++) {
     for (let tx = 0; tx < MAP_W; tx++) {
@@ -344,9 +462,9 @@ const BUSHES = (() => {
     }
   }
   return out;
-})();
+}
 
-const PROPS = (() => {
+function computeProps() {
   const out = [];
   for (let ty = 0; ty < MAP_H; ty++) {
     for (let tx = 0; tx < MAP_W; tx++) {
@@ -389,7 +507,32 @@ const PROPS = (() => {
     }
   }
   return out;
-})();
+}
+
+function loadHole(idx, orientation) {
+  const baseIdx = ((idx % HOLES.length) + HOLES.length) % HOLES.length;
+  const base = HOLES[baseIdx];
+  ORIENTATION = orientation || ORIENTATION || 'portrait';
+  const h = ORIENTATION === 'landscape' ? rotateHole90CCW(base) : base;
+  CURRENT_HOLE = { ...h, idxBase: baseIdx };
+  MAP_W = h.width;
+  MAP_H = h.height;
+  WORLD_W = MAP_W * TILE;
+  WORLD_H = MAP_H * TILE;
+  SURFACES = h.surfaces.map(addBbox);
+  TREES = h.trees;
+  FLAG = h.flag;
+  TEE = h.tee;
+  GREEN_SLOPE = h.greenSlope;
+  SURFACE_PROPS[T_GREEN].slopeAng = GREEN_SLOPE.angle;
+  SURFACE_PROPS[T_GREEN].slopeMag = GREEN_SLOPE.mag;
+  WATER_PIXELS = computeWaterPixels();
+  BUSHES = computeBushes();
+  PROPS = computeProps();
+  return h;
+}
+
+loadHole(0, 'portrait');
 
 function drawProp(ctx, p) {
   if (p.kind === 'tuft') {
@@ -632,17 +775,19 @@ function drawWaterSparkles(ctx, time) {
   }
 }
 
-function shotParams(club, power, spinX, spinY, accuracyOffset) {
+function shotParams(club, power, spinY, accuracyOffset) {
   const v0 = club.v * power;
   const launchMod = 1 - spinY * 0.32;
   const effAngleDeg = club.angle * Math.max(0.35, launchMod);
   const angleRad = (effAngleDeg * Math.PI) / 180;
-  const curveDeg = (accuracyOffset + spinX * 0.55) * 18 * club.accMult;
+  const curveDeg = accuracyOffset * 18 * club.accMult;
   return { v0, angleRad, effAngleDeg, curveDeg };
 }
 
+const MAGNUS_MAX = 38;
+
 function simulateFlight(startX, startY, aimAngle, accuracy, power, spinX, spinY, club, windX, windY, stopAtGround) {
-  const { v0, angleRad, curveDeg } = shotParams(club, power, spinX, spinY, accuracy);
+  const { v0, angleRad, curveDeg } = shotParams(club, power, spinY, accuracy);
   const deflectionRad = (curveDeg * Math.PI) / 180;
   const dir = aimAngle + deflectionRad;
   const cosAng = club.angle === 0 ? 1 : Math.cos(angleRad);
@@ -651,12 +796,22 @@ function simulateFlight(startX, startY, aimAngle, accuracy, power, spinX, spinY,
   let vz = club.angle === 0 ? 0 : v0 * Math.sin(angleRad);
   let x = startX, y = startY, z = 0;
   const stepDt = 0.04;
-  const maxSteps = 200;
+  const maxSteps = 220;
   const points = [];
   for (let s = 0; s < maxSteps; s++) {
     const hf = Math.min(1, z / 15);
     vx += windX * hf * stepDt;
     vy += windY * hf * stepDt;
+    if (spinX && hf > 0.08) {
+      const hSpeed = Math.hypot(vx, vy);
+      if (hSpeed > 5) {
+        const perpX = -vy / hSpeed;
+        const perpY = vx / hSpeed;
+        const mag = spinX * MAGNUS_MAX * hf;
+        vx += perpX * mag * stepDt;
+        vy += perpY * mag * stepDt;
+      }
+    }
     vz -= GRAVITY * stepDt;
     const d = 0.1 * stepDt;
     vx *= 1 - d;
@@ -673,7 +828,7 @@ function simulateFlight(startX, startY, aimAngle, accuracy, power, spinX, spinY,
 
 function simulatePutt(startX, startY, aimAngle, accuracy, power, club, spinX) {
   const v0 = club.v * power;
-  const curveDeg = (accuracy + spinX * 0.55) * 18 * club.accMult;
+  const curveDeg = (accuracy + spinX * 0.4) * 18 * club.accMult;
   const dir = aimAngle + (curveDeg * Math.PI) / 180;
   let vx = v0 * Math.sin(dir);
   let vy = v0 * -Math.cos(dir);
@@ -748,12 +903,27 @@ function drawShotPredict(ctx, points) {
 }
 
 function drawFlightTrail(ctx, trail) {
-  for (let i = 0; i < trail.length; i++) {
-    const p = trail[i];
-    const a = 0.75 * (i / trail.length);
-    ctx.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
-    ctx.fillRect(Math.floor(p.x), Math.floor(p.y - p.z), 2, 2);
+  if (trail.length < 2) return;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (let i = 1; i < trail.length; i++) {
+    const p0 = trail[i - 1], p1 = trail[i];
+    const a = (i / trail.length);
+    ctx.strokeStyle = `rgba(255,246,216,${(a * 0.42).toFixed(3)})`;
+    ctx.lineWidth = 3.2;
+    ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y - p0.z);
+    ctx.lineTo(p1.x, p1.y - p1.z);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(255,255,255,${(a * 0.8).toFixed(3)})`;
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y - p0.z);
+    ctx.lineTo(p1.x, p1.y - p1.z);
+    ctx.stroke();
   }
+  ctx.restore();
 }
 
 function computeCarry(club, power) {
@@ -764,7 +934,7 @@ function computeCarry(club, power) {
 }
 
 function launchBall(b, aimAngle, power, accuracyOffset, spinX, spinY, club) {
-  const { v0, angleRad, curveDeg } = shotParams(club, power, spinX, spinY, accuracyOffset);
+  const { v0, angleRad, curveDeg } = shotParams(club, power, spinY, accuracyOffset);
   const deflectionRad = (curveDeg * Math.PI) / 180;
   const effectiveDir = aimAngle + deflectionRad;
   const horizVel = club.angle === 0 ? v0 : v0 * Math.cos(angleRad);
@@ -774,6 +944,8 @@ function launchBall(b, aimAngle, power, accuracyOffset, spinX, spinY, club) {
   b.z = 0;
   b.state = 'flying';
   b.trail = [];
+  b.spinX = spinX;
+  b.spinY = spinY;
 }
 
 function stepBall(b, dt, windX, windY, flagX, flagY) {
@@ -781,6 +953,16 @@ function stepBall(b, dt, windX, windY, flagX, flagY) {
     const heightFactor = Math.min(1, b.z / 15);
     b.vx += windX * heightFactor * dt;
     b.vy += windY * heightFactor * dt;
+    if (b.spinX && heightFactor > 0.08) {
+      const hSpeed = Math.hypot(b.vx, b.vy);
+      if (hSpeed > 5) {
+        const perpX = -b.vy / hSpeed;
+        const perpY = b.vx / hSpeed;
+        const mag = b.spinX * MAGNUS_MAX * heightFactor;
+        b.vx += perpX * mag * dt;
+        b.vy += perpY * mag * dt;
+      }
+    }
     b.vz -= GRAVITY * dt;
     const drag = 0.1 * dt;
     b.vx *= 1 - drag;
@@ -803,8 +985,8 @@ function stepBall(b, dt, windX, windY, flagX, flagY) {
       const horizSpeed = Math.hypot(b.vx, b.vy);
       if (impactVz > 6 && horizSpeed > 10) {
         b.vz = impactVz * sp.bounceKeep;
-        b.vx *= 0.88;
-        b.vy *= 0.88;
+        b.vx *= 0.55;
+        b.vy *= 0.55;
       } else {
         b.vz = 0;
         b.state = 'rolling';
@@ -838,7 +1020,7 @@ function stepBall(b, dt, windX, windY, flagX, flagY) {
 
 const SW = {
   IDLE: 'idle', AIMING: 'aiming', SHAPING: 'shaping',
-  POWER: 'power', ACCURACY: 'accuracy',
+  POWER: 'power', ACCURACY: 'accuracy', SWIPING: 'swiping',
   FLYING: 'flying', ROLLING: 'rolling', STOPPED: 'stopped',
   HAZARD: 'hazard', OB: 'ob', HOLED: 'holed',
 };
@@ -877,8 +1059,11 @@ function shapeLabel(spinX, spinY) {
 }
 
 export default function GolfStoryScreen({ onExit }) {
+  const [orientation, setOrientation] = useState(null);
   const canvasRef = useRef(null);
   const staticRef = useRef(null);
+  const holeIdxRef = useRef(0);
+  const swipeRef = useRef(null);
   const posRef = useRef({ x: TEE.x * TILE, y: TEE.y * TILE, facing: 'N', walkPhase: 0, moving: false });
   const ballRef = useRef({
     x: TEE.x * TILE - 4, y: TEE.y * TILE + 2, z: 0,
@@ -887,6 +1072,7 @@ export default function GolfStoryScreen({ onExit }) {
     lastGoodX: TEE.x * TILE - 4,
     lastGoodY: TEE.y * TILE + 2,
     trail: [],
+    spinX: 0, spinY: 0,
   });
   const swingRef = useRef({
     state: SW.IDLE,
@@ -911,24 +1097,33 @@ export default function GolfStoryScreen({ onExit }) {
     clubCarryYd: 250, strokes: 1, pinYd: 0, lie: 'Tee Box',
     windMph: 0, windAngleDeg: 0, message: null, power: 0, accuracy: 0,
     spinX: 0, spinY: 0, shape: 'PURE',
+    holeName: HOLES[0].name, holePar: HOLES[0].par, holeIdx: 0,
   });
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
+    if (!orientation) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
 
-    const staticC = document.createElement('canvas');
-    staticC.width = WORLD_W;
-    staticC.height = WORLD_H;
-    const sctx = staticC.getContext('2d');
-    sctx.imageSmoothingEnabled = false;
-    const imgData = buildWorldImageData();
-    sctx.putImageData(imgData, 0, 0);
-    for (const p of PROPS) drawProp(sctx, p);
-    staticRef.current = staticC;
+    loadHole(0, orientation);
+    holeIdxRef.current = 0;
+
+    staticRef.current = document.createElement('canvas');
+
+    const rebuildStatic = () => {
+      staticRef.current.width = WORLD_W;
+      staticRef.current.height = WORLD_H;
+      const sctx = staticRef.current.getContext('2d');
+      sctx.imageSmoothingEnabled = false;
+      sctx.clearRect(0, 0, WORLD_W, WORLD_H);
+      const imgData = buildWorldImageData();
+      sctx.putImageData(imgData, 0, 0);
+      for (const p of PROPS) drawProp(sctx, p);
+    };
+    rebuildStatic();
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
@@ -939,16 +1134,20 @@ export default function GolfStoryScreen({ onExit }) {
     resize();
     window.addEventListener('resize', resize);
 
-    const windAngle = Math.random() * Math.PI * 2;
-    const windSpeed = 5 + Math.random() * 18;
-    windRef.current = {
-      x: Math.sin(windAngle) * windSpeed,
-      y: -Math.cos(windAngle) * windSpeed,
-      angle: windAngle,
-      speed: windSpeed,
-      mph: Math.round(windSpeed * 0.55),
+    const randomizeWind = () => {
+      const windAngle = Math.random() * Math.PI * 2;
+      const windSpeed = 5 + Math.random() * 18;
+      windRef.current = {
+        x: Math.sin(windAngle) * windSpeed,
+        y: -Math.cos(windAngle) * windSpeed,
+        angle: windAngle,
+        speed: windSpeed,
+        mph: Math.round(windSpeed * 0.55),
+      };
     };
+    randomizeWind();
 
+    leavesRef.current = [];
     for (let i = 0; i < MAX_LEAVES; i++) {
       const l = spawnLeaf(windRef.current.x, windRef.current.y);
       l.age = Math.random() * l.maxAge;
@@ -957,9 +1156,23 @@ export default function GolfStoryScreen({ onExit }) {
       leavesRef.current.push(l);
     }
 
-    swingRef.current.strokeCount = 1;
-    const b0 = ballRef.current;
-    swingRef.current.aimAngle = Math.atan2(FLAG.x * TILE - b0.x, -(FLAG.y * TILE - b0.y));
+    const setBallOnTee = () => {
+      const b = ballRef.current;
+      b.x = TEE.x * TILE - 4; b.y = TEE.y * TILE + 2;
+      b.z = 0; b.vx = 0; b.vy = 0; b.vz = 0;
+      b.state = 'rest';
+      b.lastGoodX = b.x; b.lastGoodY = b.y;
+      b.trail = [];
+      b.spinX = 0; b.spinY = 0;
+      const p = posRef.current;
+      p.x = b.x + 4; p.y = b.y - 2; p.facing = 'N'; p.moving = false;
+      swingRef.current.state = SW.IDLE;
+      swingRef.current.strokeCount = 1;
+      swingRef.current.spinX = 0;
+      swingRef.current.spinY = 0;
+      swingRef.current.aimAngle = Math.atan2(FLAG.x * TILE - b.x, -(FLAG.y * TILE - b.y));
+    };
+    setBallOnTee();
 
     const flushHud = () => {
       const sw = swingRef.current;
@@ -973,7 +1186,20 @@ export default function GolfStoryScreen({ onExit }) {
       let message = null;
       if (sw.state === SW.HAZARD) message = 'IN THE WATER — +1 penalty';
       else if (sw.state === SW.OB) message = 'OUT OF BOUNDS — +1 penalty';
-      else if (sw.state === SW.HOLED) message = `HOLED IT IN ${sw.strokeCount}!`;
+      else if (sw.state === SW.HOLED) {
+        const par = CURRENT_HOLE.par;
+        const s = sw.strokeCount;
+        const vs = s - par;
+        let tag = '';
+        if (vs <= -3) tag = 'ALBATROSS';
+        else if (vs === -2) tag = 'EAGLE';
+        else if (vs === -1) tag = 'BIRDIE';
+        else if (vs === 0) tag = 'PAR';
+        else if (vs === 1) tag = 'BOGEY';
+        else if (vs === 2) tag = 'DOUBLE';
+        else tag = `+${vs}`;
+        message = `HOLED IN ${s}  ·  ${tag}`;
+      }
       setHud({
         state: sw.state,
         club: club.name, clubShort: club.short, clubCarryYd: carryYd,
@@ -982,26 +1208,25 @@ export default function GolfStoryScreen({ onExit }) {
         windAngleDeg: (windRef.current.angle * 180 / Math.PI) % 360,
         message, power: sw.power, accuracy: sw.accuracy,
         spinX: sw.spinX, spinY: sw.spinY, shape: shapeLabel(sw.spinX, sw.spinY),
+        holeName: CURRENT_HOLE.name, holePar: CURRENT_HOLE.par, holeIdx: holeIdxRef.current,
       });
     };
     flushHud();
 
-    const resetHole = () => {
-      const ball = ballRef.current;
-      const p = posRef.current;
-      ball.x = TEE.x * TILE - 4;
-      ball.y = TEE.y * TILE + 2;
-      ball.z = 0; ball.vx = 0; ball.vy = 0; ball.vz = 0;
-      ball.state = 'rest';
-      ball.lastGoodX = ball.x; ball.lastGoodY = ball.y;
-      ball.trail = [];
-      p.x = ball.x + 4; p.y = ball.y - 2;
-      p.facing = 'N'; p.moving = false;
-      swingRef.current.state = SW.IDLE;
-      swingRef.current.strokeCount = 1;
-      swingRef.current.spinX = 0;
-      swingRef.current.spinY = 0;
-      swingRef.current.aimAngle = Math.atan2(FLAG.x * TILE - ball.x, -(FLAG.y * TILE - ball.y));
+    const advanceHole = () => {
+      holeIdxRef.current = (holeIdxRef.current + 1) % HOLES.length;
+      loadHole(holeIdxRef.current, orientation);
+      rebuildStatic();
+      randomizeWind();
+      leavesRef.current = [];
+      for (let i = 0; i < MAX_LEAVES; i++) {
+        const l = spawnLeaf(windRef.current.x, windRef.current.y);
+        l.age = Math.random() * l.maxAge;
+        l.x = Math.random() * WORLD_W;
+        l.y = Math.random() * WORLD_H;
+        leavesRef.current.push(l);
+      }
+      setBallOnTee();
       flushHud();
     };
 
@@ -1032,7 +1257,7 @@ export default function GolfStoryScreen({ onExit }) {
         sw.strokeCount++;
         flushHud();
       } else if (sw.state === SW.HOLED) {
-        resetHole();
+        advanceHole();
       }
     };
 
@@ -1092,10 +1317,88 @@ export default function GolfStoryScreen({ onExit }) {
     window.addEventListener('keydown', kd);
     window.addEventListener('keyup', ku);
 
+    const startSwipe = (px, py) => {
+      const sw = swingRef.current;
+      if (sw.state === SW.AIMING || sw.state === SW.SHAPING) {
+        sw.state = SW.SWIPING;
+        swipeRef.current = {
+          startX: px, startY: py,
+          currentX: px, currentY: py,
+          maxMag: 0, maxDx: 0, maxDy: 0,
+        };
+        flushHud();
+      } else if (sw.state === SW.IDLE) {
+        const ball = ballRef.current;
+        const p = posRef.current;
+        if (Math.hypot(p.x - ball.x, p.y - ball.y) < 26) {
+          sw.state = SW.AIMING;
+          sw.aimAngle = Math.atan2(FLAG.x * TILE - ball.x, -(FLAG.y * TILE - ball.y));
+          if (surfaceAt(ball.x, ball.y) === T_GREEN) sw.clubIdx = CLUBS.length - 1;
+          flushHud();
+        }
+      } else if (sw.state === SW.HOLED) {
+        advanceHole();
+      }
+    };
+
+    const moveSwipe = (px, py) => {
+      const sw = swingRef.current;
+      if (sw.state !== SW.SWIPING) return;
+      const s = swipeRef.current;
+      if (!s) return;
+      s.currentX = px; s.currentY = py;
+      const dx = px - s.startX, dy = py - s.startY;
+      const mag = Math.hypot(dx, dy);
+      if (mag > s.maxMag) { s.maxMag = mag; s.maxDx = dx; s.maxDy = dy; }
+    };
+
+    const endSwipe = () => {
+      const sw = swingRef.current;
+      const s = swipeRef.current;
+      if (sw.state !== SW.SWIPING || !s) { swipeRef.current = null; return; }
+      const ball = ballRef.current;
+      const club = CLUBS[sw.clubIdx];
+      const power = Math.max(0.1, Math.min(1, s.maxMag / 180));
+      const accuracy = Math.max(-1, Math.min(1, s.maxDx / 60));
+      if (s.maxMag < 20) {
+        sw.state = SW.AIMING;
+        swipeRef.current = null;
+        flushHud();
+        return;
+      }
+      ball.lastGoodX = ball.x; ball.lastGoodY = ball.y;
+      launchBall(ball, sw.aimAngle, power, accuracy, sw.spinX, sw.spinY, club);
+      sw.power = power;
+      sw.accuracy = accuracy;
+      sw.state = SW.FLYING;
+      sw.strokeCount++;
+      swipeRef.current = null;
+      flushHud();
+    };
+
+    const pd = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+      const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+      startSwipe(px, py);
+      canvas.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    };
+    const pm = (e) => {
+      if (!swipeRef.current) return;
+      const rect = canvas.getBoundingClientRect();
+      const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+      const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+      moveSwipe(px, py);
+    };
+    const pu = (e) => { endSwipe(); };
+    canvas.addEventListener('pointerdown', pd);
+    canvas.addEventListener('pointermove', pm);
+    canvas.addEventListener('pointerup', pu);
+    canvas.addEventListener('pointercancel', pu);
+
     let last = performance.now();
     let hudAccum = 0;
-    const flagX = FLAG.x * TILE;
-    const flagY = FLAG.y * TILE;
 
     const tick = (now) => {
       const dt = Math.min(0.05, (now - last) / 1000);
@@ -1105,6 +1408,8 @@ export default function GolfStoryScreen({ onExit }) {
       const ball = ballRef.current;
       const sw = swingRef.current;
       const w = windRef.current;
+      const flagX = FLAG.x * TILE;
+      const flagY = FLAG.y * TILE;
 
       for (const leaf of leavesRef.current) {
         leaf.vx += w.x * 0.35 * dt + (Math.random() - 0.5) * 2 * dt;
@@ -1156,6 +1461,8 @@ export default function GolfStoryScreen({ onExit }) {
         const u = sw.accuracyPhase % 2;
         sw.accuracy = (u < 1 ? u : 2 - u) * 2 - 1;
         p.x = ball.x + 4; p.y = ball.y - 2; p.moving = false;
+      } else if (sw.state === SW.SWIPING) {
+        p.x = ball.x + 4; p.y = ball.y - 2; p.moving = false;
       } else if (sw.state === SW.FLYING || sw.state === SW.ROLLING) {
         stepBall(ball, dt, w.x, w.y, flagX, flagY);
         if (sw.state === SW.FLYING) {
@@ -1197,14 +1504,15 @@ export default function GolfStoryScreen({ onExit }) {
       const viewW = canvas.width;
       const viewH = canvas.height;
       const dpr = window.devicePixelRatio || 1;
-      const scale = Math.max(2, Math.min(3 * dpr, Math.floor(Math.min(
-        viewW / (WORLD_W * 0.95),
-        viewH / (WORLD_H * 0.75),
-      ))));
+      const scale = 2 * dpr;
       const followX = sw.state === SW.IDLE ? p.x : ball.x;
       const followY = sw.state === SW.IDLE ? p.y : ball.y;
-      const camX = Math.max(0, Math.min(Math.max(0, WORLD_W - viewW / scale), followX - viewW / (2 * scale)));
-      const camY = Math.max(0, Math.min(Math.max(0, WORLD_H - viewH / scale), followY - viewH / (2 * scale)));
+      const visibleW = viewW / scale;
+      const visibleH = viewH / scale;
+      const camMaxX = Math.max(0, WORLD_W - visibleW);
+      const camMaxY = Math.max(0, WORLD_H - visibleH);
+      const camX = Math.max(0, Math.min(camMaxX, followX - visibleW / 2));
+      const camY = Math.max(0, Math.min(camMaxY, followY - visibleH / 2));
 
       ctx.fillStyle = COLORS.skyVoid;
       ctx.fillRect(0, 0, viewW, viewH);
@@ -1215,7 +1523,7 @@ export default function GolfStoryScreen({ onExit }) {
       if (staticRef.current) ctx.drawImage(staticRef.current, 0, 0);
       drawWaterSparkles(ctx, now);
 
-      if (sw.state === SW.AIMING || sw.state === SW.SHAPING || sw.state === SW.POWER || sw.state === SW.ACCURACY) {
+      if (sw.state === SW.AIMING || sw.state === SW.SHAPING || sw.state === SW.POWER || sw.state === SW.ACCURACY || sw.state === SW.SWIPING) {
         const club = CLUBS[sw.clubIdx];
         const pts = club.angle === 0
           ? simulatePutt(ball.x, ball.y, sw.aimAngle, 0, 1.0, club, sw.spinX)
@@ -1255,6 +1563,8 @@ export default function GolfStoryScreen({ onExit }) {
         drawMeter(ctx, viewW, viewH, dpr, 'POWER', sw.power, false);
       } else if (sw.state === SW.ACCURACY) {
         drawMeter(ctx, viewW, viewH, dpr, 'ACCURACY', sw.accuracy, true);
+      } else if (sw.state === SW.SWIPING && swipeRef.current) {
+        drawSwipeFeedback(ctx, swipeRef.current, dpr);
       }
 
       rafRef.current = requestAnimationFrame(tick);
@@ -1266,8 +1576,12 @@ export default function GolfStoryScreen({ onExit }) {
       window.removeEventListener('resize', resize);
       window.removeEventListener('keydown', kd);
       window.removeEventListener('keyup', ku);
+      canvas.removeEventListener('pointerdown', pd);
+      canvas.removeEventListener('pointermove', pm);
+      canvas.removeEventListener('pointerup', pu);
+      canvas.removeEventListener('pointercancel', pu);
     };
-  }, []);
+  }, [orientation]);
 
   if (Platform.OS !== 'web') {
     return (
@@ -1283,6 +1597,33 @@ export default function GolfStoryScreen({ onExit }) {
     );
   }
 
+  if (!orientation) {
+    return (
+      <View style={styles.root}>
+        <View style={pickerStyles.wrap}>
+          <Text style={pickerStyles.title}>CHOOSE YOUR DEVICE</Text>
+          <Text style={pickerStyles.sub}>Affects screen layout + course view orientation</Text>
+          <Pressable style={pickerStyles.card} onPress={() => setOrientation('portrait')}>
+            <Text style={pickerStyles.cardIcon}>▯</Text>
+            <Text style={pickerStyles.cardTitle}>iPHONE / PHONE</Text>
+            <Text style={pickerStyles.cardBody}>Portrait.  Hole plays bottom → top.</Text>
+            <Text style={pickerStyles.cardBody}>Swipe-back swing.</Text>
+          </Pressable>
+          <Pressable style={pickerStyles.card} onPress={() => setOrientation('landscape')}>
+            <Text style={pickerStyles.cardIcon}>▭</Text>
+            <Text style={pickerStyles.cardTitle}>iPAD / TABLET</Text>
+            <Text style={pickerStyles.cardBody}>Landscape.  Hole plays left → right.</Text>
+            <Text style={pickerStyles.cardBody}>Wider view, same swipe swing.</Text>
+          </Pressable>
+          <Pressable style={pickerStyles.back} onPress={onExit}>
+            <Text style={pickerStyles.backText}>← back to menu</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  const isLandscape = orientation === 'landscape';
   const hint = hintForState(hud.state);
   const dotLeft = 22 + hud.spinX * 18;
   const dotTop = 22 + hud.spinY * 18;
@@ -1306,6 +1647,11 @@ export default function GolfStoryScreen({ onExit }) {
         <Text style={styles.hudClubShort}>{hud.clubShort}</Text>
         <Text style={styles.hudValue}>{hud.club}</Text>
         <Text style={styles.hudSub}>{hud.clubCarryYd} yd max</Text>
+      </View>
+
+      <View style={styles.hudTopCenter} pointerEvents="none">
+        <Text style={styles.hudLabel}>{hud.holeName}</Text>
+        <Text style={styles.hudClubShort}>PAR {hud.holePar}</Text>
       </View>
 
       <View style={styles.hudTopRight} pointerEvents="none">
@@ -1336,7 +1682,7 @@ export default function GolfStoryScreen({ onExit }) {
         <View style={styles.messageBox} pointerEvents="none">
           <Text style={styles.messageText}>{hud.message}</Text>
           {hud.state === SW.HOLED ? (
-            <Text style={styles.messageSub}>SPACE to play again</Text>
+            <Text style={styles.messageSub}>SPACE for next hole</Text>
           ) : null}
         </View>
       ) : null}
@@ -1355,16 +1701,47 @@ export default function GolfStoryScreen({ onExit }) {
 function hintForState(state) {
   switch (state) {
     case SW.IDLE: return 'Arrows: walk  ·  SPACE near ball: aim';
-    case SW.AIMING: return '← → aim  ·  ↑ ↓ club  ·  B: shape  ·  SPACE: swing  ·  ESC: cancel';
-    case SW.SHAPING: return 'Arrows: spin dot (draw/fade + high/low)  ·  R: reset  ·  B: back  ·  SPACE: swing';
+    case SW.AIMING: return '← → aim  ·  ↑ ↓ club  ·  B: shape  ·  SPACE or drag to swing  ·  ESC: cancel';
+    case SW.SHAPING: return 'Arrows: spin dot (draw/fade + high/low)  ·  R: reset  ·  B: back  ·  SPACE or drag to swing';
     case SW.POWER: return 'SPACE to lock POWER';
     case SW.ACCURACY: return 'SPACE to lock ACCURACY — center is pure';
+    case SW.SWIPING: return 'Pull back to set power, release to swing — horizontal drift = accuracy';
     case SW.FLYING: case SW.ROLLING: return '…';
     case SW.HAZARD: return 'Drop pending…';
     case SW.OB: return 'Drop pending…';
-    case SW.HOLED: return 'SPACE to play again';
+    case SW.HOLED: return 'SPACE for next hole';
     default: return '';
   }
+}
+
+function drawSwipeFeedback(ctx, swipe, dpr) {
+  const sx = swipe.startX, sy = swipe.startY;
+  const cx = swipe.currentX, cy = swipe.currentY;
+  const mag = Math.hypot(cx - sx, cy - sy);
+  const norm = Math.min(1, mag / 180);
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.lineWidth = 10 * dpr;
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(cx, cy); ctx.stroke();
+  const hue = 120 - 110 * norm;
+  ctx.strokeStyle = `hsla(${hue}, 80%, 60%, 0.9)`;
+  ctx.lineWidth = 6 * dpr;
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(cx, cy); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.lineWidth = 2 * dpr;
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(cx, cy); ctx.stroke();
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.beginPath(); ctx.arc(sx, sy, (10 + norm * 26) * dpr, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = `hsla(${hue}, 80%, 55%, 0.7)`;
+  ctx.beginPath(); ctx.arc(sx, sy, (8 + norm * 22) * dpr, 0, Math.PI * 2); ctx.fill();
+  ctx.font = `bold ${14 * dpr}px ui-monospace, Menlo, monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#f5f5ec';
+  ctx.fillText(`${Math.round(norm * 100)}%`, cx, cy - 24 * dpr);
+  ctx.restore();
 }
 
 function drawMeter(ctx, viewW, viewH, dpr, label, value, isAccuracy) {
@@ -1414,6 +1791,39 @@ function drawMeter(ctx, viewW, viewH, dpr, label, value, isAccuracy) {
 const HUD_BORDER = '#f5f5ec';
 const HUD_BG = 'rgba(14,26,18,0.9)';
 
+const pickerStyles = StyleSheet.create({
+  wrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
+  title: {
+    color: '#fff6d8', fontSize: 22, fontWeight: '900', letterSpacing: 2,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+    marginBottom: 6,
+  },
+  sub: {
+    color: '#a9d4a9', fontSize: 12, marginBottom: 28,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  card: {
+    backgroundColor: '#0e1a12', borderWidth: 3, borderColor: '#f5f5ec',
+    paddingVertical: 18, paddingHorizontal: 24, marginBottom: 16,
+    width: 300, alignItems: 'center',
+  },
+  cardIcon: {
+    color: '#fbe043', fontSize: 40, marginBottom: 6, lineHeight: 44,
+  },
+  cardTitle: {
+    color: '#f5f5ec', fontSize: 16, fontWeight: '900', letterSpacing: 1, marginBottom: 8,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  cardBody: {
+    color: '#bfc4b9', fontSize: 11, marginTop: 2,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  back: {
+    marginTop: 12, paddingVertical: 8, paddingHorizontal: 16,
+  },
+  backText: { color: '#a9d4a9', fontSize: 13 },
+});
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.skyVoid },
   canvasHost: { flex: 1 },
@@ -1438,13 +1848,18 @@ const styles = StyleSheet.create({
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
     paddingHorizontal: 10, paddingVertical: 8, minWidth: 120,
   },
+  hudTopCenter: {
+    position: 'absolute', top: 16, left: '50%', transform: [{ translateX: -60 }],
+    backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
+    paddingHorizontal: 10, paddingVertical: 6, width: 120, alignItems: 'center',
+  },
   hudTopRight: {
     position: 'absolute', top: 16, right: 60,
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
     paddingHorizontal: 10, paddingVertical: 8, minWidth: 110, alignItems: 'center',
   },
   hudShape: {
-    position: 'absolute', top: 16, right: 180,
+    position: 'absolute', top: 112, right: 16,
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
     paddingHorizontal: 8, paddingVertical: 6, width: 80, alignItems: 'center',
   },
