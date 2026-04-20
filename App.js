@@ -1840,7 +1840,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.35 · GS spike v0.7.3';
+const BUILD_VERSION = 'IGT v3.36 · GS spike v0.7.3';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -5481,49 +5481,6 @@ export default function App() {
               />
             ))}
           </View>
-
-          {/* Hole-out celebration: big emoji above the golfer's head whose
-              face matches the score (Birdie 🙌, Par ✌️, Bogey 😞, Eagle 🔥). */}
-          {sunk && holeCelebration ? (
-            <>
-              <Text
-                pointerEvents="none"
-                style={{
-                  position: 'absolute',
-                  left: golferAnchor.x - 36,
-                  top: golferAnchor.y - golferHeight / 2 - 62,
-                  width: 72,
-                  textAlign: 'center',
-                  fontSize: 46,
-                  lineHeight: 50,
-                  textShadowColor: 'rgba(0,0,0,0.55)',
-                  textShadowOffset: { width: 0, height: 2 },
-                  textShadowRadius: 4
-                }}
-              >
-                {holeCelebration.emote}
-              </Text>
-              <Text
-                pointerEvents="none"
-                style={{
-                  position: 'absolute',
-                  left: golferAnchor.x - 70,
-                  top: golferAnchor.y - golferHeight / 2 - 14,
-                  width: 140,
-                  textAlign: 'center',
-                  color: '#fbfbf8',
-                  fontWeight: '900',
-                  fontSize: 15,
-                  letterSpacing: 1,
-                  textShadowColor: 'rgba(0,0,0,0.75)',
-                  textShadowOffset: { width: 0, height: 1 },
-                  textShadowRadius: 3
-                }}
-              >
-                {holeCelebration.resultLabel.toUpperCase()}
-              </Text>
-            </>
-          ) : null}
 
           {/* Shot Tracer */}
           {(() => {
