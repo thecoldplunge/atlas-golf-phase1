@@ -1840,7 +1840,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.31 · GS spike v0.7.3';
+const BUILD_VERSION = 'IGT v3.32 · GS spike v0.7.3';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -3787,8 +3787,15 @@ export default function App() {
   };
 
   const strikeBall = (deviation = 0, { tempoMult = 1.0, tempoTag = 'Normal', tempoMetrics = null } = {}) => {
-    // Apply tempo multiplier to deviation — rushed/slow swings are less accurate
-    const tempoAdjustedDeviation = clamp(deviation * tempoMult, -1, 1);
+    // Apply tempo multiplier to deviation — rushed/jerky/coasted swings are
+    // less accurate. The clamp is intentionally wider than [-1, 1] so a
+    // max-deviation slice/hook combined with a jerky tempo can amplify past
+    // the nominal ceiling; the final rawCurveDeg is still capped at ±45°, so
+    // there is no runaway. Without this, a full-slice gesture on a
+    // max-skill character with a 1.7x tempoMult was silently absorbed
+    // because the product clamped back to 1.0 before curve scoring, so the
+    // tempo penalty had no teeth once the pointer reached max deviation.
+    const tempoAdjustedDeviation = clamp(deviation * tempoMult, -1.8, 1.8);
     if (sunk || ballMoving) return;
     // Each new shot resets zoom to its mode-appropriate default so the player
     // always lines up the next shot at a predictable zoom level.
