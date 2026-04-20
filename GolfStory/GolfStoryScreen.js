@@ -1189,6 +1189,18 @@ export default function GolfStoryScreen({ onExit }) {
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
 
+    const bodyStyle = document.createElement('style');
+    bodyStyle.textContent = `
+      html, body {
+        overscroll-behavior: none;
+        touch-action: none;
+        overflow: hidden;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+    `;
+    document.head.appendChild(bodyStyle);
+
     loadHole(0, orientation);
     holeIdxRef.current = 0;
 
@@ -1519,13 +1531,27 @@ export default function GolfStoryScreen({ onExit }) {
       },
     };
 
+    const computeMinZoom = () => {
+      const dpr = window.devicePixelRatio || 1;
+      const baseScale = 2 * dpr;
+      const minScaleX = canvas.width / WORLD_W;
+      const minScaleY = canvas.height / WORLD_H;
+      const minScale = Math.max(minScaleX, minScaleY);
+      return Math.max(0.5, minScale / baseScale);
+    };
+
+    const clampZoom = (z) => {
+      const minZ = computeMinZoom();
+      return Math.max(minZ, Math.min(3.0, z));
+    };
+
     zoomActions.current = {
       zoomIn: () => {
-        zoomRef.current = Math.min(3.0, zoomRef.current + 0.5);
+        zoomRef.current = clampZoom(zoomRef.current + 0.25);
         flushHud();
       },
       zoomOut: () => {
-        zoomRef.current = Math.max(0.6, zoomRef.current - 0.5);
+        zoomRef.current = clampZoom(zoomRef.current - 0.25);
         flushHud();
       },
     };
@@ -1662,7 +1688,11 @@ export default function GolfStoryScreen({ onExit }) {
       const viewW = canvas.width;
       const viewH = canvas.height;
       const dpr = window.devicePixelRatio || 1;
-      const scale = 2 * dpr * zoomRef.current;
+      const baseScale = 2 * dpr;
+      const minScale = Math.max(viewW / WORLD_W, viewH / WORLD_H);
+      const minZoomHere = Math.max(0.5, minScale / baseScale);
+      if (zoomRef.current < minZoomHere) zoomRef.current = minZoomHere;
+      const scale = baseScale * zoomRef.current;
       const followX = (sw.state === SW.IDLE) ? p.x : ball.x;
       const followY = (sw.state === SW.IDLE) ? p.y : ball.y;
       const visibleW = viewW / scale;
@@ -1746,6 +1776,7 @@ export default function GolfStoryScreen({ onExit }) {
       canvas.removeEventListener('pointermove', pm);
       canvas.removeEventListener('pointerup', pu);
       canvas.removeEventListener('pointercancel', pu);
+      if (bodyStyle.parentNode) bodyStyle.parentNode.removeChild(bodyStyle);
     };
   }, [orientation]);
 
@@ -1828,7 +1859,7 @@ export default function GolfStoryScreen({ onExit }) {
     );
   }
 
-  const canSwing = hud.state === SW.AIMING;
+  const canSwing = hud.state === SW.AIMING && !shapeOverlay && !clubPicker;
   const shapeDotLeft = 22 + hud.spinX * 18;
   const shapeDotTop = 22 + hud.spinY * 18;
 
@@ -1890,16 +1921,18 @@ export default function GolfStoryScreen({ onExit }) {
         <Text style={[styles.hudValue, { textAlign: 'center', marginTop: 2 }]}>{hud.shape}</Text>
       </Pressable>
 
-      <View
-        style={[styles.swingBtn, !canSwing && styles.swingBtnDisabled]}
-        onPointerDown={canSwing ? onSwingPointerDown : undefined}
-        onPointerMove={onSwingPointerMove}
-        onPointerUp={onSwingPointerUp}
-        onPointerCancel={onSwingPointerUp}
-      >
-        <Text style={styles.swingBtnLabel}>SWING</Text>
-        <Text style={styles.swingBtnHint}>pull back ↓</Text>
-      </View>
+      {!shapeOverlay && !clubPicker ? (
+        <View
+          style={[styles.swingBtn, !canSwing && styles.swingBtnDisabled]}
+          onPointerDown={canSwing ? onSwingPointerDown : undefined}
+          onPointerMove={onSwingPointerMove}
+          onPointerUp={onSwingPointerUp}
+          onPointerCancel={onSwingPointerUp}
+        >
+          <Text style={styles.swingBtnLabel}>SWING</Text>
+          <Text style={styles.swingBtnHint}>pull back ↓</Text>
+        </View>
+      ) : null}
 
       {hud.message ? (
         <View style={styles.messageBox} pointerEvents="none">
@@ -1911,54 +1944,60 @@ export default function GolfStoryScreen({ onExit }) {
       ) : null}
 
       {shapeOverlay ? (
-        <View style={styles.overlayBg}>
-          <View style={styles.overlayPanel}>
-            <Text style={styles.overlayTitle}>SHOT SHAPE</Text>
-            <Text style={styles.overlayHint}>Drag the dot.  ← draw  ·  → fade  ·  ↑ high  ·  ↓ low</Text>
+        <View style={styles.shapeBar}>
+          <View style={styles.shapeBarPad}>
             <ShapePad
               spinX={hud.spinX}
               spinY={hud.spinY}
               onChange={(nx, ny) => shapeActions.current.set && shapeActions.current.set(nx, ny)}
             />
-            <View style={styles.overlayRow}>
-              <Pressable style={styles.overlayBtn} onPress={() => shapeActions.current.reset && shapeActions.current.reset()}>
-                <Text style={styles.overlayBtnText}>RESET</Text>
-              </Pressable>
-              <Pressable style={styles.overlayBtnPrimary} onPress={() => setShapeOverlay(false)}>
-                <Text style={styles.overlayBtnTextPrimary}>DONE</Text>
-              </Pressable>
-            </View>
+          </View>
+          <View style={styles.shapeBarMid}>
+            <Text style={styles.shapeBarLabel}>SHOT SHAPE</Text>
+            <Text style={styles.shapeBarValue}>{hud.shape}</Text>
+            <Text style={styles.shapeBarHint}>← draw  ·  → fade</Text>
+            <Text style={styles.shapeBarHint}>↑ high  ·  ↓ low</Text>
+          </View>
+          <View style={styles.shapeBarRight}>
+            <Pressable
+              style={styles.shapeBarBtn}
+              onPress={() => shapeActions.current.reset && shapeActions.current.reset()}
+            >
+              <Text style={styles.shapeBarBtnText}>RESET</Text>
+            </Pressable>
+            <Pressable
+              style={styles.shapeBarBtnPrimary}
+              onPress={() => setShapeOverlay(false)}
+            >
+              <Text style={styles.shapeBarBtnPrimaryText}>DONE</Text>
+            </Pressable>
           </View>
         </View>
       ) : null}
 
       {clubPicker ? (
-        <View style={styles.overlayBg}>
-          <View style={styles.overlayPanel}>
-            <Text style={styles.overlayTitle}>CLUB</Text>
-            <View style={styles.clubGrid}>
-              {CLUBS.map((c, i) => {
-                const carryYd = Math.round(computeCarry(c, 1.0) / TILE * YARDS_PER_TILE);
-                const active = hud.clubShort === c.short;
-                return (
-                  <Pressable
-                    key={c.key}
-                    style={[styles.clubChip, active && styles.clubChipActive]}
-                    onPress={() => {
-                      clubActions.current.set && clubActions.current.set(i);
-                      setClubPicker(false);
-                    }}
-                  >
-                    <Text style={[styles.clubChipShort, active && styles.clubChipShortActive]}>{c.short}</Text>
-                    <Text style={styles.clubChipYd}>{carryYd}yd</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <Pressable style={styles.overlayBtnPrimary} onPress={() => setClubPicker(false)}>
-              <Text style={styles.overlayBtnTextPrimary}>DONE</Text>
-            </Pressable>
-          </View>
+        <View style={styles.clubList}>
+          <Text style={styles.clubListTitle}>CLUB</Text>
+          {CLUBS.map((c, i) => {
+            const carryYd = Math.round(computeCarry(c, 1.0) / TILE * YARDS_PER_TILE);
+            const active = hud.clubShort === c.short;
+            return (
+              <Pressable
+                key={c.key}
+                style={[styles.clubListItem, active && styles.clubListItemActive]}
+                onPress={() => {
+                  clubActions.current.set && clubActions.current.set(i);
+                  setClubPicker(false);
+                }}
+              >
+                <Text style={[styles.clubListShort, active && styles.clubListShortActive]}>{c.short}</Text>
+                <Text style={[styles.clubListYd, active && styles.clubListYdActive]}>{carryYd}yd</Text>
+              </Pressable>
+            );
+          })}
+          <Pressable style={styles.clubListClose} onPress={() => setClubPicker(false)}>
+            <Text style={styles.clubListCloseText}>✕</Text>
+          </Pressable>
         </View>
       ) : null}
 
@@ -2063,8 +2102,8 @@ const shapePadStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: COLORS.skyVoid },
-  canvasHost: { flex: 1 },
+  root: { flex: 1, backgroundColor: COLORS.skyVoid, overscrollBehavior: 'none', touchAction: 'none' },
+  canvasHost: { flex: 1, touchAction: 'none' },
   exitBtn: {
     position: 'absolute', top: 16, right: 16,
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
@@ -2137,6 +2176,7 @@ const styles = StyleSheet.create({
     paddingVertical: 24, paddingHorizontal: 26, borderRadius: 44,
     alignItems: 'center', justifyContent: 'center',
     minWidth: 130,
+    touchAction: 'none',
   },
   swingBtnDisabled: { backgroundColor: '#5a2a2a', borderColor: '#808080', opacity: 0.55 },
   swingBtnLabel: {
@@ -2195,25 +2235,85 @@ const styles = StyleSheet.create({
     fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
   },
 
-  clubGrid: {
-    flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center',
-    marginVertical: 10, maxWidth: 280,
+  shapeBar: {
+    position: 'absolute',
+    left: 16, right: 16, bottom: 16,
+    backgroundColor: 'rgba(14,26,18,0.88)',
+    borderWidth: 3, borderColor: '#fbe043',
+    paddingVertical: 10, paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 50,
   },
-  clubChip: {
-    width: 78, paddingVertical: 10, margin: 4,
-    borderWidth: 2, borderColor: '#f5f5ec', backgroundColor: '#1a2a1a',
+  shapeBarPad: { marginRight: 12 },
+  shapeBarMid: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  shapeBarLabel: {
+    color: '#a9d4a9', fontSize: 10, letterSpacing: 1, marginBottom: 4,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  shapeBarValue: {
+    color: '#fbe043', fontSize: 18, fontWeight: '900', marginBottom: 6, textAlign: 'center',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  shapeBarHint: {
+    color: '#bfc4b9', fontSize: 10, marginBottom: 2,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  shapeBarRight: { alignItems: 'stretch', justifyContent: 'center', marginLeft: 8 },
+  shapeBarBtn: {
+    borderWidth: 2, borderColor: '#a9d4a9', backgroundColor: '#1a2a1a',
+    paddingVertical: 10, paddingHorizontal: 16, marginVertical: 4,
     alignItems: 'center',
   },
-  clubChipActive: { backgroundColor: '#fbe043', borderColor: '#fff' },
-  clubChipShort: {
-    color: '#fff6d8', fontSize: 18, fontWeight: '900',
+  shapeBarBtnText: {
+    color: '#a9d4a9', fontSize: 12, fontWeight: '900', letterSpacing: 1,
     fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
   },
-  clubChipShortActive: { color: '#0e1a12' },
-  clubChipYd: {
-    color: '#a9d4a9', fontSize: 10,
+  shapeBarBtnPrimary: {
+    borderWidth: 2, borderColor: '#fff', backgroundColor: '#fbe043',
+    paddingVertical: 10, paddingHorizontal: 18, marginVertical: 4,
+    alignItems: 'center',
+  },
+  shapeBarBtnPrimaryText: {
+    color: '#0e1a12', fontSize: 12, fontWeight: '900', letterSpacing: 1,
     fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
   },
+
+  clubList: {
+    position: 'absolute',
+    left: 16, top: 16, bottom: 16,
+    width: 84,
+    backgroundColor: 'rgba(14,26,18,0.92)',
+    borderWidth: 2, borderColor: '#f5f5ec',
+    paddingVertical: 8, paddingHorizontal: 6,
+    alignItems: 'center',
+    zIndex: 50,
+  },
+  clubListTitle: {
+    color: '#a9d4a9', fontSize: 10, letterSpacing: 2, marginBottom: 6,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  clubListItem: {
+    width: '100%', paddingVertical: 6, marginVertical: 2,
+    borderWidth: 1, borderColor: '#4a5a4a', backgroundColor: '#0e1a12',
+    alignItems: 'center',
+  },
+  clubListItemActive: { backgroundColor: '#fbe043', borderColor: '#fff' },
+  clubListShort: {
+    color: '#fff6d8', fontSize: 15, fontWeight: '900',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  clubListShortActive: { color: '#0e1a12' },
+  clubListYd: {
+    color: '#a9d4a9', fontSize: 9,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  clubListYdActive: { color: '#0e1a12' },
+  clubListClose: {
+    marginTop: 8, paddingVertical: 6, paddingHorizontal: 10,
+    borderWidth: 2, borderColor: '#f5f5ec',
+  },
+  clubListCloseText: { color: '#f5f5ec', fontSize: 14, fontWeight: '900' },
 
   nativeMsg: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   nativeTitle: { color: '#f5f5ec', fontSize: 18, marginBottom: 12 },
