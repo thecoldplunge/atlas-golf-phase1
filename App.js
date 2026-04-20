@@ -28,9 +28,11 @@ import { SURFACE_COLORS, PATTERNS, TREES, GENERIC_TREE } from './designer/shared
 import testCourseData from './courses/test-course.json';
 import test2CourseData from './courses/test-2.json';
 import test4CourseData from './courses/test-4.json';
+import myCourseData from './courses/my-course.json';
 const TEST_COURSE_HOLES = testCourseData.holes;
 const TEST2_COURSE_HOLES = test2CourseData.holes;
 const TEST4_COURSE_HOLES = test4CourseData.holes;
+const MY_COURSE_HOLES = myCourseData.holes;
 
 // ---- Vector path helpers (for rendering designer-exported editorVectors) ----
 // Each PathPoint is { x, y, inX, inY, outX, outY } where inX/inY is the
@@ -1024,6 +1026,14 @@ const COURSES = [
     difficulty: 'Hard'
   },
   {
+    id: 'my-course',
+    name: myCourseData.courseName || 'My Course',
+    designer: myCourseData.designer || 'Designer',
+    holes: MY_COURSE_HOLES,
+    description: `${MY_COURSE_HOLES.length} hole${MY_COURSE_HOLES.length === 1 ? '' : 's'} • Par ${MY_COURSE_HOLES.reduce((s, h) => s + (h.par || 0), 0)}`,
+    difficulty: 'Custom'
+  },
+  {
     id: 'driving-range',
     name: 'Driving Range',
     designer: 'Atlas',
@@ -1796,7 +1806,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.20';
+const BUILD_VERSION = 'IGT v3.21';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
