@@ -1075,7 +1075,11 @@ const PHYSICS_CONFIG = {
   launchScale: 1,
   gravity: 0.028,
   airDrag: 0.14,
-  windForceScale: 0.35,
+  // Dropped from 0.35 → 0.20: restoring the old (higher) ball flight meant
+  // shots spent more time in the air again, and wind at 0.35 was dragging
+  // them off line much harder than before. 0.20 puts drift back to a level
+  // that tells the player to aim the wind without punishing every shot.
+  windForceScale: 0.20,
   apexHangFactor: 1,
   curveForce: 1.35,
   curveLaunchBlend: 1.15,
@@ -1807,7 +1811,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.21 · GS spike v0.1';
+const BUILD_VERSION = 'IGT v3.22 · GS spike v0.2';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -2804,12 +2808,28 @@ export default function App() {
             shotCarryRef.current = Math.hypot(next.x - shotStartPosRef.current.x, next.y - shotStartPosRef.current.y) * YARDS_PER_WORLD;
           }
 
-          // Only splash when the ball is at / near the water surface. Earlier
-          // the check was pure 2D, so a high shot flying OVER water triggered
-          // a splash mid-air. Require the ball to be below a small altitude.
-          const waterHaz = flight.z <= 1.2
-            ? tickHole.hazards.find((h) => h.type === 'waterRect' && pointInRect(next, h))
-            : null;
+          // Water trigger: fires when the ball touches the water surface
+          // (landing, rolling, or low-bouncing). A high-flying shot at z > 3
+          // passes over freely. We check BOTH rect water (hole.hazards) AND
+          // vector water (editorVectors) so custom courses whose rect
+          // approximation drifted from the visible shape still catch the
+          // ball in the visible pond.
+          let waterHaz = null;
+          if (flight.z <= 3) {
+            waterHaz = tickHole.hazards.find((h) => h.type === 'waterRect' && pointInRect(next, h)) || null;
+            if (!waterHaz && tickHole.editorVectors?.hazards?.water) {
+              const hitVec = tickHole.editorVectors.hazards.water.find((sh) => pointInPolygon(next, vectorShapeToPolygon(sh)));
+              if (hitVec) {
+                // Build a synthetic rect from the vector polygon's bounding box
+                // so the downstream drop-relief math still has {x,y,w,h}.
+                const xs = hitVec.points.map((p) => p.x);
+                const ys = hitVec.points.map((p) => p.y);
+                const minX = Math.min(...xs), maxX = Math.max(...xs);
+                const minY = Math.min(...ys), maxY = Math.max(...ys);
+                waterHaz = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+              }
+            }
+          }
           if (waterHaz) {
             // Ball entered water — stop motion, sink the ball, show relief menu.
             // Real golf penalty-area rules (USGA Rule 17): +1 stroke plus one
@@ -3571,9 +3591,11 @@ export default function App() {
     // what the UI promised — most noticeably, touchFactor was ignored and
     // power characters fell short of their "stock" distance.
     const spinLaunchMod = clamp(0.94 + (launch.spinFactor - 1) * 0.35, 0.82, 1.12);
-    // Hang time base lowered from (3.2 + launch*0.8) to (2.4 + launch*0.55)
-    // — shots arc lower, especially partial-power wedges that used to balloon.
-    const actualHangTime = (2.4 + selectedClub.launch * 0.55)
+    // Restored to the original hang-time base (3.2 + launch*0.8). The lower
+    // base made shots feel flat — we've moved the "don't let short shots
+    // get blown around" responsibility to the wind scale + height gate
+    // instead of squashing the flight itself.
+    const actualHangTime = (3.2 + selectedClub.launch * 0.8)
       * launch.launchRatio
       * launch.shotMetrics.launchAdjust
       * spinLaunchMod;
@@ -4159,7 +4181,7 @@ export default function App() {
                 onPress={() => setGameScreen('golf-story')}
               >
                 <Text style={styles.spaceMenuBtnLeft}>GOLF STORY</Text>
-                <Text style={styles.spaceMenuBtnRight}>SPIKE v0.1 &gt;</Text>
+                <Text style={styles.spaceMenuBtnRight}>SPIKE v0.2 &gt;</Text>
                 <View style={[styles.lCorner, styles.lCornerTopLeft]} />
                 <View style={[styles.lCorner, styles.lCornerTopRight]} />
                 <View style={[styles.lCorner, styles.lCornerBottomLeft]} />

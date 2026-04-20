@@ -175,18 +175,36 @@ function drawGolfer(ctx, px, py, facing, phase) {
   }
 }
 
-function drawBall(ctx, px, py) {
+function drawBall(ctx, px, py, z) {
+  const lift = Math.max(0, z | 0);
   ctx.fillStyle = COLORS.shadow;
-  ctx.fillRect(px - 1, py, 3, 1);
+  const shadowInset = Math.min(1, lift / 12);
+  ctx.fillRect(px - 1 + shadowInset, py, 3 - shadowInset * 2, 1);
   ctx.fillStyle = '#fff';
-  ctx.fillRect(px - 1, py - 2, 2, 2);
+  ctx.fillRect(px - 1, py - 2 - lift, 2, 2);
   ctx.fillStyle = '#d8d8d8';
-  ctx.fillRect(px, py - 1, 1, 1);
+  ctx.fillRect(px, py - 1 - lift, 1, 1);
 }
+
+function surfaceAt(wx, wy) {
+  const tx = Math.floor(wx / TILE);
+  const ty = Math.floor(wy / TILE);
+  if (ty < 0 || ty >= MAP_H || tx < 0 || tx >= MAP_W) return T_ROUGH;
+  return HOLE_MAP[ty][tx];
+}
+
+const SWING = { IDLE: 'idle', CHARGING: 'charging', FLYING: 'flying', LANDED: 'landed' };
 
 export default function GolfStoryScreen({ onExit }) {
   const canvasRef = useRef(null);
   const posRef = useRef({ x: TEE.x * TILE, y: TEE.y * TILE, facing: 'N', walkPhase: 0, moving: false });
+  const ballRef = useRef({
+    x: TEE.x * TILE - 4, y: TEE.y * TILE + 2, z: 0,
+    startX: 0, startY: 0, endX: 0, endY: 0,
+    flightT: 0, flightDuration: 1, maxHeight: 0,
+    lastSurface: T_FAIRWAY,
+  });
+  const swingRef = useRef({ state: SWING.IDLE, power: 0, chargePhase: 0, landedT: 0, message: null });
   const keysRef = useRef({});
   const rafRef = useRef(null);
 
@@ -206,9 +224,54 @@ export default function GolfStoryScreen({ onExit }) {
     resize();
     window.addEventListener('resize', resize);
 
+    const launchSwing = () => {
+      const sw = swingRef.current;
+      const b = ballRef.current;
+      const flagX = FLAG.x * TILE;
+      const flagY = FLAG.y * TILE;
+      const dx = flagX - b.x;
+      const dy = flagY - b.y;
+      const distToFlag = Math.max(1, Math.hypot(dx, dy));
+      const maxRange = Math.max(distToFlag * 1.15, 260);
+      const range = sw.power * maxRange;
+      b.startX = b.x; b.startY = b.y;
+      b.endX = b.x + (dx / distToFlag) * range;
+      b.endY = b.y + (dy / distToFlag) * range;
+      b.flightT = 0;
+      b.flightDuration = 0.7 + sw.power * 0.9;
+      b.maxHeight = 14 + sw.power * 34;
+      sw.state = SWING.FLYING;
+      sw.message = `Power ${(sw.power * 100) | 0}%  →  ${Math.round(range / 3)}yd`;
+    };
+
+    const trySwing = () => {
+      const sw = swingRef.current;
+      const b = ballRef.current;
+      const p = posRef.current;
+      if (sw.state === SWING.IDLE) {
+        const dx = p.x - b.x, dy = p.y - b.y;
+        if (Math.hypot(dx, dy) < 18) {
+          sw.state = SWING.CHARGING;
+          sw.chargePhase = 0;
+          sw.power = 0;
+          sw.message = 'Tap SPACE again to lock power';
+        } else {
+          sw.message = 'Walk next to the ball first';
+          setTimeout(() => { if (sw.message === 'Walk next to the ball first') sw.message = null; }, 1400);
+        }
+      } else if (sw.state === SWING.CHARGING) {
+        launchSwing();
+      }
+    };
+
     const kd = (e) => {
       keysRef.current[e.key.toLowerCase()] = true;
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) e.preventDefault();
+      if (e.key === ' ') {
+        trySwing();
+        e.preventDefault();
+      } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        e.preventDefault();
+      }
     };
     const ku = (e) => { keysRef.current[e.key.toLowerCase()] = false; };
     window.addEventListener('keydown', kd);
@@ -220,30 +283,72 @@ export default function GolfStoryScreen({ onExit }) {
       last = now;
       const k = keysRef.current;
       const p = posRef.current;
-      const speed = 44;
-      let vx = 0, vy = 0;
-      if (k.arrowleft || k.a) vx -= 1;
-      if (k.arrowright || k.d) vx += 1;
-      if (k.arrowup || k.w) vy -= 1;
-      if (k.arrowdown || k.s) vy += 1;
-      p.moving = !!(vx || vy);
-      if (vx && vy) { vx *= 0.707; vy *= 0.707; }
-      if (Math.abs(vx) > Math.abs(vy)) {
-        p.facing = vx > 0 ? 'E' : 'W';
-      } else if (vy !== 0) {
-        p.facing = vy > 0 ? 'S' : 'N';
+      const b = ballRef.current;
+      const sw = swingRef.current;
+
+      const canWalk = sw.state === SWING.IDLE || sw.state === SWING.LANDED;
+      if (canWalk) {
+        const speed = 44;
+        let vx = 0, vy = 0;
+        if (k.arrowleft || k.a) vx -= 1;
+        if (k.arrowright || k.d) vx += 1;
+        if (k.arrowup || k.w) vy -= 1;
+        if (k.arrowdown || k.s) vy += 1;
+        p.moving = !!(vx || vy);
+        if (vx && vy) { vx *= 0.707; vy *= 0.707; }
+        if (Math.abs(vx) > Math.abs(vy)) {
+          p.facing = vx > 0 ? 'E' : 'W';
+        } else if (vy !== 0) {
+          p.facing = vy > 0 ? 'S' : 'N';
+        }
+        p.x = Math.max(8, Math.min(MAP_W * TILE - 8, p.x + vx * speed * dt));
+        p.y = Math.max(8, Math.min(MAP_H * TILE - 8, p.y + vy * speed * dt));
+        if (p.moving) p.walkPhase += dt * 8; else p.walkPhase = 0;
+      } else {
+        p.moving = false;
       }
-      p.x = Math.max(8, Math.min(MAP_W * TILE - 8, p.x + vx * speed * dt));
-      p.y = Math.max(8, Math.min(MAP_H * TILE - 8, p.y + vy * speed * dt));
-      if (p.moving) p.walkPhase += dt * 8; else p.walkPhase = 0;
+
+      if (sw.state === SWING.CHARGING) {
+        sw.chargePhase += dt * 1.1;
+        const u = sw.chargePhase % 2;
+        sw.power = u < 1 ? u : 2 - u;
+      } else if (sw.state === SWING.FLYING) {
+        b.flightT += dt;
+        const u = Math.min(1, b.flightT / b.flightDuration);
+        b.x = b.startX + (b.endX - b.startX) * u;
+        b.y = b.startY + (b.endY - b.startY) * u;
+        b.z = b.maxHeight * Math.sin(Math.PI * u);
+        if (u >= 1) {
+          b.z = 0;
+          b.lastSurface = surfaceAt(b.x, b.y);
+          sw.state = SWING.LANDED;
+          sw.landedT = 0;
+          const labels = { [T_GREEN]: 'on the green!', [T_FAIRWAY]: 'fairway', [T_ROUGH]: 'rough', [T_SAND]: 'in the bunker', [T_WATER]: 'in the water...' };
+          sw.message = labels[b.lastSurface] || 'somewhere';
+        }
+      } else if (sw.state === SWING.LANDED) {
+        sw.landedT += dt;
+        if (sw.landedT > 1.2) {
+          p.x = b.x + 4;
+          p.y = b.y - 2;
+          sw.state = SWING.IDLE;
+          sw.message = null;
+        }
+      }
 
       const viewW = canvas.width;
       const viewH = canvas.height;
-      const scale = Math.max(2, Math.floor(Math.min(viewW / (MAP_W * TILE), viewH / 22 / TILE)));
+      const dpr = window.devicePixelRatio || 1;
+      const scale = Math.max(2, Math.min(3 * dpr, Math.floor(Math.min(
+        viewW / (MAP_W * TILE * 0.95),
+        viewH / (MAP_H * TILE * 0.75),
+      ))));
       const worldW = MAP_W * TILE;
       const worldH = MAP_H * TILE;
-      const camX = Math.max(0, Math.min(worldW - viewW / scale, p.x - viewW / (2 * scale)));
-      const camY = Math.max(0, Math.min(worldH - viewH / scale, p.y - viewH / (2 * scale)));
+      const followX = sw.state === SWING.FLYING ? b.x : p.x;
+      const followY = sw.state === SWING.FLYING ? b.y : p.y;
+      const camX = Math.max(0, Math.min(Math.max(0, worldW - viewW / scale), followX - viewW / (2 * scale)));
+      const camY = Math.max(0, Math.min(Math.max(0, worldH - viewH / scale), followY - viewH / (2 * scale)));
 
       ctx.fillStyle = COLORS.skyVoid;
       ctx.fillRect(0, 0, viewW, viewH);
@@ -260,17 +365,37 @@ export default function GolfStoryScreen({ onExit }) {
       const drawables = [];
       for (const t of TREES) drawables.push({ kind: 'tree', x: t.x * TILE, y: t.y * TILE });
       drawables.push({ kind: 'flag', x: FLAG.x * TILE, y: FLAG.y * TILE });
-      drawables.push({ kind: 'ball', x: TEE.x * TILE - 4, y: TEE.y * TILE + 2 });
+      drawables.push({ kind: 'ball', x: b.x, y: b.y, z: b.z });
       drawables.push({ kind: 'golfer', x: p.x, y: p.y, facing: p.facing, phase: p.moving ? p.walkPhase : null });
-      drawables.sort((a, b) => a.y - b.y);
+      drawables.sort((a, b2) => a.y - b2.y);
       for (const d of drawables) {
         if (d.kind === 'tree') drawTree(ctx, d.x, d.y);
         else if (d.kind === 'flag') drawFlag(ctx, d.x, d.y);
-        else if (d.kind === 'ball') drawBall(ctx, d.x, d.y);
+        else if (d.kind === 'ball') drawBall(ctx, d.x, d.y, d.z || 0);
         else if (d.kind === 'golfer') drawGolfer(ctx, d.x, d.y, d.facing, d.phase);
       }
 
       ctx.restore();
+
+      if (sw.state === SWING.CHARGING) {
+        const meterW = Math.min(viewW * 0.55, 360 * dpr);
+        const meterH = 14 * dpr;
+        const mx = Math.floor((viewW - meterW) / 2);
+        const my = Math.floor(viewH * 0.82);
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(mx - 4 * dpr, my - 4 * dpr, meterW + 8 * dpr, meterH + 8 * dpr);
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(mx, my, meterW, meterH);
+        const fillW = Math.floor(meterW * sw.power);
+        const hue = 120 - 110 * sw.power;
+        ctx.fillStyle = `hsl(${hue}, 72%, 52%)`;
+        ctx.fillRect(mx, my, fillW, meterH);
+        ctx.fillStyle = '#f5f5ec';
+        for (let i = 1; i < 4; i++) {
+          ctx.fillRect(mx + Math.floor(meterW * i / 4) - 1, my, 1, meterH);
+        }
+      }
+
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
@@ -314,7 +439,9 @@ export default function GolfStoryScreen({ onExit }) {
         />
       </View>
       <View style={styles.dialogBox} pointerEvents="none">
-        <Text style={styles.dialogText}>Arrow keys or WASD to walk. Spike v0.1 — no swing yet.</Text>
+        <Text style={styles.dialogText}>
+          Arrows/WASD to walk. SPACE near the ball starts the power meter — SPACE again to launch.
+        </Text>
       </View>
       <Pressable style={styles.exitBtn} onPress={onExit}>
         <Text style={styles.exitText}>✕</Text>
