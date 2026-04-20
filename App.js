@@ -1068,7 +1068,10 @@ const PREVIEW_FRICTION = 2.1;
 const STOP_SPEED = 6;
 const GRAVITY = 30;
 const GROUND_EPSILON = 0.05;
-const FRINGE_BUFFER = 8;
+// Widened from 8 → 14 so balls just off the visible green (where the
+// bezier edge bulges past the underlying rect/polygon) still read as
+// fringe instead of dropping straight to rough.
+const FRINGE_BUFFER = 14;
 const MIN_BOUNCE_VZ = 3.2;
 const PHYSICS_CONFIG = {
   speedScale: 1,
@@ -1811,7 +1814,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.24 · GS spike v0.4';
+const BUILD_VERSION = 'IGT v3.25 · GS spike v0.4';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1844,7 +1847,38 @@ const pointNearPolygon = (point, polygon = [], buffer = 0) => {
   if (pointInPolygon(point, polygon)) return true;
   return polygon.some((vertex) => Math.hypot(vertex.x - point.x, vertex.y - point.y) <= buffer);
 };
-const vectorShapeToPolygon = (shape) => shape?.points?.map((point) => ({ x: point.x, y: point.y })) || [];
+// Flatten a bezier-based designer shape into a polygon by sampling each
+// cubic segment. Anchor-only polygons miss the bulge between anchors when
+// the handles push the curve outward, which caused balls visibly sitting
+// on the green (or sand, or water) to test as off-shape. 4 samples per
+// segment is enough to follow typical handle curvature without blowing
+// up point-in-polygon cost.
+const bezierSamplePoint = (p0, p1, p2, p3, t) => {
+  const mt = 1 - t;
+  return {
+    x: mt * mt * mt * p0.x + 3 * mt * mt * t * p1.x + 3 * mt * t * t * p2.x + t * t * t * p3.x,
+    y: mt * mt * mt * p0.y + 3 * mt * mt * t * p1.y + 3 * mt * t * t * p2.y + t * t * t * p3.y
+  };
+};
+const vectorShapeToPolygon = (shape, samplesPerSegment = 4) => {
+  const pts = shape?.points;
+  if (!Array.isArray(pts) || pts.length === 0) return [];
+  if (samplesPerSegment <= 1) {
+    return pts.map((p) => ({ x: p.x, y: p.y }));
+  }
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    const p0 = { x: pts[i].x, y: pts[i].y };
+    const p1 = { x: pts[i].outX ?? pts[i].x, y: pts[i].outY ?? pts[i].y };
+    const p2 = { x: pts[j].inX ?? pts[j].x, y: pts[j].inY ?? pts[j].y };
+    const p3 = { x: pts[j].x, y: pts[j].y };
+    for (let s = 0; s < samplesPerSegment; s++) {
+      out.push(bezierSamplePoint(p0, p1, p2, p3, s / samplesPerSegment));
+    }
+  }
+  return out;
+};
 
 const pointInCircle = (p, c) => {
   const dx = p.x - c.x;
