@@ -296,13 +296,13 @@ const CLUBS = [
 const GREEN_SLOPE = { angle: Math.PI * 0.3, mag: 7 };
 
 const SURFACE_PROPS = {
-  [T_GREEN]:   { bounceKeep: 0.22, rollDecel: 0.85, label: 'Green', slopeAng: GREEN_SLOPE.angle, slopeMag: GREEN_SLOPE.mag },
-  [T_FAIRWAY]: { bounceKeep: 0.38, rollDecel: 0.55, label: 'Fairway' },
-  [T_ROUGH]:   { bounceKeep: 0.18, rollDecel: 2.2, label: 'Rough' },
-  [T_FRINGE]:  { bounceKeep: 0.24, rollDecel: 0.8, label: 'Fringe' },
-  [T_TEE]:     { bounceKeep: 0.36, rollDecel: 0.6, label: 'Tee Box' },
-  [T_SAND]:    { bounceKeep: 0.06, rollDecel: 4.5, label: 'Bunker' },
-  [T_SHORE]:   { bounceKeep: 0.12, rollDecel: 3.0, label: 'Dirt' },
+  [T_GREEN]:   { bounceKeep: 0.32, rollDecel: 0.85, label: 'Green', slopeAng: GREEN_SLOPE.angle, slopeMag: GREEN_SLOPE.mag },
+  [T_FAIRWAY]: { bounceKeep: 0.55, rollDecel: 0.55, label: 'Fairway' },
+  [T_ROUGH]:   { bounceKeep: 0.26, rollDecel: 2.2, label: 'Rough' },
+  [T_FRINGE]:  { bounceKeep: 0.38, rollDecel: 0.8, label: 'Fringe' },
+  [T_TEE]:     { bounceKeep: 0.52, rollDecel: 0.6, label: 'Tee Box' },
+  [T_SAND]:    { bounceKeep: 0.1,  rollDecel: 4.5, label: 'Bunker' },
+  [T_SHORE]:   { bounceKeep: 0.2,  rollDecel: 3.0, label: 'Dirt' },
   [T_WATER]:   { bounceKeep: 0, rollDecel: 0, label: 'Water', hazard: true },
 };
 
@@ -671,6 +671,36 @@ function simulateFlight(startX, startY, aimAngle, accuracy, power, spinX, spinY,
   return points;
 }
 
+function simulatePutt(startX, startY, aimAngle, accuracy, power, club, spinX) {
+  const v0 = club.v * power;
+  const curveDeg = (accuracy + spinX * 0.55) * 18 * club.accMult;
+  const dir = aimAngle + (curveDeg * Math.PI) / 180;
+  let vx = v0 * Math.sin(dir);
+  let vy = v0 * -Math.cos(dir);
+  let x = startX, y = startY;
+  const stepDt = 0.04;
+  const points = [];
+  for (let s = 0; s < 250; s++) {
+    if (x < 0 || x > WORLD_W || y < 0 || y > WORLD_H) break;
+    const sp = surfacePropsAt(x, y);
+    if (sp.hazard || sp.ob) break;
+    if (sp.slopeMag) {
+      vx += Math.sin(sp.slopeAng) * sp.slopeMag * stepDt;
+      vy += -Math.cos(sp.slopeAng) * sp.slopeMag * stepDt;
+    }
+    const speed = Math.hypot(vx, vy);
+    if (speed < 4) break;
+    const decel = (sp.rollDecel || 1.0) * 40 * stepDt;
+    const factor = Math.max(0, 1 - decel / Math.max(speed, 0.01));
+    vx *= factor;
+    vy *= factor;
+    x += vx * stepDt;
+    y += vy * stepDt;
+    points.push({ x, y, z: 0 });
+  }
+  return points;
+}
+
 function drawShotPredict(ctx, points) {
   ctx.fillStyle = 'rgba(0,0,0,0.28)';
   for (let i = 2; i < points.length; i++) {
@@ -759,10 +789,10 @@ function stepBall(b, dt, windX, windY, flagX, flagY) {
       if (sp.ob) { b.state = 'ob'; return; }
       const impactVz = -b.vz;
       const horizSpeed = Math.hypot(b.vx, b.vy);
-      if (impactVz > 18 && horizSpeed > 20) {
+      if (impactVz > 6 && horizSpeed > 10) {
         b.vz = impactVz * sp.bounceKeep;
-        b.vx *= 0.75;
-        b.vy *= 0.75;
+        b.vx *= 0.88;
+        b.vy *= 0.88;
       } else {
         b.vz = 0;
         b.state = 'rolling';
@@ -1175,7 +1205,9 @@ export default function GolfStoryScreen({ onExit }) {
 
       if (sw.state === SW.AIMING || sw.state === SW.SHAPING || sw.state === SW.POWER || sw.state === SW.ACCURACY) {
         const club = CLUBS[sw.clubIdx];
-        const pts = simulateFlight(ball.x, ball.y, sw.aimAngle, 0, 1.0, sw.spinX, sw.spinY, club, w.x, w.y, true);
+        const pts = club.angle === 0
+          ? simulatePutt(ball.x, ball.y, sw.aimAngle, 0, 1.0, club, sw.spinX)
+          : simulateFlight(ball.x, ball.y, sw.aimAngle, 0, 1.0, sw.spinX, sw.spinY, club, w.x, w.y, true);
         drawShotPredict(ctx, pts);
       }
 
