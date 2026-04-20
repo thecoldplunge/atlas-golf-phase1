@@ -1796,7 +1796,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.16';
+const BUILD_VERSION = 'IGT v3.17';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -3543,7 +3543,12 @@ export default function App() {
     // Course Management reduces in-air wind drift (reads line and plays it).
     // 0 CIQ → wind ×1.30, 50 → ×1.0, 100 → ×0.70.
     const courseMgmt = selectedMentalStats.courseManagement ?? 50;
-    shotWindResistRef.current = clamp(1 - (courseMgmt - 50) * 0.006, 0.7, 1.3);
+    // Course Mgmt shrinks wind drift from 1.30x (CIQ 0) to 0.70x (CIQ 100).
+    // Short shots also get less wind because they fly flatter and less long
+    // — a 30% pitch shouldn't get shoved as much as a full driver.
+    const ciqWindFactor = clamp(1 - (courseMgmt - 50) * 0.006, 0.7, 1.3);
+    const shortShotWindFactor = clamp(launch.launchRatio * 1.4, 0.4, 1.0);
+    shotWindResistRef.current = clamp(ciqWindFactor * shortShotWindFactor, 0.28, 1.3);
     if (selectedClub.key === 'PT') {
       // Putter: pure ground roll, no flight. Speed calibrated so ball rolls the aim distance.
       const puttSpeed = (selectedClub.carryYards / YARDS_PER_WORLD) * launch.launchRatio * 2.8;
@@ -3553,8 +3558,13 @@ export default function App() {
       };
       flightRef.current = { z: 0, vz: 0 };
     } else {
-      // Real golf: all clubs peak ~90-105ft (Trackman PGA data)
-      const targetHangTime = (3.2 + selectedClub.launch * 0.8) * launch.launchRatio;
+      // Real golf: all clubs peak ~90-105ft (Trackman PGA data).
+      // Short shots used to fly as high as long ones because hang time scaled
+      // linearly with launchRatio; that made 50-yd wedges balloon and get
+      // whipped by wind. A 1.3-power curve compresses low-power shots so they
+      // run flatter and expose themselves to the air for less time.
+      const trajectoryScale = Math.pow(clamp(launch.launchRatio, 0, 1.1), 1.3);
+      const targetHangTime = (3.2 + selectedClub.launch * 0.8) * trajectoryScale;
       const launchVz = (GRAVITY * targetHangTime * 0.5) * launch.shotMetrics.launchAdjust * clamp(0.94 + (launch.spinFactor - 1) * 0.35, 0.82, 1.12);
       flightRef.current = {
         z: 0.08,
