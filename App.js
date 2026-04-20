@@ -1052,7 +1052,7 @@ const CAMERA_ZOOM = 3.2;
 // tighter so the player can read the line more precisely.
 const ZOOM_STEPS = [0.4, 0.6, 1.0, 1.4, 1.8, 2.4];
 const DEFAULT_ZOOM_INDEX = 2; // 1.0x
-const PUTTING_ZOOM_INDEX = 3; // 1.4x — normal default + 1
+const PUTTING_ZOOM_INDEX = 5; // 2.4x — max zoom for short putts
 const IS_WEB = Platform.OS === 'web';
 const MANUAL_PAN_GRACE_MS = 2200;
 const BALL_RADIUS_WORLD = 2.4;
@@ -1082,7 +1082,7 @@ const PHYSICS_CONFIG = {
   // shots spent more time in the air again, and wind at 0.35 was dragging
   // them off line much harder than before. 0.20 puts drift back to a level
   // that tells the player to aim the wind without punishing every shot.
-  windForceScale: 0.20,
+  windForceScale: 0.10,
   apexHangFactor: 1,
   curveForce: 1.35,
   curveLaunchBlend: 1.15,
@@ -1840,7 +1840,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.32 · GS spike v0.7.3';
+const BUILD_VERSION = 'IGT v3.33 · GS spike v0.7.3';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -2442,6 +2442,10 @@ export default function App() {
   const shotSpinNormRef = useRef(0);
   const shotAimAngleRef = useRef(getAimAngleToCup(ACTIVE_HOLES[0].ballStart, ACTIVE_HOLES[0].cup));
   const shotWindResistRef = useRef(1);
+  // Set true when the user explicitly taps the Chip button from putting mode.
+  // Prevents the green auto-enter effect from immediately re-enabling putting.
+  // Cleared on the next shot/hole so auto-putt resumes by default.
+  const chipOverrideRef = useRef(false);
   const [currentLie, setCurrentLie] = useState('tee');
   const [selectedClubIndex, setSelectedClubIndex] = useState(15);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -3150,7 +3154,8 @@ export default function App() {
     const dy = ball.y - currentHole.cup.y;
     const dist = Math.hypot(dx, dy);
     const captureRadius = CUP_RADIUS_WORLD;
-    const slowEnough = speed < 14;
+    // Allow the ball to go in 25% faster than before (was < 14).
+    const slowEnough = speed < 17.5;
     if (dist < captureRadius && slowEnough) {
       setSunk(true);
       velocityRef.current = { x: 0, y: 0 };
@@ -3253,21 +3258,24 @@ export default function App() {
       return;
     }
 
-    // Auto-enter putting mode on green only (fringe lets you choose)
-    if (!ballMoving && lie === 'green' && !puttingMode) {
+    // Auto-enter putting mode on green only (fringe lets you choose).
+    // Skip if the user just tapped Chip — we don't want the effect to
+    // re-enable putting and undo their choice.
+    if (!ballMoving && lie === 'green' && !puttingMode && !chipOverrideRef.current) {
       setPuttingMode(true);
       setSelectedClubIndex(0);
       setShotControlOpen(false);
       setSpinOffset({ x: 0, y: 0 });
       setPuttPreview(null);
-      setPuttAimPoint(null);
+      // Auto-aim the putt target at the cup; the user can drag to move it.
+      setPuttAimPoint({ x: currentHole.cup.x, y: currentHole.cup.y });
       setPuttSimulated(false);
       setPuttTargetPowerPct(null);
       setPuttSwingFeedback('');
       powerRef.current = 0;
       setPowerPct(0);
-      setTempoLabel('Place aim point');
-      setLastShotNote('Putting mode: place an aim point on the green, tap Simulate Putt, then swing to match the target power.');
+      setTempoLabel('Aim at the cup');
+      setLastShotNote('Putting mode: aim auto-set at the cup — drag it to adjust, tap Simulate Putt, then swing to match.');
       setCamera((prev) => clampCamera({ x: ball.x, y: ball.y }));
     }
   }, [ball, ballMoving, currentHole, currentLie, puttingMode, sunk, waterDropMenu]);
@@ -3787,6 +3795,9 @@ export default function App() {
   };
 
   const strikeBall = (deviation = 0, { tempoMult = 1.0, tempoTag = 'Normal', tempoMetrics = null } = {}) => {
+    // New shot — clear the chip-mode override so the next approach-to-green
+    // auto-enables putting again.
+    chipOverrideRef.current = false;
     // Apply tempo multiplier to deviation — rushed/jerky/coasted swings are
     // less accurate. The clamp is intentionally wider than [-1, 1] so a
     // max-deviation slice/hook combined with a jerky tempo can amplify past
@@ -3824,11 +3835,20 @@ export default function App() {
       * launch.shotMetrics.launchAdjust
       * spinLaunchMod;
     const powerFrac = clamp(launch.effectivePower / 100, 0, 1.2);
+    // Jerky / coasted / rushed swings (tempoMult > 1) should lose carry too,
+    // not just accuracy. Otherwise a wild overpower swing with near-zero
+    // deviation still goes the full distance because the tempo penalty is
+    // only wired into deviation. Calibrated so a 2.15x mult (Jerky + Coasted)
+    // lands ~80% of the full-power carry; a 1.2x mult barely dents distance.
+    const tempoCarryMult = tempoMult > 1
+      ? clamp(1 / Math.pow(tempoMult, 0.3), 0.55, 1.0)
+      : 1.0;
     const targetCarryWorld = (selectedClub.carryYards / YARDS_PER_WORLD)
       * powerFrac
       * launch.powerFactor
       * launch.touchFactor
-      * pauseDistanceMult;
+      * pauseDistanceMult
+      * tempoCarryMult;
     const expFactor = 1 - Math.exp(-0.14 * actualHangTime);
     const speed = expFactor > 0.001
       ? (targetCarryWorld * 0.14 / expFactor)
@@ -3853,11 +3873,14 @@ export default function App() {
     // 0 CIQ → wind ×1.30, 50 → ×1.0, 100 → ×0.70.
     const courseMgmt = selectedMentalStats.courseManagement ?? 50;
     // Course Mgmt shrinks wind drift from 1.30x (CIQ 0) to 0.70x (CIQ 100).
-    // Short shots also get less wind because they fly flatter and less long
-    // — a 30% pitch shouldn't get shoved as much as a full driver.
+    // Short shots take a quadratic wind cut: wind force scales with
+    // launchRatio² so a 30% shot feels ~18% of the wind a full shot feels.
+    // This fixes the "tiny pitch gets shoved sideways more than a full
+    // driver" feel — wind force is absolute, but the shorter the shot the
+    // more offline any absolute drift looks relative to the carry.
     const ciqWindFactor = clamp(1 - (courseMgmt - 50) * 0.006, 0.7, 1.3);
-    const shortShotWindFactor = clamp(launch.launchRatio * 1.4, 0.4, 1.0);
-    shotWindResistRef.current = clamp(ciqWindFactor * shortShotWindFactor, 0.28, 1.3);
+    const shortShotWindFactor = clamp(launch.launchRatio * launch.launchRatio * 2.0, 0.15, 1.0);
+    shotWindResistRef.current = clamp(ciqWindFactor * shortShotWindFactor, 0.12, 1.3);
     if (selectedClub.key === 'PT') {
       // Putter: pure ground roll, no flight. Speed calibrated so ball rolls the aim distance.
       const puttSpeed = (selectedClub.carryYards / YARDS_PER_WORLD) * launch.launchRatio * 2.8;
@@ -5686,6 +5709,7 @@ export default function App() {
               <Pressable
                 style={styles.puttChipToggle}
                 onPress={() => {
+                  chipOverrideRef.current = true;
                   setPuttingMode(false);
                   setPuttPreview(null);
                   setPuttAimPoint(null);
@@ -5693,6 +5717,8 @@ export default function App() {
                   setPuttTargetPowerPct(null);
                   setPuttSwingFeedback('');
                   setSelectedClubIndex(1); // switch to LW for chip
+                  setZoomLevel(DEFAULT_ZOOM_INDEX);
+                  setTempoLabel('Chip mode — tap Hit to swing');
                 }}
               >
                 <Text style={styles.puttChipToggleText}>🏌️ Chip</Text>
