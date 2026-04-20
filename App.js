@@ -2384,7 +2384,9 @@ export default function App() {
     magnitude(velocityRef.current) > 0.3 ||
     flightRef.current.z > 0.04 ||
     Math.abs(flightRef.current.vz) > 0.35;
-  const cameraAnchorY = (!ballMoving && !puttingMode) ? viewHeight * 0.74 : viewHeight / 2;
+  // At rest the ball sits mid-screen so there's room for the aim line above
+  // AND the bottom HUD below. During flight / on the green we center hard.
+  const cameraAnchorY = (!ballMoving && !puttingMode) ? viewHeight * 0.55 : viewHeight / 2;
 
   // Given a ball position and a target (usually the cup), produce a camera
   // position that keeps the ball inside the viewport while biasing the view
@@ -3031,12 +3033,27 @@ export default function App() {
   }, [puttingMode, selectedClubIndex]);
 
   // Auto-aim at the cup whenever the ball is at rest — so every shot starts
-  // pointed at the hole. The player can still drag to redirect; we only
-  // reset when the ball position changes and is not mid-flight.
+  // pointed at the hole. Also frame the shot by shifting the camera part-way
+  // along the aim line: the ball sits low in the visible area and the aim
+  // line extends into the upper part. The player can still drag to redirect.
+  // Putting has its own centered framing.
   useEffect(() => {
-    if (ballMoving || sunk || !currentHole.cup) return;
-    setAimAngle(getAimAngleToCup(ball, currentHole.cup));
-  }, [ball, ballMoving, sunk, currentHole.cup]);
+    if (ballMoving || sunk || !currentHole.cup || puttingMode) return;
+    const newAim = getAimAngleToCup(ball, currentHole.cup);
+    setAimAngle(newAim);
+    const dx = currentHole.cup.x - ball.x;
+    const dy = currentHole.cup.y - ball.y;
+    const distToCupWorld = Math.hypot(dx, dy);
+    const clubStockWorld = (selectedClub?.carryYards ?? 220) / YARDS_PER_WORLD;
+    const aimEndDist = Math.min(distToCupWorld, clubStockWorld);
+    const shiftFrac = 0.35;
+    const camX = ball.x + Math.cos(newAim) * aimEndDist * shiftFrac;
+    const camY = ball.y + Math.sin(newAim) * aimEndDist * shiftFrac;
+    const framed = clampCamera({ x: camX, y: camY });
+    setCamera(framed);
+    cameraRef.current = framed;
+    manualPanUntilRef.current = 0;
+  }, [ball, ballMoving, sunk, currentHole.cup, puttingMode, selectedClub?.carryYards]);
 
   // Driving range: once the ball comes to rest, reset back to the tee so the
   // player can keep hitting. Short delay lets the shot-stats card show first.
@@ -3565,19 +3582,14 @@ export default function App() {
       };
       flightRef.current = { z: 0, vz: 0 };
     } else {
-<<<<<<< Updated upstream
-      // Real golf: all clubs peak ~90-105ft (Trackman PGA data).
       // Short shots used to fly as high as long ones because hang time scaled
-      // linearly with launchRatio; that made 50-yd wedges balloon and get
-      // whipped by wind. A 1.3-power curve compresses low-power shots so they
-      // run flatter and expose themselves to the air for less time.
+      // linearly with launchRatio. Combining two fixes:
+      //   1) Power-curve the launchRatio (^1.3) so partial-power shots stay
+      //      flatter. Full shots (ratio=1) unchanged.
+      //   2) Lower the hang-time base from (3.2 + launch*0.8) to
+      //      (2.4 + launch*0.55) so arcs are lower across the board.
       const trajectoryScale = Math.pow(clamp(launch.launchRatio, 0, 1.1), 1.3);
-      const targetHangTime = (3.2 + selectedClub.launch * 0.8) * trajectoryScale;
-=======
-      // Hang-time base lowered from (3.2 + launch*0.8) to (2.4 + launch*0.55)
-      // — lower arcs, especially for partial-power wedges.
-      const targetHangTime = (2.4 + selectedClub.launch * 0.55) * launch.launchRatio;
->>>>>>> Stashed changes
+      const targetHangTime = (2.4 + selectedClub.launch * 0.55) * trajectoryScale;
       const launchVz = (GRAVITY * targetHangTime * 0.5) * launch.shotMetrics.launchAdjust * clamp(0.94 + (launch.spinFactor - 1) * 0.35, 0.82, 1.12);
       flightRef.current = {
         z: 0.08,
@@ -5418,17 +5430,6 @@ export default function App() {
                 ) : null}
               </View>
 
-              <Text style={styles.helperText}>
-                {isAiming
-                  ? 'Adjusting aim...'
-                  : showScorecard
-                    ? 'Review your scorecard to continue.'
-                    : shotControlOpen
-                    ? 'Drag the blue dot, then tap Shoot to hit.'
-                    : Platform.OS === 'web'
-                      ? 'Tap Yards, the club card, or Hit to open shot shaping. Drag on the course to pan, tap to aim.'
-                      : 'Tap Yards, the club card, or Hit to open shot shaping. Use two fingers on course to pan camera.'}
-              </Text>
             </>
           )}
 
