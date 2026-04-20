@@ -4,6 +4,8 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 const TILE = 16;
 const MAP_W = 20;
 const MAP_H = 30;
+const WORLD_W = MAP_W * TILE;
+const WORLD_H = MAP_H * TILE;
 
 const T_ROUGH = 0;
 const T_FAIRWAY = 1;
@@ -21,53 +23,220 @@ function hRand(x, y, seed) {
   return n / 0xffffffff;
 }
 
-const RAW_MAP = (() => {
-  const m = Array.from({ length: MAP_H }, () => Array(MAP_W).fill(T_ROUGH));
-  const fwRows = {
-    9: [6, 14], 10: [6, 14], 11: [6, 13], 12: [6, 13], 13: [6, 13],
-    14: [6, 14], 15: [6, 14], 16: [6, 14], 17: [6, 14], 18: [6, 14],
-    19: [6, 14], 20: [7, 13], 21: [7, 13], 22: [7, 12], 23: [7, 12],
-    24: [8, 11], 25: [8, 11],
-  };
-  for (const [yStr, bounds] of Object.entries(fwRows)) {
-    const y = +yStr, [x0, x1] = bounds;
-    for (let x = x0; x <= x1; x++) m[y][x] = T_FAIRWAY;
-  }
-  // Circular green: every tile whose center is within r≈3.2 of (9.5, 5.5)
-  const gcx = 9.5, gcy = 5.5, gr = 3.2;
-  for (let y = 0; y < MAP_H; y++) {
-    for (let x = 0; x < MAP_W; x++) {
-      const dx = (x + 0.5) - gcx;
-      const dy = (y + 0.5) - gcy;
-      if (Math.hypot(dx, dy) <= gr) m[y][x] = T_GREEN;
-    }
-  }
-  m[11][13] = T_SAND; m[12][13] = T_SAND; m[12][14] = T_SAND; m[13][14] = T_SAND;
-  m[6][13] = T_SAND; m[7][13] = T_SAND;
-  for (let y = 14; y < 19; y++) for (let x = 2; x < 6; x++) m[y][x] = T_WATER;
-  m[19][2] = T_WATER; m[19][3] = T_WATER; m[19][4] = T_WATER;
-  m[13][3] = T_WATER; m[13][4] = T_WATER;
-  m[24][9] = T_TEE; m[24][10] = T_TEE; m[25][9] = T_TEE; m[25][10] = T_TEE;
-  return m;
-})();
+const SURFACES = [
+  {
+    type: T_FAIRWAY,
+    shape: { kind: 'polygon', points: [
+      [7.2, 8.8], [10, 8.6], [12.8, 8.8], [13.4, 9.4], [13.9, 10.4],
+      [14.2, 11.8], [14.3, 13.5], [14.1, 15.5], [13.9, 17.5],
+      [13.7, 19.3], [13.4, 20.8], [13, 21.9], [12.6, 22.8],
+      [12.2, 23.6], [11.8, 24.4], [11.4, 25.1], [11.1, 25.7],
+      [9, 25.7], [8.9, 25.1], [8.5, 24.4], [8.1, 23.6],
+      [7.7, 22.8], [7.3, 21.9], [7, 20.8], [6.7, 19.3],
+      [6.4, 17.5], [6.2, 15.5], [6, 13.5], [6.1, 11.8],
+      [6.3, 10.4], [6.8, 9.4],
+    ]},
+  },
+  {
+    type: T_SAND,
+    shape: { kind: 'polygon', points: [
+      [12.9, 10.8], [13.8, 10.7], [14.6, 11], [14.9, 11.8],
+      [14.8, 12.8], [14.4, 13.6], [13.6, 13.8], [12.9, 13.5],
+      [12.5, 12.6], [12.6, 11.5],
+    ]},
+  },
+  {
+    type: T_SAND,
+    shape: { kind: 'circle', cx: 13.9, cy: 7.4, r: 1.1 },
+  },
+  {
+    type: T_WATER,
+    shape: { kind: 'polygon', points: [
+      [1.5, 13.2], [3, 13], [4.8, 13.3], [5.6, 14], [5.9, 15.3],
+      [5.9, 17], [5.6, 18.4], [4.8, 19], [3.5, 19.3], [2, 19.2],
+      [1, 18.4], [0.7, 17], [0.8, 15.3], [1.1, 14],
+    ]},
+  },
+  {
+    type: T_FRINGE,
+    shape: { kind: 'annulus', cx: 9.5, cy: 5.5, inner: 3.2, outer: 4.05 },
+  },
+  {
+    type: T_GREEN,
+    shape: { kind: 'circle', cx: 9.5, cy: 5.5, r: 3.2 },
+  },
+  {
+    type: T_TEE,
+    shape: { kind: 'rect', x: 8.7, y: 24.2, w: 1.6, h: 1.1 },
+  },
+];
 
-const HOLE_MAP = (() => {
-  const m = RAW_MAP.map(row => [...row]);
-  for (let y = 0; y < MAP_H; y++) {
-    for (let x = 0; x < MAP_W; x++) {
-      const t = RAW_MAP[y][x];
-      if (t === T_FAIRWAY || t === T_ROUGH) {
-        for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]]) {
-          const ny = y + dy, nx = x + dx;
-          if (ny >= 0 && ny < MAP_H && nx >= 0 && nx < MAP_W && RAW_MAP[ny][nx] === T_GREEN) {
-            m[y][x] = T_FRINGE; break;
-          }
-        }
-      }
+for (const surf of SURFACES) {
+  const s = surf.shape;
+  if (s.kind === 'circle') {
+    s._bbox = [(s.cx - s.r) * TILE, (s.cy - s.r) * TILE, (s.cx + s.r) * TILE, (s.cy + s.r) * TILE];
+  } else if (s.kind === 'annulus') {
+    s._bbox = [(s.cx - s.outer) * TILE, (s.cy - s.outer) * TILE, (s.cx + s.outer) * TILE, (s.cy + s.outer) * TILE];
+  } else if (s.kind === 'rect') {
+    s._bbox = [s.x * TILE, s.y * TILE, (s.x + s.w) * TILE, (s.y + s.h) * TILE];
+  } else if (s.kind === 'polygon') {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [px, py] of s.points) {
+      if (px < x0) x0 = px; if (px > x1) x1 = px;
+      if (py < y0) y0 = py; if (py > y1) y1 = py;
+    }
+    s._bbox = [x0 * TILE, y0 * TILE, x1 * TILE, y1 * TILE];
+  }
+}
+
+function pointInShape(x, y, shape) {
+  const bb = shape._bbox;
+  if (x < bb[0] || x > bb[2] || y < bb[1] || y > bb[3]) return false;
+  if (shape.kind === 'circle') {
+    const dx = x - shape.cx * TILE, dy = y - shape.cy * TILE;
+    return dx * dx + dy * dy <= (shape.r * TILE) * (shape.r * TILE);
+  }
+  if (shape.kind === 'annulus') {
+    const dx = x - shape.cx * TILE, dy = y - shape.cy * TILE;
+    const d2 = dx * dx + dy * dy;
+    const ro = shape.outer * TILE, ri = shape.inner * TILE;
+    return d2 <= ro * ro && d2 >= ri * ri;
+  }
+  if (shape.kind === 'rect') return true;
+  if (shape.kind === 'polygon') {
+    let inside = false;
+    const pts = shape.points;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const xi = pts[i][0] * TILE, yi = pts[i][1] * TILE;
+      const xj = pts[j][0] * TILE, yj = pts[j][1] * TILE;
+      if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+  return false;
+}
+
+function surfaceAtPixel(x, y) {
+  for (let i = SURFACES.length - 1; i >= 0; i--) {
+    if (pointInShape(x, y, SURFACES[i].shape)) return SURFACES[i].type;
+  }
+  return T_ROUGH;
+}
+
+function surfaceAt(wx, wy) {
+  return surfaceAtPixel(wx, wy);
+}
+
+const COLORS = {
+  skyVoid: '#0b1a10',
+  roughA: '#3d8232', roughB: '#326f26', roughC: '#24571c', roughD: '#52a640',
+  fairA: '#5eae3a', fairB: '#52a032', fairC: '#418526', fairD: '#7ac94f',
+  greenA: '#83cf52', greenB: '#77c146', greenC: '#5eaa32', greenD: '#9fde6a',
+  fringeA: '#6db847', fringeB: '#5ca636', fringeC: '#4a8f24', fringeD: '#85cf5c',
+  teeA: '#6fc045', teeB: '#5ab030', teeC: '#4a9420',
+  sandA: '#ecd6a0', sandB: '#d8bd78', sandC: '#b8995c', sandD: '#f7e7ba',
+  waterA: '#4b9bd9', waterB: '#3a82c0', waterC: '#a8d6f0', waterD: '#2b6fab',
+  trunkDark: '#3f2610', trunk: '#5a3a1a', trunkHi: '#7d5428',
+  tree0: '#163016', tree1: '#224a22', tree2: '#2e6b2e',
+  tree3: '#3f8c3f', tree4: '#5db35d', tree5: '#8ed88e',
+  shadow: 'rgba(0,0,0,0.3)',
+  skin: '#f1b884', skinShadow: '#d49864',
+  hat: '#c83030', hatDark: '#8a1e1e', hatHi: '#ea5a5a', hatBand: '#161616',
+  shirt: '#2b70b7', shirtDark: '#1a4c88', shirtHi: '#4e95d8',
+  pants: '#222f4a', pantsDark: '#121a2c',
+  shoe: '#141414', shoeHi: '#3a3a3a',
+  flagRed: '#e33838', flagDark: '#a82222', flagHi: '#ff6060', flagYellow: '#fbe043',
+  pole: '#efe9cc', poleDark: '#a8a280',
+  cup: '#141414',
+  ballShadow: '#c9c9c9', ballWhite: '#ffffff',
+  flowerRed: '#e94343', flowerYellow: '#fbe043', flowerWhite: '#ffffff',
+  flowerStem: '#2d6a24', flowerCenter: '#fbe043',
+  pebble: '#7e7966', pebbleHi: '#a9a38d',
+};
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+}
+const RGB = {};
+for (const [k, v] of Object.entries(COLORS)) {
+  if (v && typeof v === 'string' && v.startsWith('#')) RGB[k] = hexToRgb(v);
+}
+
+function paletteFor(type) {
+  switch (type) {
+    case T_FAIRWAY: return [RGB.fairA, RGB.fairB, RGB.fairC, RGB.fairD];
+    case T_GREEN:   return [RGB.greenA, RGB.greenB, RGB.greenC, RGB.greenD];
+    case T_FRINGE:  return [RGB.fringeA, RGB.fringeB, RGB.fringeC, RGB.fringeD];
+    case T_TEE:     return [RGB.teeA, RGB.teeB, RGB.teeC, RGB.teeA];
+    case T_SAND:    return [RGB.sandA, RGB.sandB, RGB.sandC, RGB.sandD];
+    case T_WATER:   return [RGB.waterA, RGB.waterD, RGB.waterB, RGB.waterC];
+    default:        return [RGB.roughA, RGB.roughB, RGB.roughC, RGB.roughD];
+  }
+}
+
+function pixelColor(x, y, type) {
+  const [base, mid, dark, light] = paletteFor(type);
+  let c = base;
+  const noise = hRand(x, y, 1);
+
+  if (type !== T_WATER && type !== T_SAND && noise > 0.52 && noise < 0.66) c = mid;
+
+  if (type === T_FAIRWAY) {
+    const tx = (x / TILE) | 0;
+    const ty = (y / TILE) | 0;
+    const horiz = ((tx + ty) & 1) === 0;
+    if (horiz) { if (x % 3 === 0) c = mid; }
+    else { if (y % 3 === 0) c = mid; }
+  } else if (type === T_GREEN) {
+    if (y % 2 === 0) c = mid;
+  } else if (type === T_FRINGE) {
+    if (y % 2 === 0) c = mid;
+    if ((x + y) % 4 === 0) c = dark;
+  } else if (type === T_TEE) {
+    if ((x + y) % 3 === 0) c = mid;
+  } else if (type === T_SAND) {
+    if (noise > 0.55) c = mid;
+  } else if (type === T_WATER) {
+    const j = y % 4;
+    const row = (y / 4) | 0;
+    const startX = (row & 1) === 0 ? 1 : 5;
+    const rel = ((x - startX) % 12 + 12) % 12;
+    if (j === 2 && rel < 5) c = mid;
+    else if (j === 0 && rel >= 7 && rel < 10) c = mid;
+  }
+
+  const dThresh = type === T_GREEN ? 0.97
+                : type === T_FAIRWAY || type === T_FRINGE ? 0.96
+                : type === T_SAND ? 0.93
+                : 0.92;
+  if (hRand(x, y, 10) > dThresh) c = dark;
+
+  const lThresh = type === T_ROUGH ? 0.98 : 0.97;
+  if (hRand(x, y, 20) > lThresh) c = light;
+
+  if (type === T_SAND) {
+    if (hRand(x, y, 30) > 0.97) c = light;
+  }
+  if (type === T_WATER) {
+    if (hRand(x, y, 40) > 0.985) c = light;
+  }
+
+  return c;
+}
+
+function buildWorldImageData() {
+  const data = new Uint8ClampedArray(WORLD_W * WORLD_H * 4);
+  for (let y = 0; y < WORLD_H; y++) {
+    for (let x = 0; x < WORLD_W; x++) {
+      const type = surfaceAtPixel(x + 0.5, y + 0.5);
+      const rgb = pixelColor(x, y, type);
+      const i = (y * WORLD_W + x) * 4;
+      data[i] = rgb[0]; data[i + 1] = rgb[1]; data[i + 2] = rgb[2]; data[i + 3] = 255;
     }
   }
-  return m;
-})();
+  return new ImageData(data, WORLD_W, WORLD_H);
+}
 
 const TREES = [
   { x: 3.5, y: 8 }, { x: 16.5, y: 6.5 }, { x: 2.5, y: 11.5 }, { x: 17.5, y: 14 },
@@ -78,187 +247,47 @@ const TREES = [
   { x: 18.5, y: 19 }, { x: 0.5, y: 26 }, { x: 19.5, y: 23 }, { x: 4, y: 25.5 },
   { x: 15, y: 28 },
 ];
-const FLAG = { x: 9.5, y: 5 };
-const TEE = { x: 9.5, y: 24.5 };
+const FLAG = { x: 9.5, y: 5.5 };
+const TEE = { x: 9.5, y: 24.8 };
 
 const PROPS = (() => {
   const out = [];
-  for (let y = 0; y < MAP_H; y++) {
-    for (let x = 0; x < MAP_W; x++) {
-      const t = HOLE_MAP[y][x];
-      if (t === T_ROUGH) {
-        const tufts = Math.floor(hRand(x, y, 500) * 3);
+  for (let ty = 0; ty < MAP_H; ty++) {
+    for (let tx = 0; tx < MAP_W; tx++) {
+      const cx = (tx + 0.5) * TILE;
+      const cy = (ty + 0.5) * TILE;
+      const type = surfaceAtPixel(cx, cy);
+      if (type === T_ROUGH) {
+        const tufts = Math.floor(hRand(tx, ty, 500) * 3);
         for (let i = 0; i < tufts; i++) {
-          out.push({
-            kind: 'tuft',
-            x: x * TILE + Math.floor(hRand(x, y, 501 + i) * (TILE - 2)) + 1,
-            y: y * TILE + Math.floor(hRand(x, y, 520 + i) * (TILE - 2)) + 1,
-          });
+          const px = tx * TILE + Math.floor(hRand(tx, ty, 501 + i) * (TILE - 2)) + 1;
+          const py = ty * TILE + Math.floor(hRand(tx, ty, 520 + i) * (TILE - 2)) + 1;
+          if (surfaceAtPixel(px, py) === T_ROUGH) out.push({ kind: 'tuft', x: px, y: py });
         }
-        if (hRand(x, y, 550) > 0.86) {
-          const c = hRand(x, y, 553);
-          out.push({
-            kind: 'flower',
-            x: x * TILE + Math.floor(hRand(x, y, 551) * (TILE - 2)) + 1,
-            y: y * TILE + Math.floor(hRand(x, y, 552) * (TILE - 2)) + 1,
-            color: c < 0.4 ? 'red' : c < 0.7 ? 'yellow' : 'white',
-          });
+        if (hRand(tx, ty, 550) > 0.86) {
+          const px = tx * TILE + Math.floor(hRand(tx, ty, 551) * (TILE - 2)) + 1;
+          const py = ty * TILE + Math.floor(hRand(tx, ty, 552) * (TILE - 2)) + 1;
+          if (surfaceAtPixel(px, py) === T_ROUGH) {
+            const c = hRand(tx, ty, 553);
+            out.push({ kind: 'flower', x: px, y: py, color: c < 0.4 ? 'red' : c < 0.7 ? 'yellow' : 'white' });
+          }
         }
-        if (hRand(x, y, 570) > 0.95) {
-          out.push({
-            kind: 'pebble',
-            x: x * TILE + Math.floor(hRand(x, y, 571) * (TILE - 2)) + 1,
-            y: y * TILE + Math.floor(hRand(x, y, 572) * (TILE - 2)) + 1,
-          });
+        if (hRand(tx, ty, 570) > 0.95) {
+          const px = tx * TILE + Math.floor(hRand(tx, ty, 571) * (TILE - 2)) + 1;
+          const py = ty * TILE + Math.floor(hRand(tx, ty, 572) * (TILE - 2)) + 1;
+          if (surfaceAtPixel(px, py) === T_ROUGH) out.push({ kind: 'pebble', x: px, y: py });
         }
-      } else if (t === T_FAIRWAY) {
-        if (hRand(x, y, 600) > 0.93) {
-          out.push({
-            kind: 'daisy',
-            x: x * TILE + Math.floor(hRand(x, y, 601) * (TILE - 2)) + 1,
-            y: y * TILE + Math.floor(hRand(x, y, 602) * (TILE - 2)) + 1,
-          });
+      } else if (type === T_FAIRWAY) {
+        if (hRand(tx, ty, 600) > 0.94) {
+          const px = tx * TILE + Math.floor(hRand(tx, ty, 601) * (TILE - 2)) + 1;
+          const py = ty * TILE + Math.floor(hRand(tx, ty, 602) * (TILE - 2)) + 1;
+          if (surfaceAtPixel(px, py) === T_FAIRWAY) out.push({ kind: 'daisy', x: px, y: py });
         }
       }
     }
   }
   return out;
 })();
-
-const COLORS = {
-  skyVoid: '#0b1a10',
-  roughA: '#3d8232', roughB: '#326f26', roughC: '#24571c', roughD: '#52a640',
-  fairA:  '#5eae3a', fairB:  '#52a032', fairC:  '#418526', fairD:  '#7ac94f',
-  greenA: '#83cf52', greenB: '#77c146', greenC: '#5eaa32', greenD: '#9fde6a',
-  fringeA:'#6db847', fringeB:'#5ca636', fringeC:'#4a8f24', fringeD:'#85cf5c',
-  teeA:   '#6fc045', teeB:   '#5ab030', teeC:   '#4a9420',
-  sandA:  '#ecd6a0', sandB:  '#d8bd78', sandC:  '#b8995c', sandD:  '#f7e7ba',
-  waterA: '#4b9bd9', waterB: '#3a82c0', waterC: '#a8d6f0', waterD: '#2b6fab',
-  trunkDark:'#3f2610', trunk:'#5a3a1a', trunkHi:'#7d5428',
-  tree0:'#163016', tree1:'#224a22', tree2:'#2e6b2e',
-  tree3:'#3f8c3f', tree4:'#5db35d', tree5:'#8ed88e',
-  shadow: 'rgba(0,0,0,0.3)',
-  skin: '#f1b884', skinShadow: '#d49864',
-  hat: '#c83030', hatDark: '#8a1e1e', hatHi: '#ea5a5a', hatBand: '#161616',
-  shirt: '#2b70b7', shirtDark: '#1a4c88', shirtHi: '#4e95d8',
-  pants: '#222f4a', pantsDark: '#121a2c',
-  shoe: '#141414', shoeHi: '#3a3a3a',
-  flagRed:'#e33838', flagDark:'#a82222', flagHi:'#ff6060', flagYellow:'#fbe043',
-  pole: '#efe9cc', poleDark: '#a8a280',
-  cup: '#141414',
-  ballShadow: '#c9c9c9', ballWhite: '#ffffff',
-  flowerRed:'#e94343', flowerYellow:'#fbe043', flowerWhite:'#ffffff',
-  flowerStem:'#2d6a24', flowerCenter:'#fbe043',
-  pebble: '#7e7966', pebbleHi: '#a9a38d',
-};
-
-function drawGrassTile(ctx, wx, wy, type) {
-  let pal;
-  switch (type) {
-    case T_FAIRWAY: pal = [COLORS.fairA, COLORS.fairB, COLORS.fairC, COLORS.fairD]; break;
-    case T_GREEN:   pal = [COLORS.greenA, COLORS.greenB, COLORS.greenC, COLORS.greenD]; break;
-    case T_FRINGE:  pal = [COLORS.fringeA, COLORS.fringeB, COLORS.fringeC, COLORS.fringeD]; break;
-    case T_TEE:     pal = [COLORS.teeA, COLORS.teeB, COLORS.teeC, COLORS.teeA]; break;
-    default:        pal = [COLORS.roughA, COLORS.roughB, COLORS.roughC, COLORS.roughD];
-  }
-  const [base, mid, dark, light] = pal;
-  ctx.fillStyle = base;
-  ctx.fillRect(wx, wy, TILE, TILE);
-
-  ctx.fillStyle = mid;
-  for (let j = 0; j < TILE; j++) {
-    for (let i = 0; i < TILE; i++) {
-      const r = hRand(wx + i, wy + j, 1);
-      if (r > 0.52 && r < 0.68) ctx.fillRect(wx + i, wy + j, 1, 1);
-    }
-  }
-
-  if (type === T_FAIRWAY || type === T_GREEN || type === T_FRINGE || type === T_TEE) {
-    ctx.fillStyle = dark;
-    const alternate = ((wx / TILE) | 0) % 2 === 0;
-    const period = type === T_GREEN ? 2 : 3;
-    ctx.globalAlpha = type === T_GREEN ? 0.35 : 0.45;
-    if (alternate) {
-      for (let i = 0; i < TILE; i += period) ctx.fillRect(wx + i, wy, 1, TILE);
-    } else {
-      for (let i = 0; i < TILE; i += period) ctx.fillRect(wx, wy + i, TILE, 1);
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  ctx.fillStyle = dark;
-  const dn = type === T_GREEN ? 1 : type === T_FAIRWAY || type === T_FRINGE ? 2 : 5;
-  for (let k = 0; k < dn; k++) {
-    const px = Math.floor(hRand(wx, wy, 10 + k) * TILE);
-    const py = Math.floor(hRand(wx, wy, 50 + k) * TILE);
-    ctx.fillRect(wx + px, wy + py, 1, 1);
-    if (hRand(wx, wy, 90 + k) > 0.65 && py + 1 < TILE) ctx.fillRect(wx + px, wy + py + 1, 1, 1);
-  }
-
-  ctx.fillStyle = light;
-  const ln = type === T_GREEN ? 3 : type === T_FAIRWAY ? 2 : type === T_ROUGH ? 1 : 2;
-  for (let k = 0; k < ln; k++) {
-    const px = Math.floor(hRand(wx, wy, 130 + k) * TILE);
-    const py = Math.floor(hRand(wx, wy, 170 + k) * TILE);
-    ctx.fillRect(wx + px, wy + py, 1, 1);
-  }
-
-  if (type === T_TEE) {
-    ctx.fillStyle = COLORS.teeC;
-    for (let i = 2; i < TILE; i += 3) {
-      ctx.fillRect(wx + i, wy + 2, 1, 1);
-      ctx.fillRect(wx + i, wy + TILE - 3, 1, 1);
-    }
-  }
-}
-
-function drawSandTile(ctx, wx, wy) {
-  ctx.fillStyle = COLORS.sandA;
-  ctx.fillRect(wx, wy, TILE, TILE);
-  ctx.fillStyle = COLORS.sandB;
-  for (let j = 0; j < TILE; j++) {
-    for (let i = 0; i < TILE; i++) {
-      const r = hRand(wx + i, wy + j, 2);
-      if (r > 0.68) ctx.fillRect(wx + i, wy + j, 1, 1);
-    }
-  }
-  ctx.fillStyle = COLORS.sandC;
-  for (let k = 0; k < 3; k++) {
-    ctx.fillRect(wx + Math.floor(hRand(wx, wy, 210 + k) * TILE), wy + Math.floor(hRand(wx, wy, 230 + k) * TILE), 1, 1);
-  }
-  ctx.fillStyle = COLORS.sandD;
-  for (let k = 0; k < 2; k++) {
-    ctx.fillRect(wx + Math.floor(hRand(wx, wy, 260 + k) * TILE), wy + Math.floor(hRand(wx, wy, 280 + k) * TILE), 1, 1);
-  }
-}
-
-function drawWaterTile(ctx, wx, wy) {
-  ctx.fillStyle = COLORS.waterA;
-  ctx.fillRect(wx, wy, TILE, TILE);
-  ctx.fillStyle = COLORS.waterD;
-  for (let j = 0; j < TILE; j++) {
-    for (let i = 0; i < TILE; i++) {
-      const r = hRand(wx + i, wy + j, 3);
-      if (r > 0.7 && r < 0.78) ctx.fillRect(wx + i, wy + j, 1, 1);
-    }
-  }
-  ctx.fillStyle = COLORS.waterB;
-  for (let j = 2; j < TILE; j += 4) {
-    const o = ((wy + j) / 4 | 0) % 2 === 0 ? 1 : 5;
-    ctx.fillRect(wx + o, wy + j, 5, 1);
-    ctx.fillRect(wx + o + 7, wy + j + 2, 3, 1);
-  }
-  ctx.fillStyle = COLORS.waterC;
-  for (let k = 0; k < 2; k++) {
-    ctx.fillRect(wx + Math.floor(hRand(wx, wy, 310 + k) * TILE), wy + Math.floor(hRand(wx, wy, 330 + k) * TILE), 1, 1);
-  }
-}
-
-function drawTile(ctx, wx, wy, type) {
-  if (type === T_WATER) drawWaterTile(ctx, wx, wy);
-  else if (type === T_SAND) drawSandTile(ctx, wx, wy);
-  else drawGrassTile(ctx, wx, wy, type);
-}
 
 function drawProp(ctx, p) {
   if (p.kind === 'tuft') {
@@ -442,13 +471,6 @@ function drawBall(ctx, px, py, z) {
   ctx.fillRect(x - 1, y - 2 - lift, 1, 1);
 }
 
-function surfaceAt(wx, wy) {
-  const tx = Math.floor(wx / TILE);
-  const ty = Math.floor(wy / TILE);
-  if (ty < 0 || ty >= MAP_H || tx < 0 || tx >= MAP_W) return T_ROUGH;
-  return HOLE_MAP[ty][tx];
-}
-
 const SWING = { IDLE: 'idle', CHARGING: 'charging', FLYING: 'flying', LANDED: 'landed' };
 
 export default function GolfStoryScreen({ onExit }) {
@@ -473,15 +495,12 @@ export default function GolfStoryScreen({ onExit }) {
     ctx.imageSmoothingEnabled = false;
 
     const staticC = document.createElement('canvas');
-    staticC.width = MAP_W * TILE;
-    staticC.height = MAP_H * TILE;
+    staticC.width = WORLD_W;
+    staticC.height = WORLD_H;
     const sctx = staticC.getContext('2d');
     sctx.imageSmoothingEnabled = false;
-    for (let ty = 0; ty < MAP_H; ty++) {
-      for (let tx = 0; tx < MAP_W; tx++) {
-        drawTile(sctx, tx * TILE, ty * TILE, HOLE_MAP[ty][tx]);
-      }
-    }
+    const imgData = buildWorldImageData();
+    sctx.putImageData(imgData, 0, 0);
     for (const p of PROPS) drawProp(sctx, p);
     staticRef.current = staticC;
 
@@ -558,8 +577,8 @@ export default function GolfStoryScreen({ onExit }) {
         if (vx && vy) { vx *= 0.707; vy *= 0.707; }
         if (Math.abs(vx) > Math.abs(vy)) p.facing = vx > 0 ? 'E' : 'W';
         else if (vy !== 0) p.facing = vy > 0 ? 'S' : 'N';
-        p.x = Math.max(8, Math.min(MAP_W * TILE - 8, p.x + vx * speed * dt));
-        p.y = Math.max(8, Math.min(MAP_H * TILE - 8, p.y + vy * speed * dt));
+        p.x = Math.max(8, Math.min(WORLD_W - 8, p.x + vx * speed * dt));
+        p.y = Math.max(8, Math.min(WORLD_H - 8, p.y + vy * speed * dt));
         if (p.moving) p.walkPhase += dt * 8; else p.walkPhase = 0;
       } else {
         p.moving = false;
@@ -594,15 +613,13 @@ export default function GolfStoryScreen({ onExit }) {
       const viewH = canvas.height;
       const dpr = window.devicePixelRatio || 1;
       const scale = Math.max(2, Math.min(3 * dpr, Math.floor(Math.min(
-        viewW / (MAP_W * TILE * 0.95),
-        viewH / (MAP_H * TILE * 0.75),
+        viewW / (WORLD_W * 0.95),
+        viewH / (WORLD_H * 0.75),
       ))));
-      const worldW = MAP_W * TILE;
-      const worldH = MAP_H * TILE;
       const followX = sw.state === SWING.FLYING ? b.x : p.x;
       const followY = sw.state === SWING.FLYING ? b.y : p.y;
-      const camX = Math.max(0, Math.min(Math.max(0, worldW - viewW / scale), followX - viewW / (2 * scale)));
-      const camY = Math.max(0, Math.min(Math.max(0, worldH - viewH / scale), followY - viewH / (2 * scale)));
+      const camX = Math.max(0, Math.min(Math.max(0, WORLD_W - viewW / scale), followX - viewW / (2 * scale)));
+      const camY = Math.max(0, Math.min(Math.max(0, WORLD_H - viewH / scale), followY - viewH / (2 * scale)));
 
       ctx.fillStyle = COLORS.skyVoid;
       ctx.fillRect(0, 0, viewW, viewH);
