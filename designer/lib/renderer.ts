@@ -9,39 +9,54 @@ import type {
 } from '@/lib/types';
 import { anchorHit, handleHit, pointInShape, shapeBounds } from '@/lib/vector';
 import { WORLD_HEIGHT, WORLD_WIDTH } from '@/lib/world';
-// Shared visual theme — single source of truth for colors + tree art shared
-// across the designer canvas and the React Native game (App.js). The file
-// lives inside designer/ (Vercel's Root Directory for the designer project)
-// and the game reaches in for the same file.
-import { TREES as SHARED_TREES } from '@/shared/theme';
+// Shared visual theme — single source of truth for colors, texture patterns,
+// and tree species art. Shared across the designer canvas and the React
+// Native game (App.js). Lives inside designer/ (Vercel's Root Directory for
+// the designer project); the game reaches in for the same file.
+import {
+  PATTERNS as SHARED_PATTERNS,
+  SURFACE_COLORS,
+  TREES as SHARED_TREES,
+  OUTLINE,
+} from '@/shared/theme';
 
 type TreePrim =
-  | { kind: 'circle'; dx?: number; dy?: number; r: number; fill: string }
+  | { kind: 'circle'; cx?: number; cy?: number; dx?: number; dy?: number; r: number; fill: string; outline?: boolean }
   | { kind: 'circleStroke'; dx?: number; dy?: number; r: number; stroke: string; strokeWidth: number }
-  | { kind: 'ellipse'; dx?: number; dy?: number; rx: number; ry: number; fill: string }
-  | { kind: 'ellipseFan'; count: number; orbitR: number; rx: number; ry: number; fill: string };
+  | { kind: 'ellipse'; cx?: number; cy?: number; dx?: number; dy?: number; rx: number; ry: number; fill: string; outline?: boolean; rotation?: number }
+  | { kind: 'ellipseFan'; count: number; orbitR: number; rx: number; ry: number; fill: string }
+  | { kind: 'rect'; x: number; y: number; w: number; h: number; fill: string; outline?: boolean }
+  | { kind: 'triangle'; points: [number, number][]; fill: string; outline?: boolean };
+
+type PatternOverlay =
+  | { kind: 'rect'; x: number; y: number; w: number; h: number; fill: string }
+  | { kind: 'circle'; cx: number; cy: number; r: number; fill: string }
+  | { kind: 'line'; x1: number; y1: number; x2: number; y2: number; stroke: string; strokeWidth?: number };
+
+interface PatternSpec {
+  size: number;
+  base: string;
+  rotation?: number;
+  overlays?: PatternOverlay[];
+}
+
+type SurfaceKey = 'rough' | 'fairway' | 'green' | 'fringe' | 'sand' | 'water' | 'deepRough' | 'desert';
+type Patterns = Record<SurfaceKey, CanvasPattern | null>;
 
 export const GREEN_FRINGE = 10;
 
 const patternCache = new WeakMap<CanvasRenderingContext2D, Patterns>();
 
-type Patterns = {
-  rough: CanvasPattern | null;
-  fairway: CanvasPattern | null;
-  green: CanvasPattern | null;
-  fringe: CanvasPattern | null;
-  sand: CanvasPattern | null;
-  water: CanvasPattern | null;
-};
-
 function createPatterns(ctx: CanvasRenderingContext2D): Patterns {
   return {
-    rough: createRoughPattern(ctx),
-    fairway: createFairwayPattern(ctx),
-    green: createGreenPattern(ctx),
-    fringe: createFringePattern(ctx),
-    sand: createSandPattern(ctx),
-    water: createWaterPattern(ctx),
+    rough:     buildPattern(ctx, SHARED_PATTERNS.rough as PatternSpec),
+    fairway:   buildPattern(ctx, SHARED_PATTERNS.fairway as PatternSpec),
+    green:     buildPattern(ctx, SHARED_PATTERNS.green as PatternSpec),
+    fringe:    buildPattern(ctx, SHARED_PATTERNS.fringe as PatternSpec),
+    sand:      buildPattern(ctx, SHARED_PATTERNS.sand as PatternSpec),
+    water:     buildPattern(ctx, SHARED_PATTERNS.water as PatternSpec),
+    deepRough: buildPattern(ctx, SHARED_PATTERNS.deepRough as PatternSpec),
+    desert:    buildPattern(ctx, SHARED_PATTERNS.desert as PatternSpec),
   };
 }
 
@@ -60,97 +75,48 @@ function createPatternCanvas(size: number): HTMLCanvasElement {
   return c;
 }
 
-function createRoughPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
-  const c = createPatternCanvas(20);
+/**
+ * Compile a PatternSpec from shared/theme.js into a Canvas2D CanvasPattern.
+ * Handles base fill, optional tile rotation, and ordered overlays.
+ */
+function buildPattern(ctx: CanvasRenderingContext2D, spec: PatternSpec): CanvasPattern | null {
+  const c = createPatternCanvas(spec.size);
   const pctx = c.getContext('2d');
   if (!pctx) return null;
-  pctx.fillStyle = '#2a5220';
-  pctx.fillRect(0, 0, 20, 20);
-  pctx.strokeStyle = 'rgba(0,0,0,0.08)';
-  pctx.lineWidth = 1;
-  pctx.beginPath();
-  pctx.moveTo(-4, 18);
-  pctx.lineTo(18, -4);
-  pctx.moveTo(4, 24);
-  pctx.lineTo(24, 4);
-  pctx.stroke();
-  return ctx.createPattern(c, 'repeat');
-}
-
-function createFairwayPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
-  const c = createPatternCanvas(16);
-  const pctx = c.getContext('2d');
-  if (!pctx) return null;
-  pctx.fillStyle = '#7ab855';
-  pctx.fillRect(0, 0, 16, 16);
-  pctx.fillStyle = 'rgba(0,0,0,0.07)';
-  pctx.fillRect(8, 0, 8, 16);
-  pctx.fillStyle = 'rgba(255,255,255,0.08)';
-  pctx.fillRect(0, 0, 2, 16);
-  return ctx.createPattern(c, 'repeat');
-}
-
-function createFringePattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
-  const c = createPatternCanvas(12);
-  const pctx = c.getContext('2d');
-  if (!pctx) return null;
-  pctx.fillStyle = '#5fa048';
-  pctx.fillRect(0, 0, 12, 12);
-  pctx.fillStyle = 'rgba(0,0,0,0.05)';
-  pctx.fillRect(0, 0, 6, 12);
-  return ctx.createPattern(c, 'repeat');
-}
-
-function createGreenPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
-  const c = createPatternCanvas(18);
-  const pctx = c.getContext('2d');
-  if (!pctx) return null;
-  pctx.fillStyle = '#4ec96a';
-  pctx.fillRect(0, 0, 18, 18);
-  pctx.strokeStyle = 'rgba(255,255,255,0.07)';
-  pctx.lineWidth = 1;
-  pctx.beginPath();
-  for (let i = -18; i < 36; i += 6) {
-    pctx.moveTo(i, 0);
-    pctx.lineTo(i + 18, 18);
-  }
-  pctx.stroke();
-  return ctx.createPattern(c, 'repeat');
-}
-
-function createSandPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
-  const c = createPatternCanvas(18);
-  const pctx = c.getContext('2d');
-  if (!pctx) return null;
-  pctx.fillStyle = '#d4b96a';
-  pctx.fillRect(0, 0, 18, 18);
-  pctx.fillStyle = 'rgba(180,148,80,0.45)';
-  for (let y = 2; y < 18; y += 5) {
-    for (let x = (y % 2 === 0 ? 2 : 4); x < 18; x += 6) {
+  // Base fill
+  pctx.fillStyle = spec.base;
+  pctx.fillRect(0, 0, spec.size, spec.size);
+  // Overlays
+  const overlays = spec.overlays || [];
+  for (const ov of overlays) {
+    if (ov.kind === 'rect') {
+      pctx.fillStyle = ov.fill;
+      pctx.fillRect(ov.x, ov.y, ov.w, ov.h);
+    } else if (ov.kind === 'circle') {
+      pctx.fillStyle = ov.fill;
       pctx.beginPath();
-      pctx.arc(x, y, 1.2, 0, Math.PI * 2);
+      pctx.arc(ov.cx, ov.cy, ov.r, 0, Math.PI * 2);
       pctx.fill();
+    } else if (ov.kind === 'line') {
+      pctx.strokeStyle = ov.stroke;
+      pctx.lineWidth = ov.strokeWidth || 1;
+      pctx.beginPath();
+      pctx.moveTo(ov.x1, ov.y1);
+      pctx.lineTo(ov.x2, ov.y2);
+      pctx.stroke();
     }
   }
-  return ctx.createPattern(c, 'repeat');
-}
-
-function createWaterPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
-  const c = createPatternCanvas(24);
-  const pctx = c.getContext('2d');
-  if (!pctx) return null;
-  pctx.fillStyle = '#3f88bc';
-  pctx.fillRect(0, 0, 24, 24);
-  pctx.strokeStyle = 'rgba(214,236,255,0.28)';
-  pctx.lineWidth = 1.5;
-  for (let y = 4; y <= 20; y += 8) {
-    pctx.beginPath();
-    pctx.moveTo(0, y);
-    pctx.bezierCurveTo(4, y - 2.5, 8, y + 2.5, 12, y);
-    pctx.bezierCurveTo(16, y - 2.5, 20, y + 2.5, 24, y);
-    pctx.stroke();
+  const pattern = ctx.createPattern(c, 'repeat');
+  // Rotate the whole tile if the spec asks for it (e.g. fairway @ 30°).
+  if (pattern && typeof spec.rotation === 'number' && spec.rotation !== 0 && 'setTransform' in pattern) {
+    const rad = (spec.rotation * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    (pattern as CanvasPattern & { setTransform?: (m: DOMMatrix) => void }).setTransform?.(
+      new DOMMatrix([cos, sin, -sin, cos, 0, 0]),
+    );
   }
-  return ctx.createPattern(c, 'repeat');
+  return pattern;
 }
 
 function traceShapePath(ctx: CanvasRenderingContext2D, shape: SurfaceShape) {
@@ -182,40 +148,86 @@ function fillShape(
   }
 }
 
-// Iterates the shared TREES[type] primitive list so the designer canvas and
-// the game's SVG layer draw the exact same tree art. Changing shared/theme.js
-// updates both.
+/**
+ * Draw a tree from the shared TREES[type] recipe. The recipe is either
+ *   1) legacy: a flat array of primitives in units of r, or
+ *   2) current: { halfWidth, primitives } where coords are in native gallery
+ *      units and scale = r / halfWidth.
+ * Primitives with outline:true are stroked with OUTLINE.color at OUTLINE.width.
+ * Both the designer canvas and the game's SVG layer honor the same recipe.
+ */
 function drawTree(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, type: TreeType) {
-  const prims = (SHARED_TREES as Record<string, TreePrim[]>)[type];
-  if (!prims) return;
+  const raw = (SHARED_TREES as Record<string, TreePrim[] | { halfWidth: number; primitives: TreePrim[] }>)[type];
+  if (!raw) return;
+  const prims: TreePrim[] = Array.isArray(raw) ? raw : raw.primitives;
+  const halfWidth = Array.isArray(raw) ? 1 : raw.halfWidth || 1;
+  const scale = r / halfWidth;
   ctx.save();
+  const stroke = (p: { outline?: boolean }) => {
+    if (p.outline) {
+      ctx.strokeStyle = OUTLINE.color as string;
+      ctx.lineWidth = (OUTLINE.width as number) * scale;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+  };
   for (const p of prims) {
     if (p.kind === 'circle') {
-      ctx.fillStyle = p.fill;
+      const cx = x + (p.cx != null ? p.cx : (p.dx ?? 0) * halfWidth) * scale;
+      const cy = y + (p.cy != null ? p.cy : (p.dy ?? 0) * halfWidth) * scale;
       ctx.beginPath();
-      ctx.arc(x + (p.dx ?? 0) * r, y + (p.dy ?? 0) * r, p.r * r, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.arc(cx, cy, p.r * scale, 0, Math.PI * 2);
+      if (p.fill) { ctx.fillStyle = p.fill; ctx.fill(); }
+      stroke(p);
     } else if (p.kind === 'circleStroke') {
       ctx.strokeStyle = p.stroke;
-      ctx.lineWidth = p.strokeWidth;
+      ctx.lineWidth = p.strokeWidth * scale;
       ctx.beginPath();
-      ctx.arc(x + (p.dx ?? 0) * r, y + (p.dy ?? 0) * r, p.r * r, 0, Math.PI * 2);
+      ctx.arc(x + (p.dx ?? 0) * halfWidth * scale, y + (p.dy ?? 0) * halfWidth * scale, p.r * scale, 0, Math.PI * 2);
       ctx.stroke();
     } else if (p.kind === 'ellipse') {
-      ctx.fillStyle = p.fill;
+      const cx = x + (p.cx ?? 0) * scale;
+      const cy = y + (p.cy ?? 0) * scale;
+      const rx = p.rx * scale;
+      const ry = p.ry * scale;
+      ctx.save();
+      if (p.rotation) {
+        ctx.translate(cx, cy);
+        ctx.rotate((p.rotation * Math.PI) / 180);
+        ctx.translate(-cx, -cy);
+      }
       ctx.beginPath();
-      ctx.ellipse(x + (p.dx ?? 0) * r, y + (p.dy ?? 0) * r, p.rx * r, p.ry * r, 0, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      if (p.fill) { ctx.fillStyle = p.fill; ctx.fill(); }
+      stroke(p);
+      ctx.restore();
+    } else if (p.kind === 'rect') {
+      ctx.beginPath();
+      ctx.rect(x + p.x * scale, y + p.y * scale, p.w * scale, p.h * scale);
+      if (p.fill) { ctx.fillStyle = p.fill; ctx.fill(); }
+      stroke(p);
+    } else if (p.kind === 'triangle') {
+      const pts = p.points;
+      if (pts && pts.length >= 3) {
+        ctx.beginPath();
+        ctx.moveTo(x + pts[0][0] * scale, y + pts[0][1] * scale);
+        for (let i = 1; i < pts.length; i++) {
+          ctx.lineTo(x + pts[i][0] * scale, y + pts[i][1] * scale);
+        }
+        ctx.closePath();
+        if (p.fill) { ctx.fillStyle = p.fill; ctx.fill(); }
+        stroke(p);
+      }
     } else if (p.kind === 'ellipseFan') {
       ctx.fillStyle = p.fill;
       for (let i = 0; i < p.count; i++) {
         const a = (i / p.count) * Math.PI * 2;
         ctx.beginPath();
         ctx.ellipse(
-          x + Math.cos(a) * p.orbitR * r,
-          y + Math.sin(a) * p.orbitR * r,
-          p.rx * r,
-          p.ry * r,
+          x + Math.cos(a) * p.orbitR * halfWidth * scale,
+          y + Math.sin(a) * p.orbitR * halfWidth * scale,
+          p.rx * halfWidth * scale,
+          p.ry * halfWidth * scale,
           a,
           0,
           Math.PI * 2,
@@ -427,25 +439,25 @@ function drawHoleTerrain(
 
   // Rough patches (lighter than default backdrop)
   for (const r of hole.terrain.rough) {
-    fillShape(ctx, r, '#3a6230', patterns.rough);
+    fillShape(ctx, r, SURFACE_COLORS.rough as string, patterns.rough);
   }
   // Deep rough patches
   for (const d of hole.terrain.deepRough) {
-    fillShape(ctx, d, '#1e3e18', null);
+    fillShape(ctx, d, SURFACE_COLORS.deepRough as string, patterns.deepRough);
   }
   // Desert waste
   for (const ds of hole.terrain.desert) {
-    fillShape(ctx, ds, '#c8a06a', null);
+    fillShape(ctx, ds, SURFACE_COLORS.desert as string, patterns.desert);
   }
 
   // Water first (so fairway can overlap edges visually above)
   for (const water of hole.hazards.filter((h) => h.kind === 'water')) {
-    fillShape(ctx, water, '#3f88bc', patterns.water);
+    fillShape(ctx, water, SURFACE_COLORS.water as string, patterns.water);
   }
 
   // Fairway
   for (const fairway of hole.terrain.fairway) {
-    fillShape(ctx, fairway, '#7ab855', patterns.fairway);
+    fillShape(ctx, fairway, SURFACE_COLORS.fairway as string, patterns.fairway);
     ctx.save();
     traceShapePath(ctx, fairway);
     ctx.clip();
@@ -489,8 +501,8 @@ function drawHoleGreenAndSlopes(
       })),
     },
   };
-  fillShape(ctx, fringe, '#5fa048', patterns.fringe);
-  fillShape(ctx, green, '#4ec96a', patterns.green);
+  fillShape(ctx, fringe, SURFACE_COLORS.fringe as string, patterns.fringe);
+  fillShape(ctx, green, SURFACE_COLORS.green as string, patterns.green);
 
   if (drawSlopes) {
     for (const slope of hole.slopes) {
@@ -547,7 +559,7 @@ function drawHoleSandsAndObstacles(
     ctx.globalAlpha = 0.55;
   }
   for (const sand of hole.hazards.filter((h) => h.kind === 'sand')) {
-    fillShape(ctx, sand, '#d4b96a', patterns.sand);
+    fillShape(ctx, sand, SURFACE_COLORS.sand as string, patterns.sand);
   }
   for (const obstacle of hole.obstacles) {
     if (isTreeLook(obstacle.look)) {

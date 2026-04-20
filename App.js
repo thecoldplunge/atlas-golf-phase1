@@ -73,10 +73,10 @@ const expandPointsFromCentroid = (points, px) => {
   });
 };
 
-// ---- SVG pattern definitions built from shared/theme.js specs -------------
-// Each kind compiles to a small set of SVG children inside <pattern>. The
-// game uses the same numeric params as the designer's Canvas 2D patterns so
-// the two look identical.
+// ---- SVG pattern definitions built from designer/shared/theme.js specs -----
+// Each pattern in PATTERNS is { size, base, rotation?, overlays: [{ kind, ... }] }.
+// Both renderers consume the same spec — this produces <pattern> children
+// that match the designer canvas exactly.
 const PATTERN_ID = {
   rough: 'pat-rough',
   fairway: 'pat-fairway',
@@ -84,106 +84,46 @@ const PATTERN_ID = {
   green: 'pat-green',
   sand: 'pat-sand',
   water: 'pat-water',
+  deepRough: 'pat-deepRough',
+  desert: 'pat-desert',
 };
 
 const renderPatternChildren = (spec) => {
-  const children = [];
-  // Base fill
-  children.push(
+  const children = [
     <SvgRect key="base" x={0} y={0} width={spec.size} height={spec.size} fill={spec.base} />,
-  );
-  const ov = spec.overlay;
-  if (!ov) return children;
-
-  if (ov.kind === 'diagonalLines') {
-    // Draw diagonal hairlines across the tile; extend beyond edges to keep the
-    // repeat seamless.
-    const s = spec.size;
-    const step = ov.spacing;
-    const angleRad = (ov.angle * Math.PI) / 180;
-    // For negative angle (-45), start with a family that runs bottom-left → top-right
-    // Draw long lines at regular spacing along the perpendicular axis.
-    // Simple implementation: render lines with slope = tan(angle).
-    for (let off = -s; off <= s * 2; off += step) {
-      const x1 = off;
-      const y1 = s;
-      const x2 = off + s * Math.tan(Math.abs(angleRad));
-      const y2 = 0;
-      const [X1, Y1, X2, Y2] = ov.angle < 0
-        ? [x1 - s, y1 + s, x2 + s, y2 - s]
-        : [x1 - s, y2 - s, x2 + s, y1 + s];
-      children.push(
-        <SvgLine
-          key={`dl-${off}`}
-          x1={X1}
-          y1={Y1}
-          x2={X2}
-          y2={Y2}
-          stroke={ov.stroke}
-          strokeWidth={ov.strokeWidth}
-        />,
-      );
-    }
-    return children;
-  }
-
-  if (ov.kind === 'stripes') {
-    for (let i = 0; i < ov.bands.length; i++) {
-      const b = ov.bands[i];
+  ];
+  const overlays = Array.isArray(spec.overlays) ? spec.overlays : [];
+  for (let i = 0; i < overlays.length; i++) {
+    const ov = overlays[i];
+    if (ov.kind === 'rect') {
       children.push(
         <SvgRect
-          key={`st-${i}`}
-          x={b.offsetX}
-          y={0}
-          width={b.width}
-          height={spec.size}
-          fill={b.color}
+          key={`r-${i}`}
+          x={ov.x}
+          y={ov.y}
+          width={ov.w}
+          height={ov.h}
+          fill={ov.fill}
         />,
       );
-    }
-    return children;
-  }
-
-  if (ov.kind === 'stipple') {
-    const { grid, dotRadius, fill } = ov;
-    for (let y = grid.rowStep / 2; y < spec.size; y += grid.rowStep) {
-      const rowIdx = Math.round((y - grid.rowStep / 2) / grid.rowStep);
-      const startX = grid.rowOffset[rowIdx % grid.rowOffset.length];
-      for (let x = startX; x < spec.size; x += grid.colStep) {
-        children.push(
-          <SvgCircle key={`sp-${x}-${y}`} cx={x} cy={y} r={dotRadius} fill={fill} />,
-        );
-      }
-    }
-    return children;
-  }
-
-  if (ov.kind === 'waves') {
-    // Wavy horizontal lines every rowStep pixels, built as cubic-bezier path.
-    for (let y = ov.rowStart; y <= spec.size - ov.rowStart; y += ov.rowStep) {
-      const amp = ov.amplitude;
-      const sw = ov.segmentWidth;
-      let d = `M 0 ${y}`;
-      let toggle = -1;
-      for (let x = 0; x < spec.size; x += sw) {
-        const midX = x + sw / 2;
-        const midY = y + toggle * amp;
-        d += ` Q ${midX} ${midY} ${x + sw} ${y}`;
-        toggle = -toggle;
-      }
+    } else if (ov.kind === 'circle') {
       children.push(
-        <SvgPath
-          key={`w-${y}`}
-          d={d}
-          fill="none"
+        <SvgCircle key={`c-${i}`} cx={ov.cx} cy={ov.cy} r={ov.r} fill={ov.fill} />,
+      );
+    } else if (ov.kind === 'line') {
+      children.push(
+        <SvgLine
+          key={`l-${i}`}
+          x1={ov.x1}
+          y1={ov.y1}
+          x2={ov.x2}
+          y2={ov.y2}
           stroke={ov.stroke}
-          strokeWidth={ov.strokeWidth}
+          strokeWidth={ov.strokeWidth || 1}
         />,
       );
     }
-    return children;
   }
-
   return children;
 };
 
@@ -199,6 +139,7 @@ const renderPatternDefs = () => (
         width={spec.size}
         height={spec.size}
         patternUnits="userSpaceOnUse"
+        patternTransform={spec.rotation ? `rotate(${spec.rotation})` : undefined}
       >
         {renderPatternChildren(spec)}
       </SvgPattern>
@@ -207,59 +148,111 @@ const renderPatternDefs = () => (
 );
 
 // ---- Tree rendering (species-aware, matches designer drawTree exactly) ----
+//
+// New schema: TREES[look] = { halfWidth, primitives[] }. Each primitive is in
+// native (gallery) units; we scale by `scale = r / halfWidth` where r is the
+// obstacle's hit radius. This keeps sprite size proportional to the authored
+// tree regardless of obstacle.r.
+//
+// Primitives: circle, ellipse, rect, triangle (with optional `outline: true`).
+const OUTLINE_STROKE = '#2a1f1a';
+const OUTLINE_WIDTH = 1.2;
+
 const renderTreePrims = (x, y, r, look) => {
-  const prims = TREES[look] || GENERIC_TREE;
+  const tree = TREES[look] || GENERIC_TREE;
+  const prims = Array.isArray(tree) ? tree : tree.primitives || [];
+  const halfWidth = Array.isArray(tree) ? 1 : tree.halfWidth || 1;
+  const scale = r / halfWidth;
   const children = [];
+  const sx = (v) => x + v * scale;
+  const sy = (v) => y + v * scale;
+  const strokeProps = (p) =>
+    p.outline
+      ? { stroke: OUTLINE_STROKE, strokeWidth: OUTLINE_WIDTH * scale, strokeLinejoin: 'round' }
+      : {};
+
   for (let i = 0; i < prims.length; i++) {
     const p = prims[i];
     if (p.kind === 'circle') {
       children.push(
         <SvgCircle
           key={`c${i}`}
-          cx={x + (p.dx || 0) * r}
-          cy={y + (p.dy || 0) * r}
-          r={p.r * r}
-          fill={p.fill}
-        />,
-      );
-    } else if (p.kind === 'circleStroke') {
-      children.push(
-        <SvgCircle
-          key={`cs${i}`}
-          cx={x + (p.dx || 0) * r}
-          cy={y + (p.dy || 0) * r}
-          r={p.r * r}
-          fill="none"
-          stroke={p.stroke}
-          strokeWidth={p.strokeWidth}
+          cx={sx(p.cx != null ? p.cx : (p.dx || 0) * halfWidth)}
+          cy={sy(p.cy != null ? p.cy : (p.dy || 0) * halfWidth)}
+          r={(p.r || 0) * scale}
+          fill={p.fill || 'none'}
+          {...strokeProps(p)}
         />,
       );
     } else if (p.kind === 'ellipse') {
+      const cx = sx(p.cx || 0);
+      const cy = sy(p.cy || 0);
+      const rxPx = (p.rx || 0) * scale;
+      const ryPx = (p.ry || 0) * scale;
       children.push(
         <SvgEllipse
           key={`e${i}`}
-          cx={x + (p.dx || 0) * r}
-          cy={y + (p.dy || 0) * r}
-          rx={p.rx * r}
-          ry={p.ry * r}
-          fill={p.fill}
+          cx={cx}
+          cy={cy}
+          rx={rxPx}
+          ry={ryPx}
+          fill={p.fill || 'none'}
+          {...strokeProps(p)}
+          transform={p.rotation ? `rotate(${p.rotation} ${cx} ${cy})` : undefined}
+        />,
+      );
+    } else if (p.kind === 'rect') {
+      children.push(
+        <SvgRect
+          key={`r${i}`}
+          x={sx(p.x || 0)}
+          y={sy(p.y || 0)}
+          width={(p.w || 0) * scale}
+          height={(p.h || 0) * scale}
+          fill={p.fill || 'none'}
+          {...strokeProps(p)}
+        />,
+      );
+    } else if (p.kind === 'triangle') {
+      const pts = (p.points || [])
+        .map((pt) => `${sx(pt[0])},${sy(pt[1])}`)
+        .join(' ');
+      children.push(
+        <SvgPath
+          key={`t${i}`}
+          d={`M ${pts.split(' ').join(' L ')} Z`}
+          fill={p.fill || 'none'}
+          {...strokeProps(p)}
+        />,
+      );
+    } else if (p.kind === 'circleStroke') {
+      // Legacy: outlined ring (birch's old treatment). Still supported.
+      children.push(
+        <SvgCircle
+          key={`cs${i}`}
+          cx={sx((p.dx || 0) * halfWidth)}
+          cy={sy((p.dy || 0) * halfWidth)}
+          r={(p.r || 0) * scale}
+          fill="none"
+          stroke={p.stroke}
+          strokeWidth={(p.strokeWidth || 1) * scale}
         />,
       );
     } else if (p.kind === 'ellipseFan') {
-      // Rotated ellipse fan for palm fronds.
+      // Legacy: kept for compatibility with older theme shapes.
       const { count, orbitR, rx, ry, fill } = p;
       for (let j = 0; j < count; j++) {
-        const angle = (j / count) * Math.PI * 2;
-        const cx = x + Math.cos(angle) * orbitR * r;
-        const cy = y + Math.sin(angle) * orbitR * r;
-        const deg = (angle * 180) / Math.PI;
+        const a = (j / count) * Math.PI * 2;
+        const cx = x + Math.cos(a) * orbitR * halfWidth * scale;
+        const cy = y + Math.sin(a) * orbitR * halfWidth * scale;
+        const deg = (a * 180) / Math.PI;
         children.push(
           <SvgEllipse
             key={`ef${i}-${j}`}
             cx={cx}
             cy={cy}
-            rx={rx * r}
-            ry={ry * r}
+            rx={rx * halfWidth * scale}
+            ry={ry * halfWidth * scale}
             fill={fill}
             transform={`rotate(${deg} ${cx} ${cy})`}
           />,
@@ -4589,28 +4582,33 @@ export default function App() {
                     matching the designer's fillShape(): solid color first, then
                     the tile pattern painted on top at its own opacity. */}
 
-                {/* Water (background) — base + wave pattern. */}
+                {/* Water (background) — base fill + broken-line ripple pattern (NO rim per Mike's picks). */}
                 {currentHole.editorVectors?.hazards?.water?.map((shape, i) => {
                   const d = pointsToSvgD(shape.points);
                   return (
                     <SvgG key={`vw-${i}`}>
-                      <SvgPath d={d} fill={SURFACE_COLORS.water} stroke={SURFACE_COLORS.waterStroke} strokeWidth={1} />
+                      <SvgPath d={d} fill={SURFACE_COLORS.water} />
                       <SvgPath d={d} fill={`url(#${PATTERN_ID.water})`} />
                     </SvgG>
                   );
                 })}
 
-                {/* Desert / deepRough / rough surface patches — base + rough pattern where appropriate. */}
+                {/* Desert / deepRough / rough surface patches — each gets its own pattern. */}
                 {currentHole.terrain?.desert?.map((s, i) => {
                   const d = `M ${s.x} ${s.y} h ${s.w} v ${s.h} h ${-s.w} Z`;
-                  return <SvgPath key={`vd-${i}`} d={d} fill={SURFACE_COLORS.desert} />;
+                  return (
+                    <SvgG key={`vd-${i}`}>
+                      <SvgPath d={d} fill={SURFACE_COLORS.desert} />
+                      <SvgPath d={d} fill={`url(#${PATTERN_ID.desert})`} />
+                    </SvgG>
+                  );
                 }) || null}
                 {currentHole.terrain?.deepRough?.map((s, i) => {
                   const d = `M ${s.x} ${s.y} h ${s.w} v ${s.h} h ${-s.w} Z`;
                   return (
                     <SvgG key={`vdr-${i}`}>
                       <SvgPath d={d} fill={SURFACE_COLORS.deepRough} />
-                      <SvgPath d={d} fill={`url(#${PATTERN_ID.rough})`} />
+                      <SvgPath d={d} fill={`url(#${PATTERN_ID.deepRough})`} />
                     </SvgG>
                   );
                 }) || null}
@@ -4658,12 +4656,12 @@ export default function App() {
                   </SvgG>
                 ) : null}
 
-                {/* Sand bunkers — on top of green surface. */}
+                {/* Sand bunkers — pure stipple, NO rim (Mike's pick). */}
                 {currentHole.editorVectors?.hazards?.sand?.map((shape, i) => {
                   const d = pointsToSvgD(shape.points);
                   return (
                     <SvgG key={`vs-${i}`}>
-                      <SvgPath d={d} fill={SURFACE_COLORS.sand} stroke={SURFACE_COLORS.sandStroke} strokeWidth={1} />
+                      <SvgPath d={d} fill={SURFACE_COLORS.sand} />
                       <SvgPath d={d} fill={`url(#${PATTERN_ID.sand})`} />
                     </SvgG>
                   );
