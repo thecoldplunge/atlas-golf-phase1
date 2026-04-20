@@ -408,15 +408,20 @@ const CLUBS = [
   { key: 'PT', name: 'Putter',      short: 'PT', v: 110, angle: 0,  accMult: 0.55, powerRate: 0.55 },
 ];
 
+// powerPenalty[min..max] caps the fraction of the launch velocity you keep
+// when hitting from the surface (mirrors the main game's lie model).
+// swingSensitivity amplifies the swing-deviation → curve mapping, so bad
+// lies widen the miss cone. Bounce/roll numbers are main's rebalanced
+// low-bounce set.
 const SURFACE_PROPS = {
-  [T_GREEN]:   { bounceKeep: 0.20, rollDecel: 0.85, label: 'Green', slopeAng: 0, slopeMag: 0 },
-  [T_FAIRWAY]: { bounceKeep: 0.28, rollDecel: 0.78, label: 'Fairway' },
-  [T_ROUGH]:   { bounceKeep: 0.15, rollDecel: 2.9,  label: 'Rough' },
-  [T_FRINGE]:  { bounceKeep: 0.22, rollDecel: 1.05, label: 'Fringe' },
-  [T_TEE]:     { bounceKeep: 0.26, rollDecel: 0.82, label: 'Tee Box' },
-  [T_SAND]:    { bounceKeep: 0.05, rollDecel: 5.5,  label: 'Bunker' },
-  [T_SHORE]:   { bounceKeep: 0.12, rollDecel: 3.8,  label: 'Dirt' },
-  [T_WATER]:   { bounceKeep: 0, rollDecel: 0, label: 'Water', hazard: true },
+  [T_GREEN]:   { bounceKeep: 0.20, rollDecel: 0.85, label: 'Green',   slopeAng: 0, slopeMag: 0, powerPenalty: [1.0, 1.0],   swingSensitivity: 1.0 },
+  [T_FAIRWAY]: { bounceKeep: 0.28, rollDecel: 0.78, label: 'Fairway',                           powerPenalty: [0.95, 0.98], swingSensitivity: 1.0 },
+  [T_ROUGH]:   { bounceKeep: 0.15, rollDecel: 2.9,  label: 'Rough',                             powerPenalty: [0.78, 0.9],  swingSensitivity: 1.25 },
+  [T_FRINGE]:  { bounceKeep: 0.22, rollDecel: 1.05, label: 'Fringe',                            powerPenalty: [0.93, 0.97], swingSensitivity: 1.05 },
+  [T_TEE]:     { bounceKeep: 0.26, rollDecel: 0.82, label: 'Tee Box',                           powerPenalty: [1.0, 1.0],   swingSensitivity: 1.0 },
+  [T_SAND]:    { bounceKeep: 0.05, rollDecel: 5.5,  label: 'Bunker',                            powerPenalty: [0.55, 0.7],  swingSensitivity: 1.6 },
+  [T_SHORE]:   { bounceKeep: 0.12, rollDecel: 3.8,  label: 'Dirt',                              powerPenalty: [0.7, 0.82],  swingSensitivity: 1.35 },
+  [T_WATER]:   { bounceKeep: 0, rollDecel: 0,       label: 'Water',  hazard: true,              powerPenalty: [1.0, 1.0],   swingSensitivity: 1.0 },
 };
 
 function surfacePropsAt(wx, wy) {
@@ -947,27 +952,63 @@ function pickClubForDistance(distYd, onGreen) {
   return bestIdx;
 }
 
-function launchBall(b, aimAngle, power, accuracyOffset, spinX, spinY, club) {
+// Character + club + lie-aware launch. opts carries in the selected golfer's
+// derived multipliers (powerFactor/touchFactor/forgivenessFactor/
+// recoveryFactor/windResist), the equipped club's stats (distance/accuracy/
+// forgiveness), and the surface properties at the ball's current spot
+// (powerPenalty + swingSensitivity). When no opts are provided the function
+// behaves exactly like the pre-character-stats version.
+function launchBall(b, aimAngle, power, accuracyOffset, spinX, spinY, club, opts = {}) {
+  const {
+    golferFactors = { powerFactor: 1, touchFactor: 1, forgivenessFactor: 1, recoveryFactor: 1, windResist: 1 },
+    clubStats = {},
+    liePhys = null,
+  } = opts;
   const { v0, angleRad, curveDeg } = shotParams(club, power, spinY, accuracyOffset);
-  const deflectionRad = (curveDeg * Math.PI) / 180;
+  const cm = clubStatMultipliers(clubStats);
+  const lp = liePhys?.powerPenalty || [1.0, 1.0];
+  const liePowerRoll = lp[0] + Math.random() * (lp[1] - lp[0]);
+  const badLie = liePhys?.label === 'Rough' || liePhys?.label === 'Bunker' || liePhys?.label === 'Dirt';
+  const recoveryDistBoost = badLie ? (2 - golferFactors.recoveryFactor) : 1;
+  const v0Final = v0
+    * golferFactors.powerFactor
+    * golferFactors.touchFactor
+    * cm.distanceFactor
+    * liePowerRoll
+    * recoveryDistBoost;
+  // Curve amplification: bad lies widen the miss, skilled golfers (low
+  // forgivenessFactor) tighten it, high-forgiveness clubs tighten it.
+  const lieCurveAmp = liePhys?.swingSensitivity ?? 1;
+  const curveAmp = lieCurveAmp
+    * golferFactors.forgivenessFactor
+    * (badLie ? golferFactors.recoveryFactor : 1)
+    * cm.clubCurveFactor;
+  const adjustedCurveDeg = curveDeg * curveAmp;
+  const deflectionRad = (adjustedCurveDeg * Math.PI) / 180;
   const effectiveDir = aimAngle + deflectionRad;
-  const horizVel = club.angle === 0 ? v0 : v0 * Math.cos(angleRad);
+  const horizVel = club.angle === 0 ? v0Final : v0Final * Math.cos(angleRad);
   b.vx = horizVel * Math.sin(effectiveDir);
   b.vy = horizVel * -Math.cos(effectiveDir);
-  b.vz = club.angle === 0 ? 0 : v0 * Math.sin(angleRad);
+  b.vz = club.angle === 0 ? 0 : v0Final * Math.sin(angleRad);
   b.z = 0;
   b.state = 'flying';
   b.trail = [];
-  b.spinX = spinX;
+  // Feed the Magnus integrator in stepBall. Amplify spinX by the same
+  // curveAmp so bad lies / less-forgiving clubs bend the ball harder mid-
+  // flight too, not just at launch.
+  b.spinX = spinX * curveAmp;
   b.spinY = spinY;
   b.dropT = 0;
+  b.windResist = golferFactors.windResist;
+  b.launchLieLabel = liePhys?.label || null;
 }
 
 function stepBall(b, dt, windX, windY, flagX, flagY) {
   if (b.state === 'flying') {
     const heightFactor = Math.min(1, b.z / 15);
-    b.vx += windX * heightFactor * dt;
-    b.vy += windY * heightFactor * dt;
+    const windMult = b.windResist ?? 1;
+    b.vx += windX * heightFactor * dt * windMult;
+    b.vy += windY * heightFactor * dt * windMult;
     if (b.spinX && heightFactor > 0.08) {
       const hSpeed = Math.hypot(b.vx, b.vy);
       if (hSpeed > 5) {
@@ -1136,8 +1177,62 @@ function drawSwipeFeedback(ctx, swipe, dpr) {
   ctx.restore();
 }
 
-export default function GolfStoryScreen({ onExit }) {
+// Given the selected golfer's stats, produce multipliers that fold into
+// launch velocity and the curve magnitude — mirrors the main game's
+// getLaunchData math so both modes feel tied to the same character sheet.
+function golferMultipliers(selectedGolfer) {
+  const s = selectedGolfer?.stats || {};
+  const m = selectedGolfer?.mental || {};
+  const power = s.power ?? 50;
+  const accuracy = s.accuracy ?? 50;
+  const touch = s.touch ?? 50;
+  const recovery = s.recovery ?? 50;
+  const focus = m.focus ?? 50;
+  const composure = m.composure ?? 50;
+  const courseMgmt = m.courseManagement ?? 50;
+  const powerFactor = Math.max(0.75, Math.min(1.25, 1 + (power - 50) * 0.003));
+  const touchFactor = Math.max(0.9,  Math.min(1.1,  1 + (touch - 50) * 0.0015));
+  const effectiveSkill = accuracy * 0.34 + focus * 0.22 + composure * 0.14 + courseMgmt * 0.12 + 50 * 0.18;
+  const forgivenessFactor = Math.max(0.7, Math.min(1.45, 1.18 - (effectiveSkill - 50) * 0.003));
+  const recoveryFactor = Math.max(0.82, Math.min(1.18, 1.12 - (recovery - 50) * 0.003));
+  const windResist = Math.max(0.7, Math.min(1.3, 1 - (courseMgmt - 50) * 0.006));
+  return { powerFactor, touchFactor, forgivenessFactor, recoveryFactor, windResist };
+}
+
+// Map the selected bag into a clubKey → {distance, accuracy, forgiveness,
+// spin, feel} stat block, picking the first equipped item per clubKey.
+function buildBagClubStats(selectedBag, equipmentCatalog) {
+  const byKey = {};
+  if (!selectedBag || !equipmentCatalog) return byKey;
+  const allItems = Object.values(equipmentCatalog).flat();
+  const findItem = (id) => allItems.find((it) => it && it.id === id);
+  for (const id of selectedBag) {
+    const item = findItem(id);
+    if (!item || !item.clubKey || byKey[item.clubKey]) continue;
+    byKey[item.clubKey] = { ...(item.stats || {}) };
+  }
+  return byKey;
+}
+
+function clubStatMultipliers(clubStats) {
+  const distance = clubStats?.distance ?? 50;
+  const accuracy = clubStats?.accuracy ?? 50;
+  const forgiveness = clubStats?.forgiveness ?? 50;
+  const distanceFactor = Math.max(0.85, Math.min(1.15, 1 + (distance - 50) * 0.003));
+  const clubCurveFactor = Math.max(0.75, Math.min(1.25, 1 - ((accuracy - 50) * 0.003 + (forgiveness - 50) * 0.002)));
+  return { distanceFactor, clubCurveFactor };
+}
+
+export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, equipmentCatalog }) {
   const [orientation, setOrientation] = useState(null);
+  const golferFactorsRef = useRef(golferMultipliers(selectedGolfer));
+  const bagStatsRef = useRef(buildBagClubStats(selectedBag, equipmentCatalog));
+  useEffect(() => {
+    golferFactorsRef.current = golferMultipliers(selectedGolfer);
+  }, [selectedGolfer]);
+  useEffect(() => {
+    bagStatsRef.current = buildBagClubStats(selectedBag, equipmentCatalog);
+  }, [selectedBag, equipmentCatalog]);
   const canvasRef = useRef(null);
   const staticRef = useRef(null);
   const holeIdxRef = useRef(0);
@@ -1421,7 +1516,13 @@ export default function GolfStoryScreen({ onExit }) {
         return;
       }
       ball.lastGoodX = ball.x; ball.lastGoodY = ball.y;
-      launchBall(ball, sw.aimAngle, power, accuracy, sw.spinX, sw.spinY, club);
+      const liePhys = surfacePropsAt(ball.x, ball.y);
+      const clubStats = bagStatsRef.current[club.key] || null;
+      launchBall(ball, sw.aimAngle, power, accuracy, sw.spinX, sw.spinY, club, {
+        golferFactors: golferFactorsRef.current,
+        clubStats,
+        liePhys,
+      });
       sw.state = SW.FLYING;
       sw.strokeCount++;
       swipeRef.current = null;
