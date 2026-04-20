@@ -110,27 +110,77 @@
 <body>
 
 <header>
-  <h1>IGT Texture Gallery — Earth v1</h1>
+  <h1>IGT Texture Gallery — Earth v1.1</h1>
   <p class="intro">
     Soft-pixel modern retro, Golf-Story-inspired. Earth only; per-planet variants come later.
-    Pick one variant per surface (<code>A</code>/<code>B</code>/<code>C</code>) and a tree set.
-    Once you pick, I wire them into <code>designer/shared/theme.js</code> and both the designer
-    canvas and the game SVG layer update.
+    <b style="color:var(--accent)">Picks locked</b> — this gallery now serves as the visual
+    reference for the Earth theme. Scroll to the bottom for the proposed Characters and Props.
   </p>
 </header>
 
 <div class="toolbar">
   <div class="chips">
-    <span><b>Pick format:</b></span>
-    <span>Fairway: <b>__</b></span>
-    <span>Green: <b>__</b></span>
-    <span>Rough: <b>__</b></span>
-    <span>Deep Rough: <b>__</b></span>
-    <span>Sand: <b>__</b></span>
-    <span>Water: <b>__</b></span>
-    <span>Tree set: <b>__</b></span>
+    <span><b>Locked picks:</b></span>
+    <span>Fairway: <b>B</b></span>
+    <span>Green: <b>A</b></span>
+    <span>Rough: <b>B</b></span>
+    <span>Deep Rough: <b>B</b></span>
+    <span>Sand: <b>A</b></span>
+    <span>Water: <b>B</b></span>
+    <span>Trees: <b>Set 1</b></span>
   </div>
 </div>
+
+<style>
+  .picked { outline: 3px solid var(--accent); outline-offset: -3px; position: relative; }
+  .picked::before {
+    content: "✓ PICKED";
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: var(--accent);
+    color: #0f1511;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    padding: 3px 8px;
+    border-radius: 4px;
+    z-index: 2;
+  }
+  .char-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 14px;
+    max-width: 1400px;
+  }
+  .prop-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 10px;
+    max-width: 1400px;
+  }
+  .prop-card {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+  }
+  .prop-card svg { display: block; margin: 0 auto; }
+  .prop-card .label { margin-top: 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .prop-card .label b { color: var(--ink); display: block; font-size: 12px; margin-bottom: 2px; text-transform: none; letter-spacing: 0; font-weight: 600; }
+  .emote-strip {
+    display: flex;
+    gap: 12px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 12px;
+    padding: 14px;
+    overflow-x: auto;
+  }
+  .emote-strip > div { flex: 0 0 auto; text-align: center; }
+  .emote-strip .label { margin-top: 4px; font-size: 11px; color: var(--muted); }
+</style>
 
 <h2>Earth Palette · v1</h2>
 <p class="muted">Warm, earthy, slightly desaturated. Closer to Golf Story than to Augusta broadcast TV.</p>
@@ -172,7 +222,7 @@ Palette references: Golf Story fairway <code style="font-size: 11px;">#7FB23A–
     <div class="footer"><span class="tag">A</span><b>Vertical mowing stripes</b><p>Current style, tightened. Reads like freshly mowed fairway; strong direction cue.</p></div>
   </div>
 
-  <div class="card">
+  <div class="card picked">
     <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
       <defs>
         <pattern id="fB" patternUnits="userSpaceOnUse" width="22" height="22" patternTransform="rotate(30)">
@@ -209,7 +259,7 @@ Palette references: Golf Story fairway <code style="font-size: 11px;">#7FB23A–
 <p class="muted">Brighter than fairway, subtly different texture. Must read as "this is where you putt."</p>
 <div class="row">
 
-  <div class="card">
+  <div class="card picked">
     <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
       <defs>
         <pattern id="gA" patternUnits="userSpaceOnUse" width="18" height="18" patternTransform="rotate(45)">
@@ -268,7 +318,7 @@ Palette references: Golf Story fairway <code style="font-size: 11px;">#7FB23A–
     <div class="footer"><span class="tag">A</span><b>Grass blade strokes</b><p>Small curved blade strokes every ~20px. Most Golf-Story-accurate rough.</p></div>
   </div>
 
-  <div class="card">
+  <div class="card picked">
     <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
       <defs>
         <pattern id="rB" patternUnits="userSpaceOnUse" width="18" height="18">
@@ -316,7 +366,7 @@ Palette references: Golf Story fairway <code style="font-size: 11px;">#7FB23A–
     <div class="footer"><span class="tag">A</span><b>Tall blade strokes</b><p>Same motif as Rough A, longer strokes, on darker base.</p></div>
   </div>
 
-  <div class="card">
+  <div class="card picked">
     <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
       <defs>
         <pattern id="dB" patternUnits="userSpaceOnUse" width="16" height="16">
@@ -343,7 +393,7 @@ Palette references: Golf Story fairway <code style="font-size: 11px;">#7FB23A–
 <p class="muted">Warm tan. Needs to read as soft / loose at a glance.</p>
 <div class="row">
 
-  <div class="card">
+  <div class="card picked">
     <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
       <defs>
         <pattern id="sA" patternUnits="userSpaceOnUse" width="18" height="18">
@@ -412,7 +462,7 @@ Palette references: Golf Story fairway <code style="font-size: 11px;">#7FB23A–
     <div class="footer"><span class="tag">A</span><b>Gradient + soft waves</b><p>Cyan-turquoise gradient with curvy highlight lines. Reads as gentle rippling water.</p></div>
   </div>
 
-  <div class="card">
+  <div class="card picked">
     <svg class="art" viewBox="0 0 320 160" width="100%" height="auto" preserveAspectRatio="none">
       <defs>
         <pattern id="wB" patternUnits="userSpaceOnUse" width="38" height="26">
@@ -447,7 +497,7 @@ Palette references: Golf Story fairway <code style="font-size: 11px;">#7FB23A–
 <h2>Trees</h2>
 <p class="muted">Three complete canopy sets. Each renders all five species with a consistent treatment. Pick the whole set.</p>
 
-<h3>Set 1 · Golf Story Chunky</h3>
+<h3 style="color:var(--accent);">Set 1 · Golf Story Chunky ✓ PICKED</h3>
 <p class="muted">3 canopy tones + dark 1.2px outline + warm brown trunk + flat-ellipse drop shadow. Per research, this is the Golf Story recipe.</p>
 <div class="trees">
 
@@ -647,6 +697,481 @@ Palette references: Golf Story fairway <code style="font-size: 11px;">#7FB23A–
       <ellipse cx="-3" cy="-14" rx="4" ry="14" fill="#7ab26e"/>
     </svg>
     <div class="label"><b>Cypress</b>Plush silhouette</div>
+  </div>
+
+</div>
+
+<h2>Characters · Top-down sprite</h2>
+<p class="muted">How the player renders on-course. 4 swing frames per golfer. Same outlined-chunky treatment as trees — colors are customizable per slot.</p>
+<div class="char-grid">
+
+  <div class="tree-card">
+    <svg width="180" height="180" viewBox="-60 -60 120 120">
+      <!-- shadow -->
+      <ellipse cx="0" cy="40" rx="22" ry="6" fill="rgba(26,36,20,0.5)"/>
+      <!-- bag behind -->
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="12" y="-10" width="10" height="44" rx="4" fill="#3f76c1"/>
+      </g>
+      <!-- club handles sticking out of bag -->
+      <line x1="16" y1="-10" x2="14" y2="-22" stroke="#2a1f1a" stroke-width="1.6" stroke-linecap="round"/>
+      <line x1="20" y1="-10" x2="24" y2="-26" stroke="#2a1f1a" stroke-width="1.6" stroke-linecap="round"/>
+      <!-- body (pants) -->
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="-10" y="12" width="20" height="24" fill="#2e563c" rx="3"/>
+      </g>
+      <!-- shirt -->
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="-12" y="-6" width="24" height="22" fill="#3f76c1" rx="4"/>
+      </g>
+      <!-- arms holding club -->
+      <line x1="8" y1="-2" x2="22" y2="14" stroke="#f0c08c" stroke-width="4" stroke-linecap="round"/>
+      <line x1="8" y1="-2" x2="22" y2="14" stroke="#2a1f1a" stroke-width="5.2" stroke-linecap="round" opacity="0.15"/>
+      <!-- club -->
+      <line x1="22" y1="14" x2="40" y2="-10" stroke="#2a1f1a" stroke-width="1.8" stroke-linecap="round"/>
+      <!-- club head -->
+      <rect x="38" y="-14" width="6" height="4" fill="#8a8a82" stroke="#2a1f1a" stroke-width="1"/>
+      <!-- head (face down - top of head visible) -->
+      <g stroke="#2a1f1a" stroke-width="1.2">
+        <circle cx="0" cy="-14" r="10" fill="#f0c08c"/>
+      </g>
+      <!-- hat -->
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="-11" y="-22" width="22" height="6" rx="2" fill="#263246"/>
+        <rect x="-11" y="-20" width="22" height="3" fill="#e85c4a"/>
+      </g>
+    </svg>
+    <div class="label"><b>Address</b>Aim / power-up pose</div>
+  </div>
+
+  <div class="tree-card">
+    <svg width="180" height="180" viewBox="-60 -60 120 120">
+      <ellipse cx="0" cy="40" rx="22" ry="6" fill="rgba(26,36,20,0.5)"/>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="12" y="-10" width="10" height="44" rx="4" fill="#3f76c1"/>
+      </g>
+      <line x1="16" y1="-10" x2="14" y2="-22" stroke="#2a1f1a" stroke-width="1.6" stroke-linecap="round"/>
+      <line x1="20" y1="-10" x2="24" y2="-26" stroke="#2a1f1a" stroke-width="1.6" stroke-linecap="round"/>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="-10" y="12" width="20" height="24" fill="#2e563c" rx="3"/>
+      </g>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="-12" y="-6" width="24" height="22" fill="#3f76c1" rx="4"/>
+      </g>
+      <!-- arms raised (backswing) -->
+      <line x1="-6" y1="-4" x2="-28" y2="-22" stroke="#f0c08c" stroke-width="4" stroke-linecap="round"/>
+      <line x1="-6" y1="-4" x2="-24" y2="-26" stroke="#f0c08c" stroke-width="4" stroke-linecap="round"/>
+      <!-- club going over shoulder -->
+      <line x1="-24" y1="-26" x2="-42" y2="-50" stroke="#2a1f1a" stroke-width="1.8" stroke-linecap="round"/>
+      <rect x="-46" y="-52" width="6" height="4" fill="#8a8a82" stroke="#2a1f1a" stroke-width="1" transform="rotate(-40 -43 -50)"/>
+      <g stroke="#2a1f1a" stroke-width="1.2">
+        <circle cx="0" cy="-14" r="10" fill="#f0c08c"/>
+      </g>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="-11" y="-22" width="22" height="6" rx="2" fill="#263246"/>
+        <rect x="-11" y="-20" width="22" height="3" fill="#e85c4a"/>
+      </g>
+    </svg>
+    <div class="label"><b>Backswing</b>Pad pull-down phase</div>
+  </div>
+
+  <div class="tree-card">
+    <svg width="180" height="180" viewBox="-60 -60 120 120">
+      <ellipse cx="0" cy="40" rx="22" ry="6" fill="rgba(26,36,20,0.5)"/>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="12" y="-10" width="10" height="44" rx="4" fill="#3f76c1"/>
+      </g>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="-10" y="12" width="20" height="24" fill="#2e563c" rx="3"/>
+      </g>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="-12" y="-6" width="24" height="22" fill="#3f76c1" rx="4"/>
+      </g>
+      <!-- arms low, extended -->
+      <line x1="0" y1="4" x2="24" y2="26" stroke="#f0c08c" stroke-width="4" stroke-linecap="round"/>
+      <!-- club horizontal -->
+      <line x1="24" y1="26" x2="48" y2="18" stroke="#2a1f1a" stroke-width="1.8" stroke-linecap="round"/>
+      <rect x="46" y="16" width="6" height="4" fill="#8a8a82" stroke="#2a1f1a" stroke-width="1"/>
+      <!-- swing arc line -->
+      <path d="M -30 -30 Q -20 10 20 26" fill="none" stroke="rgba(232,232,210,0.5)" stroke-width="1" stroke-dasharray="2 3"/>
+      <g stroke="#2a1f1a" stroke-width="1.2">
+        <circle cx="0" cy="-14" r="10" fill="#f0c08c"/>
+      </g>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="-11" y="-22" width="22" height="6" rx="2" fill="#263246"/>
+        <rect x="-11" y="-20" width="22" height="3" fill="#e85c4a"/>
+      </g>
+    </svg>
+    <div class="label"><b>Contact</b>Strike moment</div>
+  </div>
+
+  <div class="tree-card">
+    <svg width="180" height="180" viewBox="-60 -60 120 120">
+      <ellipse cx="0" cy="40" rx="22" ry="6" fill="rgba(26,36,20,0.5)"/>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="12" y="-10" width="10" height="44" rx="4" fill="#3f76c1"/>
+      </g>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="-10" y="12" width="20" height="24" fill="#2e563c" rx="3"/>
+      </g>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="-12" y="-6" width="24" height="22" fill="#3f76c1" rx="4"/>
+      </g>
+      <!-- arms finished on opposite side -->
+      <line x1="-4" y1="-4" x2="22" y2="-28" stroke="#f0c08c" stroke-width="4" stroke-linecap="round"/>
+      <line x1="22" y1="-28" x2="40" y2="-42" stroke="#2a1f1a" stroke-width="1.8" stroke-linecap="round"/>
+      <rect x="38" y="-46" width="6" height="4" fill="#8a8a82" stroke="#2a1f1a" stroke-width="1" transform="rotate(35 41 -44)"/>
+      <g stroke="#2a1f1a" stroke-width="1.2">
+        <circle cx="2" cy="-14" r="10" fill="#f0c08c"/>
+      </g>
+      <g stroke="#2a1f1a" stroke-width="1.2" stroke-linejoin="round">
+        <rect x="-9" y="-22" width="22" height="6" rx="2" fill="#263246"/>
+        <rect x="-9" y="-20" width="22" height="3" fill="#e85c4a"/>
+      </g>
+    </svg>
+    <div class="label"><b>Follow-through</b>~0.3s after strike</div>
+  </div>
+
+</div>
+
+<h2>Characters · Portrait (creation screen)</h2>
+<p class="muted">3/4 front view, larger, more detail. Used in character creation, select screen, cutscenes, caddie dialog.</p>
+<div class="char-grid">
+
+  <div class="tree-card">
+    <svg width="200" height="260" viewBox="-60 -180 120 260">
+      <!-- shadow -->
+      <ellipse cx="0" cy="76" rx="30" ry="8" fill="rgba(26,36,20,0.5)"/>
+      <!-- shoes -->
+      <g stroke="#2a1f1a" stroke-width="1.4" stroke-linejoin="round">
+        <ellipse cx="-12" cy="70" rx="11" ry="5" fill="#2a1f1a"/>
+        <ellipse cx="12"  cy="70" rx="11" ry="5" fill="#2a1f1a"/>
+      </g>
+      <!-- pants -->
+      <g stroke="#2a1f1a" stroke-width="1.4" stroke-linejoin="round">
+        <rect x="-18" y="18" width="36" height="52" rx="6" fill="#2e563c"/>
+      </g>
+      <!-- shirt / torso -->
+      <g stroke="#2a1f1a" stroke-width="1.4" stroke-linejoin="round">
+        <path d="M -22 -20 Q -28 -16 -28 0 L -22 22 L 22 22 L 28 0 Q 28 -16 22 -20 Z" fill="#3f76c1"/>
+      </g>
+      <!-- sponsor stripe -->
+      <rect x="-18" y="4" width="36" height="3" fill="rgba(255,255,255,0.25)"/>
+      <!-- neck -->
+      <rect x="-7" y="-26" width="14" height="8" fill="#f0c08c" stroke="#2a1f1a" stroke-width="1.2"/>
+      <!-- head -->
+      <g stroke="#2a1f1a" stroke-width="1.4" stroke-linejoin="round">
+        <ellipse cx="0" cy="-48" rx="22" ry="22" fill="#f0c08c"/>
+      </g>
+      <!-- hair peeking under hat -->
+      <path d="M -22 -52 Q -18 -46 -8 -44 L -20 -42 Z" fill="#5a3a20" stroke="#2a1f1a" stroke-width="1.2"/>
+      <path d="M 22 -52 Q 18 -46 8 -44 L 20 -42 Z" fill="#5a3a20" stroke="#2a1f1a" stroke-width="1.2"/>
+      <!-- hat -->
+      <g stroke="#2a1f1a" stroke-width="1.4" stroke-linejoin="round">
+        <path d="M -24 -58 Q -10 -76 0 -76 Q 10 -76 24 -58 L 24 -52 L -24 -52 Z" fill="#263246"/>
+        <rect x="-24" y="-54" width="48" height="4" fill="#e85c4a"/>
+        <!-- bill -->
+        <path d="M 0 -52 Q 12 -46 28 -48 L 28 -52 Z" fill="#263246" stroke="#2a1f1a" stroke-width="1.4"/>
+      </g>
+      <!-- eyes -->
+      <rect x="-8" y="-48" width="3" height="3" fill="#2a1f1a"/>
+      <rect x="5"  y="-48" width="3" height="3" fill="#2a1f1a"/>
+      <!-- mouth -->
+      <rect x="-2" y="-40" width="4" height="1.5" fill="#2a1f1a"/>
+      <!-- club resting on shoulder -->
+      <line x1="28" y1="-8" x2="40" y2="-60" stroke="#2a1f1a" stroke-width="2" stroke-linecap="round"/>
+      <rect x="38" y="-64" width="6" height="4" fill="#8a8a82" stroke="#2a1f1a" stroke-width="1"/>
+    </svg>
+    <div class="label"><b>Default human</b>Neutral portrait</div>
+  </div>
+
+  <div class="tree-card">
+    <svg width="200" height="260" viewBox="-60 -180 120 260">
+      <ellipse cx="0" cy="76" rx="30" ry="8" fill="rgba(26,36,20,0.5)"/>
+      <g stroke="#2a1f1a" stroke-width="1.4" stroke-linejoin="round">
+        <ellipse cx="-12" cy="70" rx="11" ry="5" fill="#2a1f1a"/>
+        <ellipse cx="12"  cy="70" rx="11" ry="5" fill="#2a1f1a"/>
+        <rect x="-18" y="18" width="36" height="52" rx="6" fill="#5a4033"/>
+        <path d="M -22 -20 Q -28 -16 -28 0 L -22 22 L 22 22 L 28 0 Q 28 -16 22 -20 Z" fill="#e85c4a"/>
+      </g>
+      <rect x="-18" y="4" width="36" height="3" fill="rgba(255,255,255,0.25)"/>
+      <rect x="-7" y="-26" width="14" height="8" fill="#c38a5a" stroke="#2a1f1a" stroke-width="1.2"/>
+      <g stroke="#2a1f1a" stroke-width="1.4" stroke-linejoin="round">
+        <ellipse cx="0" cy="-48" rx="22" ry="22" fill="#c38a5a"/>
+      </g>
+      <!-- long hair -->
+      <path d="M -24 -46 L -18 -22 L -22 -22 L -28 -40 Z" fill="#2a1f1a"/>
+      <path d="M 24 -46 L 18 -22 L 22 -22 L 28 -40 Z" fill="#2a1f1a"/>
+      <!-- visor -->
+      <g stroke="#2a1f1a" stroke-width="1.4" stroke-linejoin="round">
+        <path d="M -24 -60 L 24 -60 L 28 -56 L -28 -56 Z" fill="#f8fafc"/>
+      </g>
+      <rect x="-8" y="-48" width="3" height="3" fill="#2a1f1a"/>
+      <rect x="5"  y="-48" width="3" height="3" fill="#2a1f1a"/>
+      <rect x="-3" y="-40" width="6" height="1.5" fill="#2a1f1a"/>
+    </svg>
+    <div class="label"><b>Alt colors</b>Visor, different skin/shirt/pants</div>
+  </div>
+
+  <div class="tree-card">
+    <svg width="200" height="260" viewBox="-60 -180 120 260">
+      <ellipse cx="0" cy="76" rx="32" ry="8" fill="rgba(26,36,20,0.5)"/>
+      <!-- Voss: broader shoulders, grey-blue skin, crest -->
+      <g stroke="#2a1f1a" stroke-width="1.4" stroke-linejoin="round">
+        <ellipse cx="-14" cy="70" rx="12" ry="5" fill="#2a1f1a"/>
+        <ellipse cx="14"  cy="70" rx="12" ry="5" fill="#2a1f1a"/>
+        <rect x="-20" y="18" width="40" height="52" rx="6" fill="#263246"/>
+        <path d="M -28 -20 Q -34 -14 -34 2 L -26 24 L 26 24 L 34 2 Q 34 -14 28 -20 Z" fill="#3f76c1"/>
+      </g>
+      <rect x="-7" y="-26" width="14" height="8" fill="#8faab8" stroke="#2a1f1a" stroke-width="1.2"/>
+      <g stroke="#2a1f1a" stroke-width="1.4" stroke-linejoin="round">
+        <ellipse cx="0" cy="-46" rx="20" ry="26" fill="#8faab8"/>
+      </g>
+      <!-- crest -->
+      <path d="M 0 -74 L -4 -62 L 4 -62 Z" fill="#5a6a7a" stroke="#2a1f1a" stroke-width="1.2"/>
+      <rect x="-7" y="-48" width="3" height="4" fill="#2a1f1a"/>
+      <rect x="4"  y="-48" width="3" height="4" fill="#2a1f1a"/>
+      <rect x="-3" y="-36" width="6" height="1.5" fill="#2a1f1a"/>
+    </svg>
+    <div class="label"><b>Voss silhouette</b>Species stub — broader, grey-blue skin, head crest</div>
+  </div>
+
+</div>
+
+<h2>Characters · Emote strip</h2>
+<p class="muted">6 face variants used by shot outcomes, caddie dialogue, composure tilts. Keep the set tight.</p>
+<div class="emote-strip">
+  <div>
+    <svg width="80" height="80" viewBox="-40 -40 80 80">
+      <g stroke="#2a1f1a" stroke-width="1.4"><circle cx="0" cy="0" r="26" fill="#f0c08c"/></g>
+      <rect x="-8" y="-4" width="3" height="3" fill="#2a1f1a"/>
+      <rect x="5"  y="-4" width="3" height="3" fill="#2a1f1a"/>
+      <rect x="-2" y="10" width="4" height="1.5" fill="#2a1f1a"/>
+    </svg>
+    <div class="label">neutral</div>
+  </div>
+  <div>
+    <svg width="80" height="80" viewBox="-40 -40 80 80">
+      <g stroke="#2a1f1a" stroke-width="1.4"><circle cx="0" cy="0" r="26" fill="#f0c08c"/></g>
+      <rect x="-9" y="-3" width="4" height="2" fill="#2a1f1a"/>
+      <rect x="5"  y="-3" width="4" height="2" fill="#2a1f1a"/>
+      <rect x="-10" y="-10" width="6" height="2" fill="#2a1f1a" transform="rotate(15 -7 -9)"/>
+      <rect x="4"  y="-10" width="6" height="2" fill="#2a1f1a" transform="rotate(-15 7 -9)"/>
+      <rect x="-2" y="10" width="4" height="1.5" fill="#2a1f1a"/>
+    </svg>
+    <div class="label">focused</div>
+  </div>
+  <div>
+    <svg width="80" height="80" viewBox="-40 -40 80 80">
+      <g stroke="#2a1f1a" stroke-width="1.4"><circle cx="0" cy="0" r="26" fill="#f0c08c"/></g>
+      <rect x="-8" y="-6" width="3" height="3" fill="#2a1f1a"/>
+      <rect x="5"  y="-6" width="3" height="3" fill="#2a1f1a"/>
+      <path d="M -6 10 Q 0 14 6 10" fill="none" stroke="#2a1f1a" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <div class="label">happy</div>
+  </div>
+  <div>
+    <svg width="80" height="80" viewBox="-40 -40 80 80">
+      <g stroke="#2a1f1a" stroke-width="1.4"><circle cx="0" cy="0" r="26" fill="#f0c08c"/></g>
+      <path d="M -10 -4 L -4 -4" stroke="#2a1f1a" stroke-width="2" stroke-linecap="round"/>
+      <path d="M 4 -4 L 10 -4" stroke="#2a1f1a" stroke-width="2" stroke-linecap="round"/>
+      <path d="M -6 14 Q 0 10 6 14" fill="none" stroke="#2a1f1a" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <div class="label">disappointed</div>
+  </div>
+  <div>
+    <svg width="80" height="80" viewBox="-40 -40 80 80">
+      <g stroke="#2a1f1a" stroke-width="1.4"><circle cx="0" cy="0" r="26" fill="#f0c08c"/></g>
+      <rect x="-8" y="-4" width="3" height="3" fill="#2a1f1a"/>
+      <path d="M 3 -6 L 10 -2" stroke="#2a1f1a" stroke-width="2" stroke-linecap="round"/>
+      <path d="M -8 12 L -2 10 L 2 13 L 8 10" fill="none" stroke="#2a1f1a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="label">tilted</div>
+  </div>
+  <div>
+    <svg width="80" height="80" viewBox="-40 -40 80 80">
+      <g stroke="#2a1f1a" stroke-width="1.4"><circle cx="0" cy="0" r="26" fill="#f0c08c"/></g>
+      <path d="M -10 -4 L -4 -8" stroke="#2a1f1a" stroke-width="2" stroke-linecap="round"/>
+      <path d="M 4 -8 L 10 -4" stroke="#2a1f1a" stroke-width="2" stroke-linecap="round"/>
+      <path d="M -10 8 Q 0 18 10 8" fill="none" stroke="#2a1f1a" stroke-width="2.2" stroke-linecap="round"/>
+      <rect x="-3" y="10" width="6" height="3" fill="#e85c4a"/>
+    </svg>
+    <div class="label">hype</div>
+  </div>
+</div>
+
+<h2>Props · What else a golf course needs</h2>
+<p class="muted">Beyond the 7 surfaces. All rendered as outlined sprites with a drop shadow (same treatment as trees).</p>
+<div class="prop-grid">
+
+  <div class="prop-card">
+    <svg width="80" height="100" viewBox="-40 -60 80 100">
+      <ellipse cx="0" cy="34" rx="6" ry="2" fill="rgba(26,36,20,0.5)"/>
+      <rect x="-1" y="-30" width="2" height="64" fill="#f8fafc" stroke="#2a1f1a" stroke-width="1"/>
+      <polygon points="1,-30 14,-24 1,-18" fill="#e85c4a" stroke="#2a1f1a" stroke-width="1" stroke-linejoin="round"/>
+      <circle cx="0" cy="34" r="4" fill="#2a1f1a"/>
+    </svg>
+    <div class="label"><b>Pin flag</b>Regular (red)</div>
+  </div>
+
+  <div class="prop-card">
+    <svg width="80" height="100" viewBox="-40 -60 80 100">
+      <ellipse cx="0" cy="34" rx="6" ry="2" fill="rgba(26,36,20,0.5)"/>
+      <rect x="-1" y="-30" width="2" height="64" fill="#f8fafc" stroke="#2a1f1a" stroke-width="1"/>
+      <polygon points="1,-30 14,-24 1,-18" fill="#f2b84b" stroke="#2a1f1a" stroke-width="1" stroke-linejoin="round"/>
+      <circle cx="0" cy="34" r="4" fill="#2a1f1a"/>
+    </svg>
+    <div class="label"><b>Pin flag</b>Championship (yellow)</div>
+  </div>
+
+  <div class="prop-card">
+    <svg width="80" height="80" viewBox="-40 -40 80 80">
+      <ellipse cx="0" cy="12" rx="10" ry="3" fill="rgba(26,36,20,0.35)"/>
+      <circle cx="0" cy="0" r="10" fill="#f8fafc" stroke="#2a1f1a" stroke-width="1"/>
+      <circle cx="-3" cy="-3" r="2" fill="rgba(255,255,255,0.6)"/>
+    </svg>
+    <div class="label"><b>Ball</b>On turf</div>
+  </div>
+
+  <div class="prop-card">
+    <svg width="80" height="80" viewBox="-40 -40 80 80">
+      <rect x="-14" y="-10" width="10" height="12" fill="#2a1f1a" stroke="#2a1f1a" stroke-width="1"/>
+      <rect x="4"   y="-10" width="10" height="12" fill="#2a1f1a" stroke="#2a1f1a" stroke-width="1"/>
+      <rect x="-14" y="14"  width="10" height="12" fill="#3879c5" stroke="#2a1f1a" stroke-width="1"/>
+      <rect x="4"   y="14"  width="10" height="12" fill="#3879c5" stroke="#2a1f1a" stroke-width="1"/>
+    </svg>
+    <div class="label"><b>Tee markers</b>Championship + Regular</div>
+  </div>
+
+  <div class="prop-card">
+    <svg width="80" height="80" viewBox="-40 -40 80 80">
+      <rect x="-2" y="-18" width="4" height="36" fill="#f8fafc" stroke="#2a1f1a" stroke-width="1"/>
+      <rect x="-3" y="18" width="6" height="3" fill="#2a1f1a"/>
+    </svg>
+    <div class="label"><b>OB stake</b>White</div>
+  </div>
+
+  <div class="prop-card">
+    <svg width="80" height="80" viewBox="-40 -40 80 80">
+      <rect x="-2" y="-18" width="4" height="36" fill="#e85c4a" stroke="#2a1f1a" stroke-width="1"/>
+      <rect x="-3" y="18" width="6" height="3" fill="#2a1f1a"/>
+    </svg>
+    <div class="label"><b>Hazard stake</b>Red (lateral water)</div>
+  </div>
+
+  <div class="prop-card">
+    <svg width="100" height="50" viewBox="-50 -25 100 50">
+      <path d="M -50 0 L -20 -10 L 20 -6 L 50 -12" fill="none" stroke="#c9b27a" stroke-width="10" stroke-linecap="round"/>
+      <path d="M -50 0 L -20 -10 L 20 -6 L 50 -12" fill="none" stroke="#8b6a3a" stroke-width="1"/>
+    </svg>
+    <div class="label"><b>Cart path</b>Warm tan</div>
+  </div>
+
+  <div class="prop-card">
+    <svg width="100" height="50" viewBox="-50 -25 100 50">
+      <rect x="-34" y="-8" width="68" height="16" fill="#8b5e3c" stroke="#2a1f1a" stroke-width="1"/>
+      <line x1="-24" y1="-8" x2="-24" y2="8" stroke="#5a3a1e" stroke-width="2"/>
+      <line x1="-8" y1="-8" x2="-8" y2="8" stroke="#5a3a1e" stroke-width="2"/>
+      <line x1="8" y1="-8" x2="8" y2="8" stroke="#5a3a1e" stroke-width="2"/>
+      <line x1="24" y1="-8" x2="24" y2="8" stroke="#5a3a1e" stroke-width="2"/>
+    </svg>
+    <div class="label"><b>Bridge</b>Plank wood</div>
+  </div>
+
+  <div class="prop-card">
+    <svg width="80" height="80" viewBox="-40 -40 80 80">
+      <ellipse cx="0" cy="12" rx="12" ry="3" fill="rgba(26,36,20,0.4)"/>
+      <path d="M -14 0 Q -10 -14 4 -12 Q 16 -8 12 6 Q 4 12 -8 10 Z" fill="#8a8a82" stroke="#2a1f1a" stroke-width="1.4" stroke-linejoin="round"/>
+      <path d="M 4 -8 Q 12 -6 10 4" fill="none" stroke="#5a5a52" stroke-width="2"/>
+    </svg>
+    <div class="label"><b>Rock</b>Medium</div>
+  </div>
+
+  <div class="prop-card">
+    <svg width="80" height="80" viewBox="-40 -40 80 80">
+      <g>
+        <circle cx="0" cy="-4" r="3" fill="#e85c4a" stroke="#1f4a1c" stroke-width="0.5"/>
+        <circle cx="-4" cy="0" r="3" fill="#e85c4a" stroke="#1f4a1c" stroke-width="0.5"/>
+        <circle cx="4" cy="0" r="3" fill="#e85c4a" stroke="#1f4a1c" stroke-width="0.5"/>
+        <circle cx="-2" cy="5" r="3" fill="#e85c4a" stroke="#1f4a1c" stroke-width="0.5"/>
+        <circle cx="2" cy="5" r="3" fill="#e85c4a" stroke="#1f4a1c" stroke-width="0.5"/>
+        <circle cx="0" cy="1" r="1.5" fill="#f2b84b"/>
+      </g>
+      <g transform="translate(-18,8)">
+        <circle cx="0" cy="-3" r="2" fill="#a07ac8" stroke="#1f4a1c" stroke-width="0.5"/>
+        <circle cx="-3" cy="0" r="2" fill="#a07ac8" stroke="#1f4a1c" stroke-width="0.5"/>
+        <circle cx="3" cy="0" r="2" fill="#a07ac8" stroke="#1f4a1c" stroke-width="0.5"/>
+        <circle cx="0" cy="3" r="2" fill="#a07ac8" stroke="#1f4a1c" stroke-width="0.5"/>
+        <circle cx="0" cy="0" r="1" fill="#f2b84b"/>
+      </g>
+      <g transform="translate(14,-8)">
+        <circle cx="0" cy="-2" r="1.5" fill="#f8fafc" stroke="#1f4a1c" stroke-width="0.5"/>
+        <circle cx="-2" cy="0" r="1.5" fill="#f8fafc" stroke="#1f4a1c" stroke-width="0.5"/>
+        <circle cx="2" cy="0" r="1.5" fill="#f8fafc" stroke="#1f4a1c" stroke-width="0.5"/>
+        <circle cx="0" cy="2" r="1.5" fill="#f8fafc" stroke="#1f4a1c" stroke-width="0.5"/>
+        <circle cx="0" cy="0" r="0.8" fill="#f2b84b"/>
+      </g>
+    </svg>
+    <div class="label"><b>Flowers</b>Red / purple / white</div>
+  </div>
+
+  <div class="prop-card">
+    <svg width="80" height="80" viewBox="-40 -40 80 80">
+      <!-- fairway background -->
+      <rect x="-40" y="-40" width="80" height="80" fill="#8bc24c"/>
+      <!-- divot -->
+      <ellipse cx="0" cy="0" rx="7" ry="4" fill="#6b4423" stroke="#4a2e16" stroke-width="1" transform="rotate(30)"/>
+      <ellipse cx="-3" cy="-1" rx="3" ry="1.5" fill="#4a2e16" transform="rotate(30)"/>
+    </svg>
+    <div class="label"><b>Divot</b>After a full shot</div>
+  </div>
+
+  <div class="prop-card">
+    <svg width="80" height="80" viewBox="-40 -40 80 80">
+      <rect x="-40" y="-40" width="80" height="80" fill="#a3d155"/>
+      <ellipse cx="0" cy="0" rx="3" ry="1.5" fill="#1f4a1c"/>
+    </svg>
+    <div class="label"><b>Ball mark</b>On a green</div>
+  </div>
+
+  <div class="prop-card">
+    <svg width="100" height="50" viewBox="-50 -25 100 50">
+      <rect x="-45" y="-15" width="90" height="30" fill="#e8d7a3"/>
+      <line x1="-40" y1="-12" x2="40" y2="-12" stroke="#c9b27a" stroke-width="1"/>
+      <line x1="-40" y1="-4"  x2="40" y2="-4"  stroke="#c9b27a" stroke-width="1"/>
+      <line x1="-40" y1="4"   x2="40" y2="4"   stroke="#c9b27a" stroke-width="1"/>
+      <line x1="-40" y1="12"  x2="40" y2="12"  stroke="#c9b27a" stroke-width="1"/>
+    </svg>
+    <div class="label"><b>Raked sand</b>Decorative lines</div>
+  </div>
+
+  <div class="prop-card">
+    <svg width="80" height="80" viewBox="-40 -40 80 80">
+      <ellipse cx="0" cy="18" rx="10" ry="2" fill="rgba(26,36,20,0.4)"/>
+      <rect x="-2" y="-12" width="4" height="8" fill="#f0ece0" stroke="#2a1f1a" stroke-width="1"/>
+      <rect x="-6" y="-4"  width="12" height="22" fill="#f0ece0" stroke="#2a1f1a" stroke-width="1"/>
+      <text x="0" y="10" text-anchor="middle" font-size="8" font-weight="bold" fill="#2a1f1a" font-family="monospace">150</text>
+    </svg>
+    <div class="label"><b>Yardage marker</b>150</div>
+  </div>
+
+  <div class="prop-card">
+    <svg width="100" height="50" viewBox="-50 -25 100 50">
+      <!-- abstract gallery silhouette -->
+      <g fill="#2a1f1a">
+        <rect x="-36" y="0"  width="10" height="18"/>
+        <circle cx="-31" cy="-4" r="4"/>
+        <rect x="-22" y="4" width="10" height="14"/>
+        <circle cx="-17" cy="0" r="4"/>
+        <rect x="-8" y="2" width="10" height="16"/>
+        <circle cx="-3" cy="-2" r="4"/>
+        <rect x="6" y="4" width="10" height="14"/>
+        <circle cx="11" cy="0" r="4"/>
+        <rect x="20" y="0" width="10" height="18"/>
+        <circle cx="25" cy="-4" r="4"/>
+      </g>
+    </svg>
+    <div class="label"><b>Gallery</b>Tournament spectators (Phase 3)</div>
   </div>
 
 </div>
