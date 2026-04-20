@@ -1796,7 +1796,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.17';
+const BUILD_VERSION = 'IGT v3.18';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -5082,8 +5082,12 @@ export default function App() {
               : [];
             return tracerPoints.length > 1 ? tracerPoints.map((pt, i) => {
               const sx = (pt.x - camera.x) * pixelsPerWorld + viewWidth / 2;
-              const tracerRawLiftPx = (pt.z || 0) * pixelsPerWorld * 1.55;
-              const tracerLiftPx = tracerRawLiftPx > 0 ? Math.sqrt(tracerRawLiftPx) * 8 : 0;
+              // Match the main ball's visual lift (linear with soft cap, no
+              // sqrt compression). Previously the tracer used 1.55×sqrt scaling
+              // while the ball used a lower linear curve, so the trail drew an
+              // arc much higher than the ball actually traveled.
+              const tracerRawLiftPx = (pt.z || 0) * pixelsPerWorld * 0.85;
+              const tracerLiftPx = Math.min(tracerRawLiftPx, 78);
               const sy = (pt.y - camera.y) * pixelsPerWorld + cameraAnchorY - tracerLiftPx;
               const age = (tracerPoints.length - 1 - i) / Math.max(1, tracerPoints.length - 1);
               const opacity = Math.max(0.06, 0.95 - age * 0.9);
