@@ -1840,7 +1840,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.33 · GS spike v0.7.3';
+const BUILD_VERSION = 'IGT v3.34 · GS spike v0.7.3';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -4191,8 +4191,18 @@ export default function App() {
   // drives still fit on screen. Previously used sqrt compression which
   // exaggerated chip-shot height (short shots looked much higher than they
   // physically were).
+  // Smooth visual lift: keep a near-linear response for small lifts (so low
+  // shots and early-rise pixels aren't distorted) while softly saturating
+  // high-apex drives instead of hard-clamping at a ceiling. The old
+  // Math.min(rawLift, 78) chopped the rising arc flat the moment it exceeded
+  // the cap, which is exactly the "kink" in the tracer the player saw — a
+  // genuine parabola went rising → plateau → falling. This formula uses
+  // tanh, which is C¹ (no derivative kink), approaches SOFT_LIFT_MAX
+  // asymptotically, and matches rawLift*0.97 for small values.
+  const SOFT_LIFT_MAX = 130;
+  const visualLiftPx = (rawLift) => SOFT_LIFT_MAX * Math.tanh(Math.max(0, rawLift) / SOFT_LIFT_MAX);
   const rawLiftPx = ballHeight * pixelsPerWorld * 0.85;
-  const liftPx = Math.min(rawLiftPx, 78);
+  const liftPx = visualLiftPx(rawLiftPx);
   const airborneRatio = clamp(ballHeight / 35, 0, 1);
   const ballVisualScale = 1 - airborneRatio * 0.12;
   const shadowScale = 1 + airborneRatio * 0.5;
@@ -5434,12 +5444,12 @@ export default function App() {
               : [];
             return tracerPoints.length > 1 ? tracerPoints.map((pt, i) => {
               const sx = (pt.x - camera.x) * pixelsPerWorld + viewWidth / 2;
-              // Match the main ball's visual lift (linear with soft cap, no
-              // sqrt compression). Previously the tracer used 1.55×sqrt scaling
-              // while the ball used a lower linear curve, so the trail drew an
-              // arc much higher than the ball actually traveled.
+              // Match the main ball's smooth saturation lift — crucial for a
+              // parabolic-looking trail. The old Math.min(raw, 78) chopped
+              // the arc flat once the ball climbed past the cap, producing a
+              // rising → plateau → falling zig-zag instead of a parabola.
               const tracerRawLiftPx = (pt.z || 0) * pixelsPerWorld * 0.85;
-              const tracerLiftPx = Math.min(tracerRawLiftPx, 78);
+              const tracerLiftPx = visualLiftPx(tracerRawLiftPx);
               const sy = (pt.y - camera.y) * pixelsPerWorld + cameraAnchorY - tracerLiftPx;
               const age = (tracerPoints.length - 1 - i) / Math.max(1, tracerPoints.length - 1);
               const opacity = Math.max(0.06, 0.95 - age * 0.9);
