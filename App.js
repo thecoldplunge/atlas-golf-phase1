@@ -1803,7 +1803,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.14';
+const BUILD_VERSION = 'IGT v3.15';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -2392,6 +2392,31 @@ export default function App() {
     Math.abs(flightRef.current.vz) > 0.35;
   const cameraAnchorY = (!ballMoving && !puttingMode) ? viewHeight * 0.74 : viewHeight / 2;
 
+  // Given a ball position and a target (usually the cup), produce a camera
+  // position that keeps the ball inside the viewport while biasing the view
+  // toward the target so the aim line leads into the visible area. Used on
+  // hole load and every time the ball settles so the camera never snaps back
+  // to a "neutral" orientation that ignores which way the hole plays.
+  const cameraForShot = (ballPos, targetPos) => {
+    if (!targetPos) return clampCamera(ballPos);
+    const dx = targetPos.x - ballPos.x;
+    const dy = targetPos.y - ballPos.y;
+    let target = {
+      x: ballPos.x + dx * 0.4,
+      y: ballPos.y + dy * 0.4
+    };
+    const padPx = 80;
+    const anchorY = viewHeight * 0.74;
+    const ppw = Math.max(0.0001, pixelsPerWorld);
+    const ballScreenX = (ballPos.x - target.x) * ppw + viewWidth / 2;
+    const ballScreenY = (ballPos.y - target.y) * ppw + anchorY;
+    if (ballScreenX < padPx) target.x -= (padPx - ballScreenX) / ppw;
+    if (ballScreenX > viewWidth - padPx) target.x += (ballScreenX - (viewWidth - padPx)) / ppw;
+    if (ballScreenY < padPx) target.y -= (padPx - ballScreenY) / ppw;
+    if (ballScreenY > viewHeight - padPx) target.y += (ballScreenY - (viewHeight - padPx)) / ppw;
+    return clampCamera(target);
+  };
+
   const syncCourseFrame = () => {
     if (!courseRef.current || typeof courseRef.current.measureInWindow !== 'function') {
       return;
@@ -2429,7 +2454,7 @@ export default function App() {
     shotCurveDegRef.current = 0;
     shotAimAngleRef.current = getAimAngleToCup(currentHole.ballStart, currentHole.cup);
     setTempoLabel('Blue dot centered');
-    const nc = clampCamera(currentHole.ballStart);
+    const nc = cameraForShot(currentHole.ballStart, currentHole.cup);
     setCamera(nc);
     cameraRef.current = nc;
     manualPanUntilRef.current = 0;
@@ -2472,7 +2497,7 @@ export default function App() {
     shotAimAngleRef.current = getAimAngleToCup(currentHole.ballStart, currentHole.cup);
     setTempoLabel('Blue dot centered');
     setLastShotNote('Tap Yards to shape the shot, then tap the big ball to strike it.');
-    const nc = clampCamera(currentHole.ballStart);
+    const nc = cameraForShot(currentHole.ballStart, currentHole.cup);
     setCamera(nc);
     cameraRef.current = nc;
     manualPanUntilRef.current = 0;
@@ -2499,10 +2524,7 @@ export default function App() {
     const firstHole = holes[0];
     const firstBall = firstHole?.ballStart || { x: WORLD.w / 2, y: WORLD.h / 2 };
     const firstCup = firstHole?.cup || firstBall;
-    const startCamera = {
-      x: clamp(firstBall.x, halfVpW, WORLD.w - halfVpW),
-      y: clamp(firstBall.y, halfVpH, WORLD.h - halfVpH)
-    };
+    const startCamera = cameraForShot(firstBall, firstCup);
 
     setActiveCourseIndex(courseIndex);
     setGameScreen('playing');
@@ -2569,7 +2591,7 @@ export default function App() {
     shotCurveDegRef.current = 0;
     setTempoLabel('Blue dot centered');
     setCurrentLie(getSurfaceAtPoint(currentHole, dropPos));
-    const nc = clampCamera(dropPos);
+    const nc = cameraForShot(dropPos, currentHole.cup);
     setCamera(nc);
     cameraRef.current = nc;
     manualPanUntilRef.current = 0;
@@ -2639,6 +2661,15 @@ export default function App() {
     shotAimAngleRef.current = getAimAngleToCup(currentHole.ballStart, currentHole.cup);
     setTempoLabel('Blue dot centered');
     setLastShotNote('Tap Yards to shape the shot, then tap the big ball to strike it.');
+    // On hole change, jump the camera to a position that shows the ball and
+    // aims into the hole direction instead of inheriting the previous hole's
+    // view and then drifting.
+    {
+      const nc = cameraForShot(currentHole.ballStart, currentHole.cup);
+      setCamera(nc);
+      cameraRef.current = nc;
+      manualPanUntilRef.current = 0;
+    }
     // Auto-select club based on par and distance
     const holeDistYards = Math.hypot(currentHole.cup.x - currentHole.ballStart.x, currentHole.cup.y - currentHole.ballStart.y) * YARDS_PER_WORLD;
     if (currentHole.par >= 4) {
@@ -2863,12 +2894,19 @@ export default function App() {
       if (nowMs >= manualPanUntilRef.current) {
         const vel = velocityRef.current;
         const ballPos = ballRef.current;
+        const velMag = magnitude(vel);
         setCamera((prev) => {
-          const target = clampCameraRef.current({
-            x: ballPos.x + clamp(vel.x * 0.025, -5, 5),
-            y: ballPos.y + clamp(vel.y * 0.025, -7, 7)
-          });
-          const ease = magnitude(vel) > 1 ? 0.14 : 0.08;
+          // When the ball is flying or rolling, lead the camera with velocity.
+          // When it's at rest, bias the camera toward the cup so the aim line
+          // is visible instead of letting the view snap back to a neutral
+          // ball-centered framing.
+          const target = velMag > 0.6
+            ? clampCameraRef.current({
+                x: ballPos.x + clamp(vel.x * 0.025, -5, 5),
+                y: ballPos.y + clamp(vel.y * 0.025, -7, 7)
+              })
+            : cameraForShot(ballPos, currentHole.cup);
+          const ease = velMag > 1 ? 0.14 : 0.08;
           const next = clampCameraRef.current({
             x: prev.x + (target.x - prev.x) * ease,
             y: prev.y + (target.y - prev.y) * ease
