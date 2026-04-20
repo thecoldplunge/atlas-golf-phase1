@@ -1811,7 +1811,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.22 · GS spike v0.2';
+const BUILD_VERSION = 'IGT v3.23 · GS spike v0.2';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -2092,6 +2092,25 @@ const expandRect = (rect, inset) => ({
   w: rect.w + inset * 2,
   h: rect.h + inset * 2
 });
+// Find the water hazard the ball sits in (if any). Checks rect water first,
+// then the vector bezier water shapes — custom courses sometimes have the
+// visible bezier pond drift slightly from its rect tile approximation, and
+// the ball can come to rest on the pond without ever crossing a rect tile.
+// Returns a {x, y, w, h} rect suitable for drop-relief math, or null.
+const findWaterHazAt = (hole, point) => {
+  const rect = hole?.hazards?.find((h) => h.type === 'waterRect' && pointInRect(point, h));
+  if (rect) return rect;
+  const vec = hole?.editorVectors?.hazards?.water?.find((sh) => pointInPolygon(point, vectorShapeToPolygon(sh)));
+  if (vec) {
+    const xs = vec.points.map((p) => p.x);
+    const ys = vec.points.map((p) => p.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+  return null;
+};
+
 const getSurfaceAtPoint = (hole, point) => {
   const editorVectors = hole.editorVectors;
   const vectorSand = editorVectors?.hazards?.sand?.some((shape) => pointInPolygon(point, vectorShapeToPolygon(shape)));
@@ -2810,26 +2829,8 @@ export default function App() {
 
           // Water trigger: fires when the ball touches the water surface
           // (landing, rolling, or low-bouncing). A high-flying shot at z > 3
-          // passes over freely. We check BOTH rect water (hole.hazards) AND
-          // vector water (editorVectors) so custom courses whose rect
-          // approximation drifted from the visible shape still catch the
-          // ball in the visible pond.
-          let waterHaz = null;
-          if (flight.z <= 3) {
-            waterHaz = tickHole.hazards.find((h) => h.type === 'waterRect' && pointInRect(next, h)) || null;
-            if (!waterHaz && tickHole.editorVectors?.hazards?.water) {
-              const hitVec = tickHole.editorVectors.hazards.water.find((sh) => pointInPolygon(next, vectorShapeToPolygon(sh)));
-              if (hitVec) {
-                // Build a synthetic rect from the vector polygon's bounding box
-                // so the downstream drop-relief math still has {x,y,w,h}.
-                const xs = hitVec.points.map((p) => p.x);
-                const ys = hitVec.points.map((p) => p.y);
-                const minX = Math.min(...xs), maxX = Math.max(...xs);
-                const minY = Math.min(...ys), maxY = Math.max(...ys);
-                waterHaz = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-              }
-            }
-          }
+          // passes over freely.
+          const waterHaz = flight.z <= 3 ? findWaterHazAt(tickHole, next) : null;
           if (waterHaz) {
             // Ball entered water — stop motion, sink the ball, show relief menu.
             // Real golf penalty-area rules (USGA Rule 17): +1 stroke plus one
@@ -3045,6 +3046,43 @@ export default function App() {
       setPuttSwingFeedback('');
       return;
     }
+    // If the ball is sitting in water (came to rest on the pond without
+    // the motion-tick trigger catching it), splash it now and show the
+    // penalty menu. We only do this when the ball is actually at rest and
+    // visible — (-100,-100) means a water trigger already fired.
+    if (!ballMoving && !waterDropMenu && ball.x > -50 && ball.y > -50) {
+      const waterHaz = findWaterHazAt(currentHole, ball);
+      if (waterHaz) {
+        const entryPos = { x: ball.x, y: ball.y };
+        const lastPos = lastShotPosRef.current || currentHole.ballStart;
+        const edgeDists = [
+          { d: Math.abs(entryPos.x - waterHaz.x), pos: { x: waterHaz.x - 10, y: entryPos.y } },
+          { d: Math.abs(entryPos.x - (waterHaz.x + waterHaz.w)), pos: { x: waterHaz.x + waterHaz.w + 10, y: entryPos.y } },
+          { d: Math.abs(entryPos.y - waterHaz.y), pos: { x: entryPos.x, y: waterHaz.y - 10 } },
+          { d: Math.abs(entryPos.y - (waterHaz.y + waterHaz.h)), pos: { x: entryPos.x, y: waterHaz.y + waterHaz.h + 10 } }
+        ];
+        edgeDists.sort((a, b) => a.d - b.d);
+        const lateralDrop = edgeDists[0].pos;
+        const cup = currentHole.cup;
+        const flagDx = entryPos.x - cup.x;
+        const flagDy = entryPos.y - cup.y;
+        const flagLen = Math.hypot(flagDx, flagDy) || 1;
+        const backDist = 8 / YARDS_PER_WORLD;
+        const backDrop = {
+          x: entryPos.x + (flagDx / flagLen) * backDist,
+          y: entryPos.y + (flagDy / flagLen) * backDist
+        };
+        setBall({ x: -100, y: -100 });
+        ballRef.current = { x: -100, y: -100 };
+        setBallHeight(0);
+        velocityRef.current = { x: 0, y: 0 };
+        flightRef.current = { z: 0, vz: 0 };
+        setWaterDropMenu({ lastPos, entryPos: lateralDrop, backDrop, hazard: waterHaz });
+        setWaterNotice(true);
+        setStrokesCurrent((s) => s + 1);
+        return;
+      }
+    }
     const lie = getSurfaceAtPoint(currentHole, ball);
     if (lie !== currentLie) {
       setCurrentLie(lie);
@@ -3078,7 +3116,7 @@ export default function App() {
       setLastShotNote('Putting mode: place an aim point on the green, tap Simulate Putt, then swing to match the target power.');
       setCamera((prev) => clampCamera({ x: ball.x, y: ball.y }));
     }
-  }, [ball, ballMoving, currentHole, currentLie, puttingMode, sunk]);
+  }, [ball, ballMoving, currentHole, currentLie, puttingMode, sunk, waterDropMenu]);
 
   useEffect(() => {
     if (puttingMode && selectedClubIndex !== 0) {
