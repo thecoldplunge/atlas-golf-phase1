@@ -33,15 +33,15 @@ const RAW_MAP = (() => {
     const y = +yStr, [x0, x1] = bounds;
     for (let x = x0; x <= x1; x++) m[y][x] = T_FAIRWAY;
   }
-  const greenCells = [
-    [3,8],[3,9],[3,10],[3,11],
-    [4,7],[4,8],[4,9],[4,10],[4,11],[4,12],
-    [5,7],[5,8],[5,9],[5,10],[5,11],[5,12],
-    [6,8],[6,9],[6,10],[6,11],[6,12],
-    [7,9],[7,10],[7,11],
-    [8,9],[8,10],
-  ];
-  for (const [y, x] of greenCells) m[y][x] = T_GREEN;
+  // Circular green: every tile whose center is within r≈3.2 of (9.5, 5.5)
+  const gcx = 9.5, gcy = 5.5, gr = 3.2;
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      const dx = (x + 0.5) - gcx;
+      const dy = (y + 0.5) - gcy;
+      if (Math.hypot(dx, dy) <= gr) m[y][x] = T_GREEN;
+    }
+  }
   m[11][13] = T_SAND; m[12][13] = T_SAND; m[12][14] = T_SAND; m[13][14] = T_SAND;
   m[6][13] = T_SAND; m[7][13] = T_SAND;
   for (let y = 14; y < 19; y++) for (let x = 2; x < 6; x++) m[y][x] = T_WATER;
@@ -78,7 +78,7 @@ const TREES = [
   { x: 18.5, y: 19 }, { x: 0.5, y: 26 }, { x: 19.5, y: 23 }, { x: 4, y: 25.5 },
   { x: 15, y: 28 },
 ];
-const FLAG = { x: 9.5, y: 4 };
+const FLAG = { x: 9.5, y: 5 };
 const TEE = { x: 9.5, y: 24.5 };
 
 const PROPS = (() => {
