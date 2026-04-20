@@ -192,6 +192,38 @@ const HOLES = [
   },
 ];
 
+function rotateShape90CCW(shape, H) {
+  if (shape.kind === 'polygon') {
+    return { kind: 'polygon', points: shape.points.map(([x, y]) => [H - y, x]) };
+  }
+  if (shape.kind === 'circle') {
+    return { kind: 'circle', cx: H - shape.cy, cy: shape.cx, r: shape.r };
+  }
+  if (shape.kind === 'annulus') {
+    return { kind: 'annulus', cx: H - shape.cy, cy: shape.cx, inner: shape.inner, outer: shape.outer };
+  }
+  if (shape.kind === 'rect') {
+    return { kind: 'rect', x: H - shape.y - shape.h, y: shape.x, w: shape.h, h: shape.w };
+  }
+  return shape;
+}
+
+function rotateHole90CCW(h) {
+  const H = h.height;
+  return {
+    name: h.name,
+    par: h.par,
+    width: h.height,
+    height: h.width,
+    tee: { x: H - h.tee.y, y: h.tee.x },
+    flag: { x: H - h.flag.y, y: h.flag.x },
+    greenSlope: { angle: h.greenSlope.angle + Math.PI / 2, mag: h.greenSlope.mag },
+    surfaces: h.surfaces.map((s) => ({ type: s.type, shape: rotateShape90CCW(s.shape, H) })),
+    trees: h.trees.map((t) => ({ x: H - t.y, y: t.x })),
+  };
+}
+
+let ORIENTATION = 'portrait';
 let MAP_W = HOLES[0].width;
 let MAP_H = HOLES[0].height;
 let WORLD_W = MAP_W * TILE;
@@ -477,9 +509,12 @@ function computeProps() {
   return out;
 }
 
-function loadHole(idx) {
-  const h = HOLES[((idx % HOLES.length) + HOLES.length) % HOLES.length];
-  CURRENT_HOLE = h;
+function loadHole(idx, orientation) {
+  const baseIdx = ((idx % HOLES.length) + HOLES.length) % HOLES.length;
+  const base = HOLES[baseIdx];
+  ORIENTATION = orientation || ORIENTATION || 'portrait';
+  const h = ORIENTATION === 'landscape' ? rotateHole90CCW(base) : base;
+  CURRENT_HOLE = { ...h, idxBase: baseIdx };
   MAP_W = h.width;
   MAP_H = h.height;
   WORLD_W = MAP_W * TILE;
@@ -497,7 +532,7 @@ function loadHole(idx) {
   return h;
 }
 
-loadHole(0);
+loadHole(0, 'portrait');
 
 function drawProp(ctx, p) {
   if (p.kind === 'tuft') {
@@ -985,7 +1020,7 @@ function stepBall(b, dt, windX, windY, flagX, flagY) {
 
 const SW = {
   IDLE: 'idle', AIMING: 'aiming', SHAPING: 'shaping',
-  POWER: 'power', ACCURACY: 'accuracy',
+  POWER: 'power', ACCURACY: 'accuracy', SWIPING: 'swiping',
   FLYING: 'flying', ROLLING: 'rolling', STOPPED: 'stopped',
   HAZARD: 'hazard', OB: 'ob', HOLED: 'holed',
 };
@@ -1024,9 +1059,11 @@ function shapeLabel(spinX, spinY) {
 }
 
 export default function GolfStoryScreen({ onExit }) {
+  const [orientation, setOrientation] = useState(null);
   const canvasRef = useRef(null);
   const staticRef = useRef(null);
   const holeIdxRef = useRef(0);
+  const swipeRef = useRef(null);
   const posRef = useRef({ x: TEE.x * TILE, y: TEE.y * TILE, facing: 'N', walkPhase: 0, moving: false });
   const ballRef = useRef({
     x: TEE.x * TILE - 4, y: TEE.y * TILE + 2, z: 0,
@@ -1065,10 +1102,14 @@ export default function GolfStoryScreen({ onExit }) {
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
+    if (!orientation) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
+
+    loadHole(0, orientation);
+    holeIdxRef.current = 0;
 
     staticRef.current = document.createElement('canvas');
 
@@ -1174,7 +1215,7 @@ export default function GolfStoryScreen({ onExit }) {
 
     const advanceHole = () => {
       holeIdxRef.current = (holeIdxRef.current + 1) % HOLES.length;
-      loadHole(holeIdxRef.current);
+      loadHole(holeIdxRef.current, orientation);
       rebuildStatic();
       randomizeWind();
       leavesRef.current = [];
@@ -1276,6 +1317,86 @@ export default function GolfStoryScreen({ onExit }) {
     window.addEventListener('keydown', kd);
     window.addEventListener('keyup', ku);
 
+    const startSwipe = (px, py) => {
+      const sw = swingRef.current;
+      if (sw.state === SW.AIMING || sw.state === SW.SHAPING) {
+        sw.state = SW.SWIPING;
+        swipeRef.current = {
+          startX: px, startY: py,
+          currentX: px, currentY: py,
+          maxMag: 0, maxDx: 0, maxDy: 0,
+        };
+        flushHud();
+      } else if (sw.state === SW.IDLE) {
+        const ball = ballRef.current;
+        const p = posRef.current;
+        if (Math.hypot(p.x - ball.x, p.y - ball.y) < 26) {
+          sw.state = SW.AIMING;
+          sw.aimAngle = Math.atan2(FLAG.x * TILE - ball.x, -(FLAG.y * TILE - ball.y));
+          if (surfaceAt(ball.x, ball.y) === T_GREEN) sw.clubIdx = CLUBS.length - 1;
+          flushHud();
+        }
+      } else if (sw.state === SW.HOLED) {
+        advanceHole();
+      }
+    };
+
+    const moveSwipe = (px, py) => {
+      const sw = swingRef.current;
+      if (sw.state !== SW.SWIPING) return;
+      const s = swipeRef.current;
+      if (!s) return;
+      s.currentX = px; s.currentY = py;
+      const dx = px - s.startX, dy = py - s.startY;
+      const mag = Math.hypot(dx, dy);
+      if (mag > s.maxMag) { s.maxMag = mag; s.maxDx = dx; s.maxDy = dy; }
+    };
+
+    const endSwipe = () => {
+      const sw = swingRef.current;
+      const s = swipeRef.current;
+      if (sw.state !== SW.SWIPING || !s) { swipeRef.current = null; return; }
+      const ball = ballRef.current;
+      const club = CLUBS[sw.clubIdx];
+      const power = Math.max(0.1, Math.min(1, s.maxMag / 180));
+      const accuracy = Math.max(-1, Math.min(1, s.maxDx / 60));
+      if (s.maxMag < 20) {
+        sw.state = SW.AIMING;
+        swipeRef.current = null;
+        flushHud();
+        return;
+      }
+      ball.lastGoodX = ball.x; ball.lastGoodY = ball.y;
+      launchBall(ball, sw.aimAngle, power, accuracy, sw.spinX, sw.spinY, club);
+      sw.power = power;
+      sw.accuracy = accuracy;
+      sw.state = SW.FLYING;
+      sw.strokeCount++;
+      swipeRef.current = null;
+      flushHud();
+    };
+
+    const pd = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+      const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+      startSwipe(px, py);
+      canvas.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    };
+    const pm = (e) => {
+      if (!swipeRef.current) return;
+      const rect = canvas.getBoundingClientRect();
+      const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+      const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+      moveSwipe(px, py);
+    };
+    const pu = (e) => { endSwipe(); };
+    canvas.addEventListener('pointerdown', pd);
+    canvas.addEventListener('pointermove', pm);
+    canvas.addEventListener('pointerup', pu);
+    canvas.addEventListener('pointercancel', pu);
+
     let last = performance.now();
     let hudAccum = 0;
 
@@ -1340,6 +1461,8 @@ export default function GolfStoryScreen({ onExit }) {
         const u = sw.accuracyPhase % 2;
         sw.accuracy = (u < 1 ? u : 2 - u) * 2 - 1;
         p.x = ball.x + 4; p.y = ball.y - 2; p.moving = false;
+      } else if (sw.state === SW.SWIPING) {
+        p.x = ball.x + 4; p.y = ball.y - 2; p.moving = false;
       } else if (sw.state === SW.FLYING || sw.state === SW.ROLLING) {
         stepBall(ball, dt, w.x, w.y, flagX, flagY);
         if (sw.state === SW.FLYING) {
@@ -1400,7 +1523,7 @@ export default function GolfStoryScreen({ onExit }) {
       if (staticRef.current) ctx.drawImage(staticRef.current, 0, 0);
       drawWaterSparkles(ctx, now);
 
-      if (sw.state === SW.AIMING || sw.state === SW.SHAPING || sw.state === SW.POWER || sw.state === SW.ACCURACY) {
+      if (sw.state === SW.AIMING || sw.state === SW.SHAPING || sw.state === SW.POWER || sw.state === SW.ACCURACY || sw.state === SW.SWIPING) {
         const club = CLUBS[sw.clubIdx];
         const pts = club.angle === 0
           ? simulatePutt(ball.x, ball.y, sw.aimAngle, 0, 1.0, club, sw.spinX)
@@ -1440,6 +1563,8 @@ export default function GolfStoryScreen({ onExit }) {
         drawMeter(ctx, viewW, viewH, dpr, 'POWER', sw.power, false);
       } else if (sw.state === SW.ACCURACY) {
         drawMeter(ctx, viewW, viewH, dpr, 'ACCURACY', sw.accuracy, true);
+      } else if (sw.state === SW.SWIPING && swipeRef.current) {
+        drawSwipeFeedback(ctx, swipeRef.current, dpr);
       }
 
       rafRef.current = requestAnimationFrame(tick);
@@ -1451,8 +1576,12 @@ export default function GolfStoryScreen({ onExit }) {
       window.removeEventListener('resize', resize);
       window.removeEventListener('keydown', kd);
       window.removeEventListener('keyup', ku);
+      canvas.removeEventListener('pointerdown', pd);
+      canvas.removeEventListener('pointermove', pm);
+      canvas.removeEventListener('pointerup', pu);
+      canvas.removeEventListener('pointercancel', pu);
     };
-  }, []);
+  }, [orientation]);
 
   if (Platform.OS !== 'web') {
     return (
@@ -1468,6 +1597,33 @@ export default function GolfStoryScreen({ onExit }) {
     );
   }
 
+  if (!orientation) {
+    return (
+      <View style={styles.root}>
+        <View style={pickerStyles.wrap}>
+          <Text style={pickerStyles.title}>CHOOSE YOUR DEVICE</Text>
+          <Text style={pickerStyles.sub}>Affects screen layout + course view orientation</Text>
+          <Pressable style={pickerStyles.card} onPress={() => setOrientation('portrait')}>
+            <Text style={pickerStyles.cardIcon}>▯</Text>
+            <Text style={pickerStyles.cardTitle}>iPHONE / PHONE</Text>
+            <Text style={pickerStyles.cardBody}>Portrait.  Hole plays bottom → top.</Text>
+            <Text style={pickerStyles.cardBody}>Swipe-back swing.</Text>
+          </Pressable>
+          <Pressable style={pickerStyles.card} onPress={() => setOrientation('landscape')}>
+            <Text style={pickerStyles.cardIcon}>▭</Text>
+            <Text style={pickerStyles.cardTitle}>iPAD / TABLET</Text>
+            <Text style={pickerStyles.cardBody}>Landscape.  Hole plays left → right.</Text>
+            <Text style={pickerStyles.cardBody}>Wider view, same swipe swing.</Text>
+          </Pressable>
+          <Pressable style={pickerStyles.back} onPress={onExit}>
+            <Text style={pickerStyles.backText}>← back to menu</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  const isLandscape = orientation === 'landscape';
   const hint = hintForState(hud.state);
   const dotLeft = 22 + hud.spinX * 18;
   const dotTop = 22 + hud.spinY * 18;
@@ -1545,16 +1701,47 @@ export default function GolfStoryScreen({ onExit }) {
 function hintForState(state) {
   switch (state) {
     case SW.IDLE: return 'Arrows: walk  ·  SPACE near ball: aim';
-    case SW.AIMING: return '← → aim  ·  ↑ ↓ club  ·  B: shape  ·  SPACE: swing  ·  ESC: cancel';
-    case SW.SHAPING: return 'Arrows: spin dot (draw/fade + high/low)  ·  R: reset  ·  B: back  ·  SPACE: swing';
+    case SW.AIMING: return '← → aim  ·  ↑ ↓ club  ·  B: shape  ·  SPACE or drag to swing  ·  ESC: cancel';
+    case SW.SHAPING: return 'Arrows: spin dot (draw/fade + high/low)  ·  R: reset  ·  B: back  ·  SPACE or drag to swing';
     case SW.POWER: return 'SPACE to lock POWER';
     case SW.ACCURACY: return 'SPACE to lock ACCURACY — center is pure';
+    case SW.SWIPING: return 'Pull back to set power, release to swing — horizontal drift = accuracy';
     case SW.FLYING: case SW.ROLLING: return '…';
     case SW.HAZARD: return 'Drop pending…';
     case SW.OB: return 'Drop pending…';
     case SW.HOLED: return 'SPACE for next hole';
     default: return '';
   }
+}
+
+function drawSwipeFeedback(ctx, swipe, dpr) {
+  const sx = swipe.startX, sy = swipe.startY;
+  const cx = swipe.currentX, cy = swipe.currentY;
+  const mag = Math.hypot(cx - sx, cy - sy);
+  const norm = Math.min(1, mag / 180);
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.lineWidth = 10 * dpr;
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(cx, cy); ctx.stroke();
+  const hue = 120 - 110 * norm;
+  ctx.strokeStyle = `hsla(${hue}, 80%, 60%, 0.9)`;
+  ctx.lineWidth = 6 * dpr;
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(cx, cy); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.lineWidth = 2 * dpr;
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(cx, cy); ctx.stroke();
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.beginPath(); ctx.arc(sx, sy, (10 + norm * 26) * dpr, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = `hsla(${hue}, 80%, 55%, 0.7)`;
+  ctx.beginPath(); ctx.arc(sx, sy, (8 + norm * 22) * dpr, 0, Math.PI * 2); ctx.fill();
+  ctx.font = `bold ${14 * dpr}px ui-monospace, Menlo, monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#f5f5ec';
+  ctx.fillText(`${Math.round(norm * 100)}%`, cx, cy - 24 * dpr);
+  ctx.restore();
 }
 
 function drawMeter(ctx, viewW, viewH, dpr, label, value, isAccuracy) {
@@ -1603,6 +1790,39 @@ function drawMeter(ctx, viewW, viewH, dpr, label, value, isAccuracy) {
 
 const HUD_BORDER = '#f5f5ec';
 const HUD_BG = 'rgba(14,26,18,0.9)';
+
+const pickerStyles = StyleSheet.create({
+  wrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
+  title: {
+    color: '#fff6d8', fontSize: 22, fontWeight: '900', letterSpacing: 2,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+    marginBottom: 6,
+  },
+  sub: {
+    color: '#a9d4a9', fontSize: 12, marginBottom: 28,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  card: {
+    backgroundColor: '#0e1a12', borderWidth: 3, borderColor: '#f5f5ec',
+    paddingVertical: 18, paddingHorizontal: 24, marginBottom: 16,
+    width: 300, alignItems: 'center',
+  },
+  cardIcon: {
+    color: '#fbe043', fontSize: 40, marginBottom: 6, lineHeight: 44,
+  },
+  cardTitle: {
+    color: '#f5f5ec', fontSize: 16, fontWeight: '900', letterSpacing: 1, marginBottom: 8,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  cardBody: {
+    color: '#bfc4b9', fontSize: 11, marginTop: 2,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  back: {
+    marginTop: 12, paddingVertical: 8, paddingHorizontal: 16,
+  },
+  backText: { color: '#a9d4a9', fontSize: 13 },
+});
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.skyVoid },
