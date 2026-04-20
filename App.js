@@ -1840,7 +1840,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.36 · GS spike v0.10';
+const BUILD_VERSION = 'IGT v3.37 · GS spike v0.10';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -2979,25 +2979,44 @@ export default function App() {
             }
           }
 
+          // Update vertical physics but DO NOT bounce yet — we first want to
+          // check if the ball is about to land in water. Previously the
+          // bounce ran before the water check, so the ball visibly popped
+          // back up for one frame before splashing.
           flight.vz -= GRAVITY * dt;
           flight.z += flight.vz * dt;
-          if (flight.z <= 0) {
-            const impactVz = Math.abs(flight.vz);
-            flight.z = 0;
-            if (impactVz > MIN_BOUNCE_VZ) {
-              flight.vz = impactVz * surfacePhysics.bounce;
-              vel.x *= surfacePhysics.landingDamping;
-              vel.y *= surfacePhysics.landingDamping;
-            } else {
-              flight.vz = 0;
-            }
-          }
 
-          // Position update uses post-drag velocity
+          // Position update uses post-drag velocity.
           let next = {
             x: ballRef.current.x + vel.x * dt,
             y: ballRef.current.y + vel.y * dt
           };
+
+          // Peek: is the ball at (or beneath) the ground AND in a water
+          // area at its new position? If so, splash it NOW — skip bounce.
+          // Also fires for a ball rolling along the ground into a pond.
+          const aboutToLand = flight.z <= 0.5 || (flight.vz < 0 && flight.z <= 1.5);
+          const waterHazEarly = aboutToLand ? findWaterHazAt(tickHole, next) : null;
+          let waterHaz = waterHazEarly;
+
+          if (!waterHaz) {
+            // Normal path: apply the ground bounce.
+            if (flight.z <= 0) {
+              const impactVz = Math.abs(flight.vz);
+              flight.z = 0;
+              if (impactVz > MIN_BOUNCE_VZ) {
+                flight.vz = impactVz * surfacePhysics.bounce;
+                vel.x *= surfacePhysics.landingDamping;
+                vel.y *= surfacePhysics.landingDamping;
+              } else {
+                flight.vz = 0;
+              }
+            }
+          } else {
+            // Ball is hitting water — pin z to 0 so the splash visual lines
+            // up with the surface instead of appearing from below ground.
+            flight.z = 0;
+          }
 
           const restitution = surfacePhysics.wallRestitution;
           // Always resolve collisions — trees now have height, so airborne
@@ -3014,10 +3033,11 @@ export default function App() {
             shotCarryRef.current = Math.hypot(next.x - shotStartPosRef.current.x, next.y - shotStartPosRef.current.y) * YARDS_PER_WORLD;
           }
 
-          // Water trigger: fires when the ball touches the water surface
-          // (landing, rolling, or low-bouncing). A high-flying shot at z > 3
-          // passes over freely.
-          const waterHaz = flight.z <= 3 ? findWaterHazAt(tickHole, next) : null;
+          // Secondary water catch: rolling along the ground into water even
+          // without the "aboutToLand" flag (e.g., already at z=0 rolling).
+          if (!waterHaz && flight.z <= 0.5) {
+            waterHaz = findWaterHazAt(tickHole, next);
+          }
           if (waterHaz) {
             // Ball entered water — stop motion, sink the ball, show relief menu.
             // Real golf penalty-area rules (USGA Rule 17): +1 stroke plus one
