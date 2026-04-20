@@ -1175,9 +1175,7 @@ export default function GolfStoryScreen({ onExit }) {
 
       if (sw.state === SW.AIMING || sw.state === SW.SHAPING || sw.state === SW.POWER || sw.state === SW.ACCURACY) {
         const club = CLUBS[sw.clubIdx];
-        const powerForPredict = sw.state === SW.AIMING || sw.state === SW.SHAPING ? 1.0 : Math.max(0.15, sw.power);
-        const accForPredict = sw.state === SW.ACCURACY ? sw.accuracy : 0;
-        const pts = simulateFlight(ball.x, ball.y, sw.aimAngle, accForPredict, powerForPredict, sw.spinX, sw.spinY, club, w.x, w.y, true);
+        const pts = simulateFlight(ball.x, ball.y, sw.aimAngle, 0, 1.0, sw.spinX, sw.spinY, club, w.x, w.y, true);
         drawShotPredict(ctx, pts);
       }
 
