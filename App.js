@@ -1803,7 +1803,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.13';
+const BUILD_VERSION = 'IGT v3.14';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -5503,7 +5503,12 @@ export default function App() {
         {/* Shot Stats Card */}
         {showShotStats && lastShotStats && !ballMoving ? (
           <Pressable style={styles.shotStatsOverlay} onPress={() => setShowShotStats(false)}>
-            <View style={styles.shotStatsCard}>
+            <Pressable style={styles.shotStatsCard} onPress={(e) => e.stopPropagation?.()}>
+              <ScrollView
+                style={styles.shotStatsScroll}
+                contentContainerStyle={styles.shotStatsScrollContent}
+                showsVerticalScrollIndicator
+              >
               <View style={styles.shotStatsHeaderRow}>
                 <Text style={styles.shotStatsTitle}>📊 Shot Stats</Text>
                 {lastShotStats.swingId ? (
@@ -5759,7 +5764,8 @@ export default function App() {
                 </Pressable>
               </View>
               <Text style={styles.shotStatsDismiss}>Tap outside to dismiss</Text>
-            </View>
+              </ScrollView>
+            </Pressable>
           </Pressable>
         ) : null}
 
@@ -7845,10 +7851,17 @@ const styles = StyleSheet.create({
   shotStatsCard: {
     backgroundColor: 'rgba(20, 38, 22, 0.96)',
     borderRadius: 16,
-    padding: 20,
     width: 280,
+    maxHeight: '85%',
     borderWidth: 1,
-    borderColor: 'rgba(100, 180, 100, 0.3)'
+    borderColor: 'rgba(100, 180, 100, 0.3)',
+    overflow: 'hidden'
+  },
+  shotStatsScroll: {
+    maxHeight: '100%'
+  },
+  shotStatsScrollContent: {
+    padding: 20
   },
   shotStatsTitle: {
     color: '#e8f3e0',
