@@ -1840,7 +1840,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.29 · GS spike v0.7.3';
+const BUILD_VERSION = 'IGT v3.30 · GS spike v0.7.3';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -3572,40 +3572,50 @@ export default function App() {
         // Tree vertical profile: narrow trunk up to canopy start, wide canopy above.
         const tp = getTreePhysics(o);
         if (ballZ >= tp.h) return; // ball is over the tree
-        const effectiveR = ballZ < tp.canopyStart ? tp.trunkR : o.r;
+        // Smooth canopy ramp: trunk radius below canopyStart, linearly
+        // widens to full canopy radius at tree top. Prior hard switch at
+        // canopyStart caused a sudden mid-flight collision the moment a
+        // rising ball crossed that altitude.
+        let effectiveR;
+        if (ballZ < tp.canopyStart) {
+          effectiveR = tp.trunkR;
+        } else {
+          const ramp = Math.min(1, Math.max(0, (ballZ - tp.canopyStart) / Math.max(0.1, tp.h - tp.canopyStart)));
+          effectiveR = tp.trunkR + (o.r - tp.trunkR) * ramp;
+        }
         const dx = adjusted.x - o.x;
         const dy = adjusted.y - o.y;
         const dist = Math.hypot(dx, dy);
         const minDist = effectiveR + radiusWorld;
         if (dist < minDist) {
           const normal = dist < 0.001 ? { x: 1, y: 0 } : { x: dx / dist, y: dy / dist };
-          adjusted = {
-            x: o.x + normal.x * (minDist + 0.1),
-            y: o.y + normal.y * (minDist + 0.1)
-          };
           const vn = vel.x * normal.x + vel.y * normal.y;
           if (isAirborne) {
-            // Branches absorb the ball's energy instead of reflecting it.
-            // Previously this code applied a 1.2x restitution reflection
-            // AND a 0.4x tangential damp — a ball flying into a canopy
-            // would reverse direction and plummet, which showed up on
-            // screen as a sharp right-angle kink in the trajectory.
-            // New behavior: zero out the component of velocity heading
-            // INTO the tree (no pass-through, no bounce back) and bleed
-            // the tangential component so the ball glances off and falls.
+            // Canopy as a drag ZONE, not a rigid collision. No position
+            // teleport and no reflection — those caused a 30+ unit/s
+            // velocity spike in one tick (the "sudden movement" the
+            // player saw). Instead, while the ball is inside the canopy
+            // sphere, we apply continuous time-based drag per tick. The
+            // ball smoothly loses ~75%/sec of its horizontal speed and
+            // 50%/sec of vz, so a ball clipping leaves slows and drops,
+            // and a ball flying through the full canopy width loses
+            // most of its energy — but every frame of the transition is
+            // visually smooth.
+            const drag = Math.pow(0.25, dt);
+            vel.x *= drag;
+            vel.y *= drag;
+            if (flight) flight.vz *= Math.pow(0.5, dt);
+          } else {
+            // Ground-level: ball stops at the trunk. Preserve the position
+            // adjustment + standard reflection for a proper bounce.
+            adjusted = {
+              x: o.x + normal.x * (minDist + 0.1),
+              y: o.y + normal.y * (minDist + 0.1)
+            };
             if (vn < 0) {
-              vel.x -= vn * normal.x;
-              vel.y -= vn * normal.y;
+              vel.x -= (1 + restitution) * vn * normal.x;
+              vel.y -= (1 + restitution) * vn * normal.y;
             }
-            const absorb = 0.65;
-            vel.x *= absorb;
-            vel.y *= absorb;
-            if (flight) {
-              flight.vz = Math.min(flight.vz, 0) * 0.7;
-            }
-          } else if (vn < 0) {
-            vel.x -= (1 + restitution) * vn * normal.x;
-            vel.y -= (1 + restitution) * vn * normal.y;
           }
         }
       }
