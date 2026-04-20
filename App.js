@@ -1840,7 +1840,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.30 · GS spike v0.7.3';
+const BUILD_VERSION = 'IGT v3.31 · GS spike v0.7.3';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -2158,17 +2158,38 @@ const expandRect = (rect, inset) => ({
 // the ball can come to rest on the pond without ever crossing a rect tile.
 // Returns a {x, y, w, h} rect suitable for drop-relief math, or null.
 const findWaterHazAt = (hole, point) => {
-  const rect = hole?.hazards?.find((h) => h.type === 'waterRect' && pointInRect(point, h));
-  if (rect) return rect;
-  const vec = hole?.editorVectors?.hazards?.water?.find((sh) => pointInPolygon(point, vectorShapeToPolygon(sh)));
-  if (vec) {
-    const xs = vec.points.map((p) => p.x);
-    const ys = vec.points.map((p) => p.y);
-    const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const minY = Math.min(...ys), maxY = Math.max(...ys);
-    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  // Union of all rect + vector water shapes so the returned bbox fully
+  // contains the visible pond. Lateral drop calcs use this bbox +
+  // padding to guarantee the drop point sits clearly on dry land and
+  // doesn't immediately re-trigger the water-in-lie check.
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let hit = false;
+  const rects = hole?.hazards?.filter((h) => h.type === 'waterRect') || [];
+  for (const r of rects) {
+    if (pointInRect(point, r)) {
+      hit = true;
+    }
+    // always accumulate bbox — even rects we didn't hit contribute to the
+    // full pond footprint, because the ball can be in one rect but the
+    // pond extends further and we want drop options outside the whole thing.
+    if (r.x < minX) minX = r.x;
+    if (r.y < minY) minY = r.y;
+    if (r.x + r.w > maxX) maxX = r.x + r.w;
+    if (r.y + r.h > maxY) maxY = r.y + r.h;
   }
-  return null;
+  const vecs = hole?.editorVectors?.hazards?.water || [];
+  for (const sh of vecs) {
+    const poly = vectorShapeToPolygon(sh);
+    if (!hit && pointInPolygon(point, poly)) hit = true;
+    for (const p of poly) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+  }
+  if (!hit) return null;
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 };
 
 const getSurfaceAtPoint = (hole, point) => {
@@ -2949,7 +2970,7 @@ export default function App() {
           // Always resolve collisions — trees now have height, so airborne
           // shots can clip branches/trunk. Rect walls stay ground-only (gated
           // inside the resolver).
-          next = resolveGroundCollisions(tickHole, next, vel, restitution, flight);
+          next = resolveGroundCollisions(tickHole, next, vel, restitution, flight, dt);
 
           // Track peak height
           if (flight.z > shotPeakHeightRef.current) shotPeakHeightRef.current = flight.z;
@@ -2978,10 +2999,10 @@ export default function App() {
             const lastPos = lastShotPosRef.current || tickHole.ballStart;
             // Lateral relief — drop just outside the nearest edge of the water.
             const edgeDists = [
-              { d: Math.abs(entryPos.x - waterHaz.x), pos: { x: waterHaz.x - 10, y: entryPos.y } },
-              { d: Math.abs(entryPos.x - (waterHaz.x + waterHaz.w)), pos: { x: waterHaz.x + waterHaz.w + 10, y: entryPos.y } },
-              { d: Math.abs(entryPos.y - waterHaz.y), pos: { x: entryPos.x, y: waterHaz.y - 10 } },
-              { d: Math.abs(entryPos.y - (waterHaz.y + waterHaz.h)), pos: { x: entryPos.x, y: waterHaz.y + waterHaz.h + 10 } }
+              { d: Math.abs(entryPos.x - waterHaz.x), pos: { x: waterHaz.x - 18, y: entryPos.y } },
+              { d: Math.abs(entryPos.x - (waterHaz.x + waterHaz.w)), pos: { x: waterHaz.x + waterHaz.w + 18, y: entryPos.y } },
+              { d: Math.abs(entryPos.y - waterHaz.y), pos: { x: entryPos.x, y: waterHaz.y - 18 } },
+              { d: Math.abs(entryPos.y - (waterHaz.y + waterHaz.h)), pos: { x: entryPos.x, y: waterHaz.y + waterHaz.h + 18 } }
             ];
             edgeDists.sort((a, b) => a.d - b.d);
             const lateralDrop = edgeDists[0].pos;
@@ -3189,10 +3210,10 @@ export default function App() {
         const entryPos = { x: ball.x, y: ball.y };
         const lastPos = lastShotPosRef.current || currentHole.ballStart;
         const edgeDists = [
-          { d: Math.abs(entryPos.x - waterHaz.x), pos: { x: waterHaz.x - 10, y: entryPos.y } },
-          { d: Math.abs(entryPos.x - (waterHaz.x + waterHaz.w)), pos: { x: waterHaz.x + waterHaz.w + 10, y: entryPos.y } },
-          { d: Math.abs(entryPos.y - waterHaz.y), pos: { x: entryPos.x, y: waterHaz.y - 10 } },
-          { d: Math.abs(entryPos.y - (waterHaz.y + waterHaz.h)), pos: { x: entryPos.x, y: waterHaz.y + waterHaz.h + 10 } }
+          { d: Math.abs(entryPos.x - waterHaz.x), pos: { x: waterHaz.x - 18, y: entryPos.y } },
+          { d: Math.abs(entryPos.x - (waterHaz.x + waterHaz.w)), pos: { x: waterHaz.x + waterHaz.w + 18, y: entryPos.y } },
+          { d: Math.abs(entryPos.y - waterHaz.y), pos: { x: entryPos.x, y: waterHaz.y - 18 } },
+          { d: Math.abs(entryPos.y - (waterHaz.y + waterHaz.h)), pos: { x: entryPos.x, y: waterHaz.y + waterHaz.h + 18 } }
         ];
         edgeDists.sort((a, b) => a.d - b.d);
         const lateralDrop = edgeDists[0].pos;
@@ -3529,7 +3550,7 @@ export default function App() {
     return { xNorm, yNorm, launchAdjust, spinAdjust, curveDeg, shapeLabel, flightLabel };
   };
 
-  const resolveGroundCollisions = (hole, next, vel, restitution, flight = null) => {
+  const resolveGroundCollisions = (hole, next, vel, restitution, flight = null, dt = 1 / 60) => {
     const radiusWorld = BALL_RADIUS_WORLD;
     const ballZ = flight ? flight.z : 0;
     const isAirborne = ballZ > 1.15;
