@@ -1840,7 +1840,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.37 · GS spike v0.10';
+const BUILD_VERSION = 'IGT v3.37 · GS spike v0.11';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -4532,7 +4532,7 @@ export default function App() {
                 onPress={() => setGameScreen('golf-story')}
               >
                 <Text style={styles.spaceMenuBtnLeft}>GOLF STORY</Text>
-                <Text style={styles.spaceMenuBtnRight}>MOBILE v0.10 &gt;</Text>
+                <Text style={styles.spaceMenuBtnRight}>TOUCH v0.11 &gt;</Text>
                 <View style={[styles.lCorner, styles.lCornerTopLeft]} />
                 <View style={[styles.lCorner, styles.lCornerTopRight]} />
                 <View style={[styles.lCorner, styles.lCornerBottomLeft]} />
