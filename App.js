@@ -2718,10 +2718,15 @@ export default function App() {
             const airDrag = Math.max(0, 1 - 0.14 * dt);
             vel.x *= airDrag;
             vel.y *= airDrag;
-            // Wind force while airborne
+            // Wind force while airborne — scales with ball HEIGHT so chips and
+            // low-line pitches are barely affected while high arcs get the full
+            // push. Real golf: a low chip stays under the wind; only high
+            // shots get carried. heightGate ramps 0→1 over 0–6 world units of
+            // altitude, which roughly matches "above the crowd" threshold.
             const wind = roundWindRef.current[holeIndexRef.current] || { speed: 0, dir: 'N' };
             const wDir = WIND_DIRS[wind.dir] || { x: 0, y: 0 };
-            const wForce = wind.speed * WIND_FORCE_SCALE * shotWindResistRef.current * dt;
+            const heightGate = Math.min(1, Math.max(0, flight.z / 6));
+            const wForce = wind.speed * WIND_FORCE_SCALE * shotWindResistRef.current * heightGate * dt;
             vel.x += wDir.x * wForce;
             vel.y += wDir.y * wForce;
 
@@ -3512,7 +3517,9 @@ export default function App() {
     // what the UI promised — most noticeably, touchFactor was ignored and
     // power characters fell short of their "stock" distance.
     const spinLaunchMod = clamp(0.94 + (launch.spinFactor - 1) * 0.35, 0.82, 1.12);
-    const actualHangTime = (3.2 + selectedClub.launch * 0.8)
+    // Hang time base lowered from (3.2 + launch*0.8) to (2.4 + launch*0.55)
+    // — shots arc lower, especially partial-power wedges that used to balloon.
+    const actualHangTime = (2.4 + selectedClub.launch * 0.55)
       * launch.launchRatio
       * launch.shotMetrics.launchAdjust
       * spinLaunchMod;
@@ -3558,6 +3565,7 @@ export default function App() {
       };
       flightRef.current = { z: 0, vz: 0 };
     } else {
+<<<<<<< Updated upstream
       // Real golf: all clubs peak ~90-105ft (Trackman PGA data).
       // Short shots used to fly as high as long ones because hang time scaled
       // linearly with launchRatio; that made 50-yd wedges balloon and get
@@ -3565,6 +3573,11 @@ export default function App() {
       // run flatter and expose themselves to the air for less time.
       const trajectoryScale = Math.pow(clamp(launch.launchRatio, 0, 1.1), 1.3);
       const targetHangTime = (3.2 + selectedClub.launch * 0.8) * trajectoryScale;
+=======
+      // Hang-time base lowered from (3.2 + launch*0.8) to (2.4 + launch*0.55)
+      // — lower arcs, especially for partial-power wedges.
+      const targetHangTime = (2.4 + selectedClub.launch * 0.55) * launch.launchRatio;
+>>>>>>> Stashed changes
       const launchVz = (GRAVITY * targetHangTime * 0.5) * launch.shotMetrics.launchAdjust * clamp(0.94 + (launch.spinFactor - 1) * 0.35, 0.82, 1.12);
       flightRef.current = {
         z: 0.08,
@@ -3855,9 +3868,12 @@ export default function App() {
 
   const screenBall = toScreen(ball);
   const screenCup = toScreen(currentHole.cup);
-  // Smooth arc: sqrt scale prevents ceiling effect while keeping ball on-screen
-  const rawLiftPx = ballHeight * pixelsPerWorld * 1.55;
-  const liftPx = rawLiftPx > 0 ? Math.sqrt(rawLiftPx) * 8 : 0;
+  // Visual lift: linear with a soft cap so short shots read as LOW and long
+  // drives still fit on screen. Previously used sqrt compression which
+  // exaggerated chip-shot height (short shots looked much higher than they
+  // physically were).
+  const rawLiftPx = ballHeight * pixelsPerWorld * 0.85;
+  const liftPx = Math.min(rawLiftPx, 78);
   const airborneRatio = clamp(ballHeight / 35, 0, 1);
   const ballVisualScale = 1 - airborneRatio * 0.12;
   const shadowScale = 1 + airborneRatio * 0.5;
@@ -4616,7 +4632,11 @@ export default function App() {
              * Z-order (both paths): water → rough/deepRough/desert →
              * fairway → fringe → green → slope arrows → tee → sand → trees → cup.
              */}
-            {currentHole.editorVectors ? (
+            {/* Single unified SVG terrain layer — always uses the shared theme
+                patterns. When editorVectors exist, we draw bezier paths; when
+                only rect-based terrain exists (hand-authored Pine Valley etc.),
+                we build rounded-rect SVG paths and apply the SAME patterns. */}
+            {true ? (
               <Svg
                 pointerEvents="none"
                 width={WORLD.w * scaleX}
@@ -4631,16 +4651,29 @@ export default function App() {
                     matching the designer's fillShape(): solid color first, then
                     the tile pattern painted on top at its own opacity. */}
 
-                {/* Water (background) — base fill + broken-line ripple pattern (NO rim per Mike's picks). */}
-                {currentHole.editorVectors?.hazards?.water?.map((shape, i) => {
-                  const d = pointsToSvgD(shape.points);
-                  return (
-                    <SvgG key={`vw-${i}`}>
-                      <SvgPath d={d} fill={SURFACE_COLORS.water} />
-                      <SvgPath d={d} fill={`url(#${PATTERN_ID.water})`} />
-                    </SvgG>
-                  );
-                })}
+                {/* Water (background) — base fill + broken-line ripple pattern (NO rim per Mike's picks).
+                    Prefer vector; fall back to rect-based water hazards on hand-authored courses. */}
+                {currentHole.editorVectors?.hazards?.water?.length ? (
+                  currentHole.editorVectors.hazards.water.map((shape, i) => {
+                    const d = pointsToSvgD(shape.points);
+                    return (
+                      <SvgG key={`vw-${i}`}>
+                        <SvgPath d={d} fill={SURFACE_COLORS.water} />
+                        <SvgPath d={d} fill={`url(#${PATTERN_ID.water})`} />
+                      </SvgG>
+                    );
+                  })
+                ) : (
+                  currentHole.hazards?.filter((h) => h.type === 'waterRect').map((h, i) => {
+                    const rx = Math.min(8, h.w / 2, h.h / 2);
+                    return (
+                      <SvgG key={`rw-${i}`}>
+                        <SvgRect x={h.x} y={h.y} width={h.w} height={h.h} rx={rx} ry={rx} fill={SURFACE_COLORS.water} />
+                        <SvgRect x={h.x} y={h.y} width={h.w} height={h.h} rx={rx} ry={rx} fill={`url(#${PATTERN_ID.water})`} />
+                      </SvgG>
+                    );
+                  }) || null
+                )}
 
                 {/* Desert / deepRough / rough surface patches — each gets its own pattern. */}
                 {currentHole.terrain?.desert?.map((s, i) => {
@@ -4671,19 +4704,47 @@ export default function App() {
                   );
                 }) || null}
 
-                {/* Fairway — base bright green + mowing-stripe pattern overlay. */}
-                {currentHole.editorVectors?.terrain?.fairway?.map((shape, i) => {
-                  const d = pointsToSvgD(shape.points);
-                  return (
-                    <SvgG key={`vf-${i}`}>
-                      <SvgPath d={d} fill={SURFACE_COLORS.fairway} />
-                      <SvgPath d={d} fill={`url(#${PATTERN_ID.fairway})`} />
-                    </SvgG>
-                  );
-                })}
+                {/* Fairway — prefer editorVectors bezier paths; fall back to
+                    rounded-rect SVG paths when only terrain.fairway rects exist. */}
+                {currentHole.editorVectors?.terrain?.fairway?.length ? (
+                  currentHole.editorVectors.terrain.fairway.map((shape, i) => {
+                    const d = pointsToSvgD(shape.points);
+                    return (
+                      <SvgG key={`vf-${i}`}>
+                        <SvgPath d={d} fill={SURFACE_COLORS.fairway} />
+                        <SvgPath d={d} fill={`url(#${PATTERN_ID.fairway})`} />
+                      </SvgG>
+                    );
+                  })
+                ) : (
+                  currentHole.terrain?.fairway?.map((f, i) => {
+                    const rx = Math.min(f.r || 8, f.w / 2, f.h / 2);
+                    return (
+                      <SvgG key={`rf-${i}`}>
+                        <SvgRect
+                          x={f.x}
+                          y={f.y}
+                          width={f.w}
+                          height={f.h}
+                          rx={rx}
+                          ry={rx}
+                          fill={SURFACE_COLORS.fairway}
+                        />
+                        <SvgRect
+                          x={f.x}
+                          y={f.y}
+                          width={f.w}
+                          height={f.h}
+                          rx={rx}
+                          ry={rx}
+                          fill={`url(#${PATTERN_ID.fairway})`}
+                        />
+                      </SvgG>
+                    );
+                  }) || null
+                )}
 
-                {/* Fringe + green. Fringe is the green path expanded outward by
-                    FRINGE_BUFFER world units. Each gets its own pattern overlay. */}
+                {/* Fringe + green. Prefer vector path; fall back to rect shape. */}
                 {currentHole.editorVectors?.terrain?.green?.points?.length >= 2 ? (
                   <SvgG key="vg">
                     {(() => {
@@ -4703,85 +4764,52 @@ export default function App() {
                       );
                     })()}
                   </SvgG>
+                ) : currentHole.terrain?.green ? (
+                  <SvgG key="rg">
+                    {(() => {
+                      const g = currentHole.terrain.green;
+                      const fx = g.x - FRINGE_BUFFER;
+                      const fy = g.y - FRINGE_BUFFER;
+                      const fw = g.w + FRINGE_BUFFER * 2;
+                      const fh = g.h + FRINGE_BUFFER * 2;
+                      const fr = Math.min((g.r || 10) + FRINGE_BUFFER, fw / 2, fh / 2);
+                      const gr = Math.min(g.r || 10, g.w / 2, g.h / 2);
+                      return (
+                        <>
+                          <SvgRect x={fx} y={fy} width={fw} height={fh} rx={fr} ry={fr} fill={SURFACE_COLORS.fringe} />
+                          <SvgRect x={fx} y={fy} width={fw} height={fh} rx={fr} ry={fr} fill={`url(#${PATTERN_ID.fringe})`} />
+                          <SvgRect x={g.x} y={g.y} width={g.w} height={g.h} rx={gr} ry={gr} fill={SURFACE_COLORS.green} />
+                          <SvgRect x={g.x} y={g.y} width={g.w} height={g.h} rx={gr} ry={gr} fill={`url(#${PATTERN_ID.green})`} />
+                        </>
+                      );
+                    })()}
+                  </SvgG>
                 ) : null}
 
-                {/* Sand bunkers — pure stipple, NO rim (Mike's pick). */}
-                {currentHole.editorVectors?.hazards?.sand?.map((shape, i) => {
-                  const d = pointsToSvgD(shape.points);
-                  return (
-                    <SvgG key={`vs-${i}`}>
-                      <SvgPath d={d} fill={SURFACE_COLORS.sand} />
-                      <SvgPath d={d} fill={`url(#${PATTERN_ID.sand})`} />
-                    </SvgG>
-                  );
-                })}
+                {/* Sand bunkers — prefer vector; fall back to rect-based paths. */}
+                {currentHole.editorVectors?.hazards?.sand?.length ? (
+                  currentHole.editorVectors.hazards.sand.map((shape, i) => {
+                    const d = pointsToSvgD(shape.points);
+                    return (
+                      <SvgG key={`vs-${i}`}>
+                        <SvgPath d={d} fill={SURFACE_COLORS.sand} />
+                        <SvgPath d={d} fill={`url(#${PATTERN_ID.sand})`} />
+                      </SvgG>
+                    );
+                  })
+                ) : (
+                  currentHole.hazards?.filter((h) => h.type === 'sandRect').map((h, i) => {
+                    const rx = Math.min(8, h.w / 2, h.h / 2);
+                    return (
+                      <SvgG key={`rs-${i}`}>
+                        <SvgRect x={h.x} y={h.y} width={h.w} height={h.h} rx={rx} ry={rx} fill={SURFACE_COLORS.sand} />
+                        <SvgRect x={h.x} y={h.y} width={h.w} height={h.h} rx={rx} ry={rx} fill={`url(#${PATTERN_ID.sand})`} />
+                      </SvgG>
+                    );
+                  }) || null
+                )}
               </Svg>
-            ) : (
-              <>
-                {/* Layer 1: water hazards (background — fairway paints over them) */}
-                {currentHole.hazards?.filter((h) => h.type === 'waterRect').map((h, i) => (
-                  <View
-                    key={`water-${i}`}
-                    style={[
-                      styles.water,
-                      {
-                        left: h.x * scaleX,
-                        top: h.y * scaleY,
-                        width: h.w * scaleX,
-                        height: h.h * scaleY
-                      }
-                    ]}
-                  />
-                ))}
-
-                {currentHole.terrain?.fairway?.map((f, i) => (
-                  <View
-                    key={`fair-${i}`}
-                    style={[
-                      styles.fairway,
-                      {
-                        left: f.x * scaleX,
-                        top: f.y * scaleY,
-                        width: f.w * scaleX,
-                        height: f.h * scaleY,
-                        borderRadius: (f.r || 8) * scaleX
-                      }
-                    ]}
-                  >
-                    <View style={styles.fairwaySheen} />
-                  </View>
-                ))}
-
-                {currentHole.terrain?.green ? (
-                  <>
-                    <View
-                      style={[
-                        styles.fringe,
-                        {
-                          left: (currentHole.terrain.green.x - FRINGE_BUFFER) * scaleX,
-                          top: (currentHole.terrain.green.y - FRINGE_BUFFER) * scaleY,
-                          width: (currentHole.terrain.green.w + FRINGE_BUFFER * 2) * scaleX,
-                          height: (currentHole.terrain.green.h + FRINGE_BUFFER * 2) * scaleY,
-                          borderRadius: (currentHole.terrain.green.r + FRINGE_BUFFER) * scaleX
-                        }
-                      ]}
-                    />
-                    <View
-                      style={[
-                        styles.green,
-                        {
-                          left: currentHole.terrain.green.x * scaleX,
-                          top: currentHole.terrain.green.y * scaleY,
-                          width: currentHole.terrain.green.w * scaleX,
-                          height: currentHole.terrain.green.h * scaleY,
-                          borderRadius: currentHole.terrain.green.r * scaleX
-                        }
-                      ]}
-                    />
-                  </>
-                ) : null}
-              </>
-            )}
+            ) : null}
 
             {/* Slope arrows render on top of the green regardless of path (they're per-slope-zone annotations, not part of the vector data) */}
             {currentHole.terrain?.green && puttingMode ? slopeArrows.map((arrow) => (
@@ -4856,23 +4884,9 @@ export default function App() {
                 })
               : null}
 
-            {/* Layer 4: sand bunkers (on top of fairway/green — bunkers are surface features).
-             *  For editorVectors courses these were already drawn inside the SVG block above;
-             *  only render rect sand here for hand-authored courses. */}
-            {!currentHole.editorVectors && currentHole.hazards?.filter((h) => h.type === 'sandRect').map((h, i) => (
-              <View
-                key={`sand-${i}`}
-                style={[
-                  styles.sand,
-                  {
-                    left: h.x * scaleX,
-                    top: h.y * scaleY,
-                    width: h.w * scaleX,
-                    height: h.h * scaleY
-                  }
-                ]}
-              />
-            ))}
+            {/* (Sand bunkers are drawn inside the unified SVG terrain block above —
+             *  vector path for editorVectors courses, rect fallback for hand-authored.
+             *  No legacy View-based sand rendering needed.) */}
 
             {/* Trees + rock bumpers — species-aware SVG art matching the
                 designer's drawTree() exactly. Any `look` that's in the TREES
