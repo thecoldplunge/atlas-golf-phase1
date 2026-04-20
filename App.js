@@ -1119,12 +1119,13 @@ const PHYSICS_CONFIG = {
 };
 const CURVE_FORCE = PHYSICS_CONFIG.curveForce;
 const CURVE_LAUNCH_BLEND = PHYSICS_CONFIG.curveLaunchBlend;
-// Magnus-style curve tuning. CURVE_STRENGTH is the per-unit-forward-speed
-// sideways acceleration factor when spinNorm=±1. Ball deflection grows
-// progressively during flight (like a real hook/slice), so the aim preview
-// and the actual flight both banana smoothly out to the landing spot.
-// Tuned so spinNorm=±1 gives ~30yd side deflection on a full driver.
-const CURVE_STRENGTH = 0.12;
+// Magnus-style curve tuning. CURVE_STRENGTH scales the per-tick sideways
+// acceleration perpendicular to the ball's current velocity. Ball
+// deflection grows progressively during flight — straight at launch,
+// banana out to a max side-distance near landing.
+// Tuned against the driver reference shot: max slice (spinNorm=±1) lands
+// ~42yd side, power fade ~26yd, slight fade ~9yd.
+const CURVE_STRENGTH = 0.30;
 const CURVE_SPIN_DECAY_PER_SEC = 0.995;
 
 // Haptic feedback: vibrate on Android/Chrome, audio tick on iOS Safari
@@ -1839,7 +1840,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.28 · GS spike v0.7.2';
+const BUILD_VERSION = 'IGT v3.29 · GS spike v0.7.2';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
