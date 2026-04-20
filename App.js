@@ -1650,10 +1650,13 @@ const GOLFERS = [
 // ═══════════════ EQUIPMENT CATALOG ═══════════════
 // Each club item has stats that modify gameplay. "Generic" brand = starter gear.
 // Categories: drivers, fairwayWoods, hybrids, irons, wedges, putters
+const PRO_STATS = { distance: 100, accuracy: 100, forgiveness: 100, spin: 100 };
+const PRO_PUTTER_STATS = { distance: 100, accuracy: 100, forgiveness: 100, feel: 100 };
 const EQUIPMENT_CATALOG = {
   drivers: [
     { id: 'generic_dr', name: 'Generic Driver', brand: 'Generic', clubKey: 'DR',
-      stats: { distance: 50, accuracy: 50, forgiveness: 50, spin: 50 } }
+      stats: { distance: 50, accuracy: 50, forgiveness: 50, spin: 50 } },
+    { id: 'pro_dr', name: 'Pro Driver', brand: 'Pro', clubKey: 'DR', stats: PRO_STATS }
   ],
   fairwayWoods: [
     { id: 'generic_3w', name: 'Generic 3 Wood', brand: 'Generic', clubKey: '3W',
@@ -1661,7 +1664,10 @@ const EQUIPMENT_CATALOG = {
     { id: 'generic_5w', name: 'Generic 5 Wood', brand: 'Generic', clubKey: '5W',
       stats: { distance: 50, accuracy: 50, forgiveness: 50, spin: 50 } },
     { id: 'generic_7w', name: 'Generic 7 Wood', brand: 'Generic', clubKey: '7W',
-      stats: { distance: 50, accuracy: 50, forgiveness: 50, spin: 50 } }
+      stats: { distance: 50, accuracy: 50, forgiveness: 50, spin: 50 } },
+    { id: 'pro_3w', name: 'Pro 3 Wood', brand: 'Pro', clubKey: '3W', stats: PRO_STATS },
+    { id: 'pro_5w', name: 'Pro 5 Wood', brand: 'Pro', clubKey: '5W', stats: PRO_STATS },
+    { id: 'pro_7w', name: 'Pro 7 Wood', brand: 'Pro', clubKey: '7W', stats: PRO_STATS }
   ],
   irons: [
     { id: 'generic_3i', name: 'Generic 3 Iron', brand: 'Generic', clubKey: '3I',
@@ -1677,7 +1683,14 @@ const EQUIPMENT_CATALOG = {
     { id: 'generic_8i', name: 'Generic 8 Iron', brand: 'Generic', clubKey: '8I',
       stats: { distance: 50, accuracy: 50, forgiveness: 55, spin: 50 } },
     { id: 'generic_9i', name: 'Generic 9 Iron', brand: 'Generic', clubKey: '9I',
-      stats: { distance: 50, accuracy: 50, forgiveness: 58, spin: 50 } }
+      stats: { distance: 50, accuracy: 50, forgiveness: 58, spin: 50 } },
+    { id: 'pro_3i', name: 'Pro 3 Iron', brand: 'Pro', clubKey: '3I', stats: PRO_STATS },
+    { id: 'pro_4i', name: 'Pro 4 Iron', brand: 'Pro', clubKey: '4I', stats: PRO_STATS },
+    { id: 'pro_5i', name: 'Pro 5 Iron', brand: 'Pro', clubKey: '5I', stats: PRO_STATS },
+    { id: 'pro_6i', name: 'Pro 6 Iron', brand: 'Pro', clubKey: '6I', stats: PRO_STATS },
+    { id: 'pro_7i', name: 'Pro 7 Iron', brand: 'Pro', clubKey: '7I', stats: PRO_STATS },
+    { id: 'pro_8i', name: 'Pro 8 Iron', brand: 'Pro', clubKey: '8I', stats: PRO_STATS },
+    { id: 'pro_9i', name: 'Pro 9 Iron', brand: 'Pro', clubKey: '9I', stats: PRO_STATS }
   ],
   wedges: [
     { id: 'generic_pw', name: 'Generic Pitching Wedge', brand: 'Generic', clubKey: 'PW',
@@ -1687,11 +1700,16 @@ const EQUIPMENT_CATALOG = {
     { id: 'generic_sw', name: 'Generic Sand Wedge', brand: 'Generic', clubKey: 'SW',
       stats: { distance: 50, accuracy: 50, forgiveness: 50, spin: 62 } },
     { id: 'generic_lw', name: 'Generic Lob Wedge', brand: 'Generic', clubKey: 'LW',
-      stats: { distance: 50, accuracy: 45, forgiveness: 45, spin: 65 } }
+      stats: { distance: 50, accuracy: 45, forgiveness: 45, spin: 65 } },
+    { id: 'pro_pw', name: 'Pro Pitching Wedge', brand: 'Pro', clubKey: 'PW', stats: PRO_STATS },
+    { id: 'pro_gw', name: 'Pro Gap Wedge', brand: 'Pro', clubKey: 'GW', stats: PRO_STATS },
+    { id: 'pro_sw', name: 'Pro Sand Wedge', brand: 'Pro', clubKey: 'SW', stats: PRO_STATS },
+    { id: 'pro_lw', name: 'Pro Lob Wedge', brand: 'Pro', clubKey: 'LW', stats: PRO_STATS }
   ],
   putters: [
     { id: 'generic_pt', name: 'Generic Putter', brand: 'Generic', clubKey: 'PT',
-      stats: { distance: 50, accuracy: 50, forgiveness: 50, feel: 50 } }
+      stats: { distance: 50, accuracy: 50, forgiveness: 50, feel: 50 } },
+    { id: 'pro_pt', name: 'Pro Putter', brand: 'Pro', clubKey: 'PT', stats: PRO_PUTTER_STATS }
   ]
 };
 
@@ -1814,7 +1832,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.25 · GS spike v0.4';
+const BUILD_VERSION = 'IGT v3.26 · GS spike v0.4';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -2446,12 +2464,28 @@ export default function App() {
   const selectedGolferStats = selectedGolfer?.stats || {};
   const selectedMentalStats = selectedGolfer?.mental || {};
   const selectedEquipmentItem = useMemo(() => {
+    // Prefer what the player actually put in their bag. Without this, having
+    // a Generic Driver + a Pro Driver both in the catalog silently always
+    // picked whichever was listed first in EQUIPMENT_CATALOG, so swapping
+    // gear in BUILD YOUR BAG never changed what club you swung.
+    const findInCatalog = (id) => {
+      for (const category of Object.values(equipmentCatalog)) {
+        const item = category.find((it) => it.id === id);
+        if (item) return item;
+      }
+      return null;
+    };
+    for (const id of selectedBag) {
+      const item = findInCatalog(id);
+      if (item && item.clubKey === selectedClub.key) return item;
+    }
+    // Fallback for bag-less edge cases (e.g., a putter missing from the bag).
     for (const category of Object.values(equipmentCatalog)) {
       const found = category.find((item) => item.clubKey === selectedClub.key);
       if (found) return found;
     }
     return null;
-  }, [equipmentCatalog, selectedClub.key]);
+  }, [selectedBag, equipmentCatalog, selectedClub.key]);
   const selectedClubStats = selectedEquipmentItem?.stats || {};
   const scaleX = pixelsPerWorld;
   const scaleY = pixelsPerWorld;
