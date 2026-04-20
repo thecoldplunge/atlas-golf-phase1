@@ -1803,7 +1803,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.12';
+const BUILD_VERSION = 'IGT v3.13';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -2992,6 +2992,14 @@ export default function App() {
       setSelectedClubIndex(0);
     }
   }, [puttingMode, selectedClubIndex]);
+
+  // Auto-aim at the cup whenever the ball is at rest — so every shot starts
+  // pointed at the hole. The player can still drag to redirect; we only
+  // reset when the ball position changes and is not mid-flight.
+  useEffect(() => {
+    if (ballMoving || sunk || !currentHole.cup) return;
+    setAimAngle(getAimAngleToCup(ball, currentHole.cup));
+  }, [ball, ballMoving, sunk, currentHole.cup]);
 
   // Driving range: once the ball comes to rest, reset back to the tee so the
   // player can keep hitting. Short delay lets the shot-stats card show first.
@@ -4540,27 +4548,6 @@ export default function App() {
             <View style={styles.courseTintTop} pointerEvents="none" />
             <View style={styles.courseTintBottom} pointerEvents="none" />
 
-            {/* Zoom controls — right edge, mid-height. Resets on each shot. */}
-            <View style={styles.zoomStack} pointerEvents="box-none">
-              <Pressable
-                style={[styles.zoomBtn, zoomLevel >= ZOOM_STEPS.length - 1 && styles.zoomBtnDisabled]}
-                onPress={zoomIn}
-                disabled={zoomLevel >= ZOOM_STEPS.length - 1}
-              >
-                <Text style={styles.zoomBtnText}>+</Text>
-              </Pressable>
-              <View style={styles.zoomBadge} pointerEvents="none">
-                <Text style={styles.zoomBadgeText}>{ZOOM_STEPS[zoomLevel].toFixed(1)}x</Text>
-              </View>
-              <Pressable
-                style={[styles.zoomBtn, zoomLevel <= 0 && styles.zoomBtnDisabled]}
-                onPress={zoomOut}
-                disabled={zoomLevel <= 0}
-              >
-                <Text style={styles.zoomBtnText}>−</Text>
-              </Pressable>
-            </View>
-
           <View
             style={[
               styles.worldLayer,
@@ -5078,6 +5065,29 @@ export default function App() {
             </>
           ) : null}
           </View>
+        </View>
+
+        {/* Zoom controls — fixed overlay above everything. Placed as a
+            courseShell-level sibling so it's never covered by the world
+            layer, and given its own high zIndex so menus still beat it. */}
+        <View style={styles.zoomOverlay} pointerEvents="box-none">
+          <Pressable
+            style={[styles.zoomBtn, zoomLevel >= ZOOM_STEPS.length - 1 && styles.zoomBtnDisabled]}
+            onPress={zoomIn}
+            disabled={zoomLevel >= ZOOM_STEPS.length - 1}
+          >
+            <Text style={styles.zoomBtnText}>+</Text>
+          </Pressable>
+          <View style={styles.zoomBadge} pointerEvents="none">
+            <Text style={styles.zoomBadgeText}>{ZOOM_STEPS[zoomLevel].toFixed(1)}x</Text>
+          </View>
+          <Pressable
+            style={[styles.zoomBtn, zoomLevel <= 0 && styles.zoomBtnDisabled]}
+            onPress={zoomOut}
+            disabled={zoomLevel <= 0}
+          >
+            <Text style={styles.zoomBtnText}>−</Text>
+          </Pressable>
         </View>
 
         <View style={styles.topOverlay} pointerEvents="box-none">
@@ -5861,12 +5871,13 @@ const styles = StyleSheet.create({
     height: '44%',
     backgroundColor: 'rgba(255,255,255,0.05)'
   },
-  zoomStack: {
+  zoomOverlay: {
     position: 'absolute',
     right: 10,
-    top: '35%',
+    top: '38%',
     alignItems: 'center',
-    gap: 6
+    gap: 6,
+    zIndex: 90
   },
   zoomBtn: {
     width: 42,
