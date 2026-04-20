@@ -1840,7 +1840,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.34 · GS spike v0.7.3';
+const BUILD_VERSION = 'IGT v3.35 · GS spike v0.7.3';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -2470,6 +2470,10 @@ export default function App() {
   const courseRef = useRef(null);
   const courseFrameRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
   const sunkRef = useRef(false);
+  // Drives the drop-into-cup animation. 'dropping' → gravity fall; 'inCup' →
+  // settled at the bottom of the cup. The tick loop reads this so it can
+  // keep the vertical physics alive after sunk is true.
+  const holeOutPhaseRef = useRef('idle');
   const holeIndexRef = useRef(0);
   const roundWindRef = useRef(roundWind);
   const [draggingSpinDot, setDraggingSpinDot] = useState(false);
@@ -2810,6 +2814,7 @@ export default function App() {
   useEffect(() => { ballRef.current = ball; }, [ball]);
   useEffect(() => { cameraRef.current = camera; }, [camera]);
   useEffect(() => { sunkRef.current = sunk; }, [sunk]);
+  useEffect(() => { holeOutPhaseRef.current = holeOutPhase; }, [holeOutPhase]);
   useEffect(() => { holeIndexRef.current = safeHoleIndex; }, [safeHoleIndex]);
   useEffect(() => { roundWindRef.current = roundWind; }, [roundWind]);
   useEffect(() => { setSelectedCourseIndex(activeCourseIndex); }, [activeCourseIndex]);
@@ -2889,6 +2894,30 @@ export default function App() {
 
       const tickSunk = sunkRef.current;
       const tickHole = ACTIVE_HOLES[holeIndexRef.current] || ACTIVE_HOLES[0];
+      // Hole-out drop physics: the ball is in the cup and falling. Run a
+      // pure vertical parabola with a single damped bounce off the cup
+      // bottom, then latch to 'inCup' so it sits visibly at rest.
+      if (tickSunk && holeOutPhaseRef.current === 'dropping') {
+        const flight = flightRef.current;
+        flight.vz -= GRAVITY * dt;
+        flight.z += flight.vz * dt;
+        const CUP_BOTTOM_Z = -1.1;
+        if (flight.z <= CUP_BOTTOM_Z) {
+          flight.z = CUP_BOTTOM_Z;
+          if (Math.abs(flight.vz) > 1.2) {
+            flight.vz = -flight.vz * 0.28;
+          } else {
+            flight.vz = 0;
+            setHoleOutPhase('inCup');
+            holeOutPhaseRef.current = 'inCup';
+            setTimeout(() => {
+              setHoleOutPhase('settled');
+              holeOutPhaseRef.current = 'settled';
+            }, 600);
+          }
+        }
+        setBallHeight(flight.z);
+      }
       if (!tickSunk) {
         const vel = velocityRef.current;
         const flight = flightRef.current;
@@ -3158,15 +3187,21 @@ export default function App() {
     const slowEnough = speed < 17.5;
     if (dist < captureRadius && slowEnough) {
       setSunk(true);
+      // Freeze horizontal motion — ball is captured by the cup — but start
+      // a small downward velocity so the drop reads as physics, not a jump.
+      // The tick loop updates flight.z with gravity until it hits the cup
+      // bottom, bounces once, then settles.
       velocityRef.current = { x: 0, y: 0 };
-      flightRef.current = { z: 0, vz: 0 };
+      flightRef.current = { z: 0.55, vz: -2.2 };
       const scoreDiff = strokesCurrent - currentHole.par;
       const resultLabel = scoreDiff <= -2 ? 'Eagle or better' : scoreDiff === -1 ? 'Birdie' : scoreDiff === 0 ? 'Par' : scoreDiff === 1 ? 'Bogey' : 'Double+';
-      const emote = scoreDiff <= -2 ? '🔥' : scoreDiff === -1 ? '😎' : scoreDiff === 0 ? '🙂' : scoreDiff === 1 ? '😬' : '😵';
+      // Mood-matched emojis: Birdie hands-up, Par peace sign, Bogey head-down.
+      const emote = scoreDiff <= -2 ? '🔥' : scoreDiff === -1 ? '🙌' : scoreDiff === 0 ? '✌️' : scoreDiff === 1 ? '😞' : '😵';
       setHoleCelebration({ resultLabel, emote, scoreDiff });
       setHoleOutPhase('dropping');
+      holeOutPhaseRef.current = 'dropping';
       setShowShotStats(false);
-      setBallHeight(0.15);
+      setBallHeight(0.55);
       setBall(currentHole.cup);
       ballRef.current = currentHole.cup;
       setHoleScores((prev) => [
@@ -3178,16 +3213,11 @@ export default function App() {
         next[holeIndex] = strokesCurrent;
         return next;
       });
-      setTimeout(() => {
-        setBallHeight(-0.9);
-        setHoleOutPhase('inCup');
-      }, 220);
-      setTimeout(() => {
-        setHoleOutPhase('settled');
-      }, 900);
+      // Phase transitions are handled by the tick loop when physics settles.
+      // We only schedule the scorecard here so the celebration can play.
       setTimeout(() => {
         setShowScorecard(true);
-      }, 1900);
+      }, 2400);
     }
   }, [ball, ballHeight, currentHole.cup.x, currentHole.cup.y, holeIndex, strokesCurrent, sunk]);
 
@@ -4391,6 +4421,21 @@ export default function App() {
   const golferWidth = GOLFER_SPRITE_ROWS[0].length * golferPixelSize;
   const golferHeight = GOLFER_SPRITE_ROWS.length * golferPixelSize;
   const golferAngle = (aimAngle * 180) / Math.PI + 90;
+  // On hole-out, swap the aim-rotated sprite for a celebration pose so the
+  // golfer reads as happy/sad instead of frozen facing the aim line.
+  //   birdie or better → hop up, face camera (hands-up body language)
+  //   par              → face camera, neutral stance (peace-sign vibe)
+  //   bogey or worse   → lean forward, head down
+  const holeOutScore = sunk && holeCelebration ? holeCelebration.scoreDiff : null;
+  const golferCelebrationTransform = (() => {
+    if (holeOutScore === null || holeOutScore === undefined) {
+      return [{ rotate: `${golferAngle}deg` }];
+    }
+    if (holeOutScore <= -1) return [{ translateY: -10 }, { rotate: '0deg' }];
+    if (holeOutScore === 0) return [{ translateY: -2 }, { rotate: '0deg' }];
+    // bogey+: lean forward, slight tilt
+    return [{ translateY: 3 }, { rotate: '18deg' }];
+  })();
 
   if (gameScreen === 'menu') {
     return (
@@ -5416,7 +5461,7 @@ export default function App() {
                 height: golferHeight,
                 left: golferAnchor.x - golferWidth / 2,
                 top: golferAnchor.y - golferHeight / 2,
-                transform: [{ rotate: `${golferAngle}deg` }]
+                transform: golferCelebrationTransform
               }
             ]}
           >
@@ -5436,6 +5481,49 @@ export default function App() {
               />
             ))}
           </View>
+
+          {/* Hole-out celebration: big emoji above the golfer's head whose
+              face matches the score (Birdie 🙌, Par ✌️, Bogey 😞, Eagle 🔥). */}
+          {sunk && holeCelebration ? (
+            <>
+              <Text
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  left: golferAnchor.x - 36,
+                  top: golferAnchor.y - golferHeight / 2 - 62,
+                  width: 72,
+                  textAlign: 'center',
+                  fontSize: 46,
+                  lineHeight: 50,
+                  textShadowColor: 'rgba(0,0,0,0.55)',
+                  textShadowOffset: { width: 0, height: 2 },
+                  textShadowRadius: 4
+                }}
+              >
+                {holeCelebration.emote}
+              </Text>
+              <Text
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  left: golferAnchor.x - 70,
+                  top: golferAnchor.y - golferHeight / 2 - 14,
+                  width: 140,
+                  textAlign: 'center',
+                  color: '#fbfbf8',
+                  fontWeight: '900',
+                  fontSize: 15,
+                  letterSpacing: 1,
+                  textShadowColor: 'rgba(0,0,0,0.75)',
+                  textShadowOffset: { width: 0, height: 1 },
+                  textShadowRadius: 3
+                }}
+              >
+                {holeCelebration.resultLabel.toUpperCase()}
+              </Text>
+            </>
+          ) : null}
 
           {/* Shot Tracer */}
           {(() => {
@@ -5502,7 +5590,43 @@ export default function App() {
                 ]}
               />
             </>
-          ) : null}
+          ) : (
+            // Sunk: show the ball sitting inside the cup. ballHeight is
+            // negative during/after the drop — map it to a sub-cup offset
+            // and darken slightly so it reads as below the rim.
+            (() => {
+              const screenCupHere = toScreen(currentHole.cup);
+              const inCupRadius = Math.max(3, cupRadius * 0.58);
+              // ballHeight ranges roughly [-1.1, 0.55] during the drop. Below
+              // zero means below the rim.
+              const below = Math.max(0, -ballHeight); // 0..1.1
+              const depthPx = clamp(below * cupRadius * 0.85, 0, cupRadius * 0.6);
+              const darkness = clamp(below / 1.1, 0, 1);
+              const ballShade = `rgb(${Math.round(251 - 110 * darkness)}, ${Math.round(251 - 110 * darkness)}, ${Math.round(248 - 110 * darkness)})`;
+              // Show the ball riding above the rim while still in the air.
+              const aboveLiftPx = ballHeight > 0 ? ballHeight * pixelsPerWorld * 1.1 : 0;
+              return (
+                <View
+                  pointerEvents="none"
+                  style={{
+                    position: 'absolute',
+                    width: inCupRadius * 2,
+                    height: inCupRadius * 2,
+                    borderRadius: inCupRadius,
+                    left: screenCupHere.x - inCupRadius,
+                    top: screenCupHere.y - inCupRadius + depthPx - aboveLiftPx,
+                    backgroundColor: ballShade,
+                    borderWidth: 1,
+                    borderColor: 'rgba(9,16,6,0.65)',
+                    shadowColor: '#000',
+                    shadowOpacity: 0.45,
+                    shadowRadius: 2,
+                    shadowOffset: { width: 0, height: 1 }
+                  }}
+                />
+              );
+            })()
+          )}
           </View>
         </View>
 
