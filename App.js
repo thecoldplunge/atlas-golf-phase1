@@ -1796,7 +1796,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.18';
+const BUILD_VERSION = 'IGT v3.19';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -2784,32 +2784,48 @@ export default function App() {
             shotCarryRef.current = Math.hypot(next.x - shotStartPosRef.current.x, next.y - shotStartPosRef.current.y) * YARDS_PER_WORLD;
           }
 
-          const waterHaz = tickHole.hazards.find((h) => h.type === 'waterRect' && pointInRect(next, h));
+          // Only splash when the ball is at / near the water surface. Earlier
+          // the check was pure 2D, so a high shot flying OVER water triggered
+          // a splash mid-air. Require the ball to be below a small altitude.
+          const waterHaz = flight.z <= 1.2
+            ? tickHole.hazards.find((h) => h.type === 'waterRect' && pointInRect(next, h))
+            : null;
           if (waterHaz) {
-            // Ball entered water — stop motion, hide ball, show drop menu
+            // Ball entered water — stop motion, sink the ball, show relief menu.
+            // Real golf penalty-area rules (USGA Rule 17): +1 stroke plus one
+            // of three relief options. We expose all three: stroke-and-distance,
+            // lateral (2 club-lengths of entry, no nearer the hole), and
+            // back-on-the-line (flag through entry, drop anywhere behind entry).
             vel.x = 0;
             vel.y = 0;
             flight.z = 0;
             flight.vz = 0;
-            // Find entry point: last position before water (use previous ball pos)
             const entryPos = { ...ballRef.current };
             const lastPos = lastShotPosRef.current || tickHole.ballStart;
-            // Find lateral drop point: edge of water nearest the entry, not closer to hole
-            const lateralX = clamp(entryPos.x, waterHaz.x - 8, waterHaz.x + waterHaz.w + 8);
-            const lateralY = clamp(entryPos.y, waterHaz.y - 8, waterHaz.y + waterHaz.h + 8);
-            // Move ball just outside the nearest edge
+            // Lateral relief — drop just outside the nearest edge of the water.
             const edgeDists = [
-              { side: 'left', d: Math.abs(entryPos.x - waterHaz.x), pos: { x: waterHaz.x - 10, y: entryPos.y } },
-              { side: 'right', d: Math.abs(entryPos.x - (waterHaz.x + waterHaz.w)), pos: { x: waterHaz.x + waterHaz.w + 10, y: entryPos.y } },
-              { side: 'top', d: Math.abs(entryPos.y - waterHaz.y), pos: { x: entryPos.x, y: waterHaz.y - 10 } },
-              { side: 'bottom', d: Math.abs(entryPos.y - (waterHaz.y + waterHaz.h)), pos: { x: entryPos.x, y: waterHaz.y + waterHaz.h + 10 } }
+              { d: Math.abs(entryPos.x - waterHaz.x), pos: { x: waterHaz.x - 10, y: entryPos.y } },
+              { d: Math.abs(entryPos.x - (waterHaz.x + waterHaz.w)), pos: { x: waterHaz.x + waterHaz.w + 10, y: entryPos.y } },
+              { d: Math.abs(entryPos.y - waterHaz.y), pos: { x: entryPos.x, y: waterHaz.y - 10 } },
+              { d: Math.abs(entryPos.y - (waterHaz.y + waterHaz.h)), pos: { x: entryPos.x, y: waterHaz.y + waterHaz.h + 10 } }
             ];
             edgeDists.sort((a, b) => a.d - b.d);
             const lateralDrop = edgeDists[0].pos;
-            setBall({ x: -100, y: -100 }); // hide ball off-screen
+            // Back-on-the-line — along the flag→entry vector, 8 yards further
+            // from the hole than the entry point.
+            const cup = tickHole.cup;
+            const flagDx = entryPos.x - cup.x;
+            const flagDy = entryPos.y - cup.y;
+            const flagLen = Math.hypot(flagDx, flagDy) || 1;
+            const backDist = 8 / YARDS_PER_WORLD;
+            const backDrop = {
+              x: entryPos.x + (flagDx / flagLen) * backDist,
+              y: entryPos.y + (flagDy / flagLen) * backDist
+            };
+            setBall({ x: -100, y: -100 });
             ballRef.current = { x: -100, y: -100 };
             setBallHeight(0);
-            setWaterDropMenu({ lastPos, entryPos: lateralDrop, hazard: waterHaz });
+            setWaterDropMenu({ lastPos, entryPos: lateralDrop, backDrop, hazard: waterHaz });
             setWaterNotice(true);
             setStrokesCurrent((s) => s + 1);
           } else {
@@ -2890,23 +2906,21 @@ export default function App() {
         }
       }
 
-      // Camera auto-follow
+      // Camera auto-follow — ONLY while the ball is in motion. Once it comes
+      // to rest, the camera stays wherever the player put it (initial shot
+      // framing handled by the ball-at-rest effect below). Previously this
+      // kept pulling the view back to cameraForShot every frame, producing a
+      // "snap back" after the user panned away.
       const nowMs = Date.now();
       if (nowMs >= manualPanUntilRef.current) {
         const vel = velocityRef.current;
         const ballPos = ballRef.current;
         const velMag = magnitude(vel);
-        setCamera((prev) => {
-          // When the ball is flying or rolling, lead the camera with velocity.
-          // When it's at rest, bias the camera toward the cup so the aim line
-          // is visible instead of letting the view snap back to a neutral
-          // ball-centered framing.
-          const target = velMag > 0.6
-            ? clampCameraRef.current({
-                x: ballPos.x + clamp(vel.x * 0.025, -5, 5),
-                y: ballPos.y + clamp(vel.y * 0.025, -7, 7)
-              })
-            : cameraForShot(ballPos, currentHole.cup);
+        if (velMag > 0.6) setCamera((prev) => {
+          const target = clampCameraRef.current({
+            x: ballPos.x + clamp(vel.x * 0.025, -5, 5),
+            y: ballPos.y + clamp(vel.y * 0.025, -7, 7)
+          });
           const ease = velMag > 1 ? 0.14 : 0.08;
           const next = clampCameraRef.current({
             x: prev.x + (target.x - prev.x) * ease,
@@ -3032,28 +3046,31 @@ export default function App() {
     }
   }, [puttingMode, selectedClubIndex]);
 
-  // Auto-aim at the cup whenever the ball is at rest — so every shot starts
-  // pointed at the hole. Also frame the shot by shifting the camera part-way
-  // along the aim line: the ball sits low in the visible area and the aim
-  // line extends into the upper part. The player can still drag to redirect.
-  // Putting has its own centered framing.
+  // Frame the shot ONCE per new ball-at-rest position: auto-aim at the cup
+  // and shift the camera part-way toward the target so the golfer + aim line
+  // are both in view. Keyed off a lastFramedBallRef so club changes, pans,
+  // or other re-renders don't re-snap the camera — only an actual new ball
+  // position triggers framing. Putting keeps its own centered framing.
+  const lastFramedBallRef = useRef(null);
   useEffect(() => {
     if (ballMoving || sunk || !currentHole.cup || puttingMode) return;
+    const last = lastFramedBallRef.current;
+    const movedEnough = !last || Math.hypot(ball.x - last.x, ball.y - last.y) > 0.75;
+    // Always re-aim at the cup from the latest ball position (cheap, and
+    // keeps the aim line accurate even if we don't re-frame the camera).
     const newAim = getAimAngleToCup(ball, currentHole.cup);
     setAimAngle(newAim);
-    const dx = currentHole.cup.x - ball.x;
-    const dy = currentHole.cup.y - ball.y;
-    const distToCupWorld = Math.hypot(dx, dy);
-    const clubStockWorld = (selectedClub?.carryYards ?? 220) / YARDS_PER_WORLD;
-    const aimEndDist = Math.min(distToCupWorld, clubStockWorld);
-    const shiftFrac = 0.35;
-    const camX = ball.x + Math.cos(newAim) * aimEndDist * shiftFrac;
-    const camY = ball.y + Math.sin(newAim) * aimEndDist * shiftFrac;
-    const framed = clampCamera({ x: camX, y: camY });
+    if (!movedEnough) return;
+    lastFramedBallRef.current = { x: ball.x, y: ball.y };
+    const framed = cameraForShot(ball, currentHole.cup);
     setCamera(framed);
     cameraRef.current = framed;
     manualPanUntilRef.current = 0;
-  }, [ball, ballMoving, sunk, currentHole.cup, puttingMode, selectedClub?.carryYards]);
+  }, [ball, ballMoving, sunk, currentHole.cup, puttingMode]);
+  // Reset the frame memo when hole changes so the new tee gets framed.
+  useEffect(() => {
+    lastFramedBallRef.current = null;
+  }, [holeIndex]);
 
   // Driving range: once the ball comes to rest, reset back to the tee so the
   // player can keep hitting. Short delay lets the shot-stats card show first.
@@ -5441,26 +5458,37 @@ export default function App() {
         </View>
 
 
-        {/* Water Drop Menu */}
+        {/* Water Drop Menu — USGA Rule 17 penalty-area relief options. */}
         {waterDropMenu ? (
           <View style={styles.scorecardOverlay}>
-            <View style={[styles.scorecardCard, { maxWidth: 320, gap: 12 }]}>
+            <View style={[styles.scorecardCard, { maxWidth: 340, gap: 10 }]}>
               <Text style={styles.scorecardTitle}>💧 Penalty Area</Text>
-              <Text style={{ color: '#c8dfc4', fontSize: 14, textAlign: 'center', lineHeight: 20 }}>
+              <Text style={{ color: '#c8dfc4', fontSize: 13, textAlign: 'center', lineHeight: 18 }}>
                 Ball in water. +1 stroke penalty.{"\n"}Choose your relief option:
               </Text>
-              <Pressable
-                style={[styles.nextHoleBtn, { backgroundColor: '#3a8a5a', paddingVertical: 12 }]}
-                onPress={() => handleWaterDrop(waterDropMenu.entryPos)}
-              >
-                <Text style={styles.nextHoleBtnText}>⛳ Lateral Drop (near water edge)</Text>
-              </Pressable>
               <Pressable
                 style={[styles.nextHoleBtn, { backgroundColor: '#5a7a3a', paddingVertical: 12 }]}
                 onPress={() => handleWaterDrop(waterDropMenu.lastPos)}
               >
-                <Text style={styles.nextHoleBtnText}>🔄 Stroke & Distance (re-hit from last spot)</Text>
+                <Text style={styles.nextHoleBtnText}>🔄 Stroke & Distance</Text>
+                <Text style={{ color: '#d6e6c8', fontSize: 11, textAlign: 'center' }}>Replay from the last spot</Text>
               </Pressable>
+              <Pressable
+                style={[styles.nextHoleBtn, { backgroundColor: '#3a8a5a', paddingVertical: 12 }]}
+                onPress={() => handleWaterDrop(waterDropMenu.entryPos)}
+              >
+                <Text style={styles.nextHoleBtnText}>⛳ Lateral Relief</Text>
+                <Text style={{ color: '#d6e6c8', fontSize: 11, textAlign: 'center' }}>Drop near the water edge where the ball crossed</Text>
+              </Pressable>
+              {waterDropMenu.backDrop ? (
+                <Pressable
+                  style={[styles.nextHoleBtn, { backgroundColor: '#4a6aa0', paddingVertical: 12 }]}
+                  onPress={() => handleWaterDrop(waterDropMenu.backDrop)}
+                >
+                  <Text style={styles.nextHoleBtnText}>📐 Back on the Line</Text>
+                  <Text style={{ color: '#d6e2f0', fontSize: 11, textAlign: 'center' }}>Drop behind entry on the flag line</Text>
+                </Pressable>
+              ) : null}
             </View>
           </View>
         ) : null}
