@@ -1695,13 +1695,13 @@ const getEquipmentById = (id) => getAllEquipment().find(e => e.id === id);
 
 const SURFACE_PHYSICS = {
   // powerPenalty: [min, max] for random range per shot. swingSensitivity: multiplier on swing deviation (1.0 = normal)
-  rough: { rollFriction: PHYSICS_CONFIG.roughFriction, bounce: PHYSICS_CONFIG.roughBounce, landingDamping: PHYSICS_CONFIG.roughLandingDamping, wallRestitution: 0.62, powerPenalty: [0.8, 0.9], swingSensitivity: 1.4 * PHYSICS_CONFIG.lieMissAmplification, label: 'Rough', emoji: '🌿', color: '#3a6b2a' },
-  deepRough: { rollFriction: PHYSICS_CONFIG.deepRoughFriction, bounce: 0.12, landingDamping: 0.6, wallRestitution: 0.55, powerPenalty: [0.65, 0.75], swingSensitivity: 1.8 * PHYSICS_CONFIG.lieMissAmplification, label: 'Deep Rough', emoji: '🌾', color: '#2d5420' },
-  secondCut: { rollFriction: 3.8, bounce: 0.2, landingDamping: 0.76, wallRestitution: 0.63, powerPenalty: [0.88, 0.92], swingSensitivity: 1.2 * PHYSICS_CONFIG.lieMissAmplification, label: 'Second Cut', emoji: '🌱', color: '#4a8535' },
+  rough: { rollFriction: PHYSICS_CONFIG.roughFriction, bounce: PHYSICS_CONFIG.roughBounce, landingDamping: PHYSICS_CONFIG.roughLandingDamping, wallRestitution: 0.62, powerPenalty: [0.8, 0.9], swingSensitivity: 1.2 * PHYSICS_CONFIG.lieMissAmplification, label: 'Rough', emoji: '🌿', color: '#3a6b2a' },
+  deepRough: { rollFriction: PHYSICS_CONFIG.deepRoughFriction, bounce: 0.12, landingDamping: 0.6, wallRestitution: 0.55, powerPenalty: [0.65, 0.75], swingSensitivity: 1.5 * PHYSICS_CONFIG.lieMissAmplification, label: 'Deep Rough', emoji: '🌾', color: '#2d5420' },
+  secondCut: { rollFriction: 3.8, bounce: 0.2, landingDamping: 0.76, wallRestitution: 0.63, powerPenalty: [0.88, 0.92], swingSensitivity: 1.1 * PHYSICS_CONFIG.lieMissAmplification, label: 'Second Cut', emoji: '🌱', color: '#4a8535' },
   fairway: { rollFriction: PHYSICS_CONFIG.fairwayFriction, bounce: PHYSICS_CONFIG.fairwayBounce, landingDamping: PHYSICS_CONFIG.fairwayLandingDamping, wallRestitution: 0.66, powerPenalty: [0.95, 0.95], swingSensitivity: 1.0 * PHYSICS_CONFIG.lieMissAmplification, label: 'Fairway', emoji: '🏌️', color: '#5aad42' },
-  fringe: { rollFriction: 3.8, bounce: 0.2, landingDamping: 0.76, wallRestitution: 0.64, powerPenalty: [0.95, 0.95], swingSensitivity: 1.1 * PHYSICS_CONFIG.lieMissAmplification, label: 'Fringe', emoji: '🟢', color: '#4d9940' },
-  sand: { rollFriction: PHYSICS_CONFIG.sandFriction, bounce: PHYSICS_CONFIG.sandBounce, landingDamping: PHYSICS_CONFIG.sandLandingDamping, wallRestitution: 0.52, powerPenalty: [0.6, 0.65], swingSensitivity: 2.0 * PHYSICS_CONFIG.lieMissAmplification, label: 'Bunker', emoji: '⛱️', color: '#d4b96a' },
-  pluggedSand: { rollFriction: 8.0, bounce: 0.05, landingDamping: 0.4, wallRestitution: 0.4, powerPenalty: [0.35, 0.45], swingSensitivity: 2.4 * PHYSICS_CONFIG.lieMissAmplification, label: 'Plugged Lie', emoji: '🥚', color: '#c9a84e' },
+  fringe: { rollFriction: 3.8, bounce: 0.2, landingDamping: 0.76, wallRestitution: 0.64, powerPenalty: [0.95, 0.95], swingSensitivity: 1.05 * PHYSICS_CONFIG.lieMissAmplification, label: 'Fringe', emoji: '🟢', color: '#4d9940' },
+  sand: { rollFriction: PHYSICS_CONFIG.sandFriction, bounce: PHYSICS_CONFIG.sandBounce, landingDamping: PHYSICS_CONFIG.sandLandingDamping, wallRestitution: 0.52, powerPenalty: [0.6, 0.65], swingSensitivity: 1.6 * PHYSICS_CONFIG.lieMissAmplification, label: 'Bunker', emoji: '⛱️', color: '#d4b96a' },
+  pluggedSand: { rollFriction: 8.0, bounce: 0.05, landingDamping: 0.4, wallRestitution: 0.4, powerPenalty: [0.35, 0.45], swingSensitivity: 2.0 * PHYSICS_CONFIG.lieMissAmplification, label: 'Plugged Lie', emoji: '🥚', color: '#c9a84e' },
   green: { rollFriction: PHYSICS_CONFIG.greenFriction, bounce: 0.14, landingDamping: 0.82, wallRestitution: 0.68, powerPenalty: [1.0, 1.0], swingSensitivity: 1.0, label: 'Green', emoji: '⛳', color: '#3dba4a' },
   tee: { rollFriction: 3.0, bounce: 0.22, landingDamping: 0.85, wallRestitution: 0.7, powerPenalty: [1.0, 1.0], swingSensitivity: 1.0, label: 'Tee Box', emoji: '🏌️', color: '#5aad42' }
 };
@@ -1796,7 +1796,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.15';
+const BUILD_VERSION = 'IGT v3.16';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -1844,7 +1844,7 @@ const TEMPO_THRESHOLDS = {
   backJerk: 0.38,
   forwardJerk: 0.50,
   pauseTolerance: 0,           // ANY pause above the natural-reversal floor is penalized
-  pauseNaturalFloorMs: 20,     // subtracted from raw pause time for unavoidable finger reversal
+  pauseNaturalFloorMs: 40,     // subtracted from raw pause time for unavoidable finger reversal
   // Exponential distance falloff: distanceMult = exp(-PAUSE_DISTANCE_K * pauseMs)
   //   25ms  → 0.88  (12% carry loss)
   //   50ms  → 0.78  (22%)
@@ -1997,24 +1997,25 @@ const evaluateTempo = (samples, { focus = 50, composure = 50 } = {}) => {
   const tags = [];
   const focusBias = clamp((focus - 50) / 100, -0.5, 0.5);
 
-  // Pause deviation amplifier: EXPONENTIAL growth, no tolerance. Any detected
-  // pause amplifies aim deviation as well as cutting distance.
-  //   25ms  → mult × 1.13
-  //   50ms  → mult × 1.28
-  //  100ms  → mult × 1.65
-  //  200ms  → mult × 2.72
-  //  300ms  → mult × 4.48 (hard cap at 4.5×)
-  if (pauseMs > 0) {
-    const amp = Math.min(4.5, Math.exp(pauseMs * 0.005));
+  // Pause deviation amplifier: exponential growth above a short grace window.
+  // Softer than the previous curve — a brief natural pause (<80ms) is free,
+  // and the hard cap is lower.
+  //   80ms  → mult × 1.00 (grace)
+  //  120ms  → mult × 1.13
+  //  200ms  → mult × 1.43
+  //  300ms  → mult × 1.93
+  //  500ms  → mult × 2.20 (hard cap)
+  if (pauseMs > 80) {
+    const amp = Math.min(2.2, Math.exp((pauseMs - 80) * 0.003));
     mult *= amp;
     tags.push('Paused');
   }
   if (backJerk > TEMPO_THRESHOLDS.backJerk) {
-    mult *= 1 + clamp((backJerk - TEMPO_THRESHOLDS.backJerk) * 2.0, 0, 0.7);
+    mult *= 1 + clamp((backJerk - TEMPO_THRESHOLDS.backJerk) * 1.4, 0, 0.45);
     tags.push('Jerky Back');
   }
   if (forwardJerk > TEMPO_THRESHOLDS.forwardJerk) {
-    mult *= 1 + clamp((forwardJerk - TEMPO_THRESHOLDS.forwardJerk) * 2.0, 0, 0.7);
+    mult *= 1 + clamp((forwardJerk - TEMPO_THRESHOLDS.forwardJerk) * 1.4, 0, 0.45);
     tags.push('Jerky Fwd');
   }
   // Forward-motion scoring via peak POSITION in the forward swing.
@@ -3385,7 +3386,7 @@ export default function App() {
       const overPct = effectivePowerForPenalty - 100; // 0-20
       overpowerMult = 1.0 + overPct * 0.025;
     }
-    const baseSensitivity = 40; // up from 25 — more punishing baseline
+    const baseSensitivity = 28; // eased from 40 — too punishing at 40
     const forgivenessFactor = clamp(1.18 - ((clubForgiveness - 50) * 0.004 + (effectiveSkill - 50) * 0.003 + (puttingMode ? (clubFeel - 50) * 0.002 : 0)), 0.7, 1.45);
     const recoveryFactor = currentLie === 'rough' || currentLie === 'deepRough' || currentLie === 'sand' || currentLie === 'pluggedSand'
       ? clamp(1.12 - (golferRecovery - 50) * 0.003, 0.82, 1.18)
