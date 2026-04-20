@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 const TILE = 16;
@@ -6,6 +6,9 @@ const MAP_W = 20;
 const MAP_H = 30;
 const WORLD_W = MAP_W * TILE;
 const WORLD_H = MAP_H * TILE;
+const GRAVITY = 70;
+const HOLE_RADIUS = 4;
+const YARDS_PER_TILE = 10;
 
 const T_ROUGH = 0;
 const T_FAIRWAY = 1;
@@ -179,9 +182,7 @@ function pixelColor(x, y, type) {
   const [base, mid, dark, light] = paletteFor(type);
   let c = base;
   const noise = hRand(x, y, 1);
-
   if (type !== T_WATER && type !== T_SAND && noise > 0.52 && noise < 0.66) c = mid;
-
   if (type === T_FAIRWAY) {
     const tx = (x / TILE) | 0;
     const ty = (y / TILE) | 0;
@@ -205,23 +206,14 @@ function pixelColor(x, y, type) {
     if (j === 2 && rel < 5) c = mid;
     else if (j === 0 && rel >= 7 && rel < 10) c = mid;
   }
-
   const dThresh = type === T_GREEN ? 0.97
                 : type === T_FAIRWAY || type === T_FRINGE ? 0.96
-                : type === T_SAND ? 0.93
-                : 0.92;
+                : type === T_SAND ? 0.93 : 0.92;
   if (hRand(x, y, 10) > dThresh) c = dark;
-
   const lThresh = type === T_ROUGH ? 0.98 : 0.97;
   if (hRand(x, y, 20) > lThresh) c = light;
-
-  if (type === T_SAND) {
-    if (hRand(x, y, 30) > 0.97) c = light;
-  }
-  if (type === T_WATER) {
-    if (hRand(x, y, 40) > 0.985) c = light;
-  }
-
+  if (type === T_SAND && hRand(x, y, 30) > 0.97) c = light;
+  if (type === T_WATER && hRand(x, y, 40) > 0.985) c = light;
   return c;
 }
 
@@ -236,6 +228,36 @@ function buildWorldImageData() {
     }
   }
   return new ImageData(data, WORLD_W, WORLD_H);
+}
+
+const CLUBS = [
+  { key: 'DR', name: 'Driver',      short: 'DR', v: 225, angle: 20, accMult: 1.25 },
+  { key: '3W', name: '3-Wood',      short: '3W', v: 205, angle: 24, accMult: 1.15 },
+  { key: '5W', name: '5-Wood',      short: '5W', v: 190, angle: 28, accMult: 1.08 },
+  { key: '5I', name: '5-Iron',      short: '5I', v: 170, angle: 33, accMult: 1.0 },
+  { key: '7I', name: '7-Iron',      short: '7I', v: 148, angle: 39, accMult: 0.95 },
+  { key: '9I', name: '9-Iron',      short: '9I', v: 128, angle: 45, accMult: 0.9 },
+  { key: 'PW', name: 'Pitch Wedge', short: 'PW', v: 112, angle: 51, accMult: 0.85 },
+  { key: 'SW', name: 'Sand Wedge',  short: 'SW', v: 96,  angle: 58, accMult: 0.8 },
+  { key: 'PT', name: 'Putter',      short: 'PT', v: 62,  angle: 0,  accMult: 0.6 },
+];
+
+const SURFACE_PROPS = {
+  [T_GREEN]:   { bounceKeep: 0.22, rollDecel: 0.9, label: 'Green' },
+  [T_FAIRWAY]: { bounceKeep: 0.38, rollDecel: 0.55, label: 'Fairway' },
+  [T_ROUGH]:   { bounceKeep: 0.18, rollDecel: 2.2, label: 'Rough' },
+  [T_FRINGE]:  { bounceKeep: 0.24, rollDecel: 0.8, label: 'Fringe' },
+  [T_TEE]:     { bounceKeep: 0.36, rollDecel: 0.6, label: 'Tee Box' },
+  [T_SAND]:    { bounceKeep: 0.06, rollDecel: 4.5, label: 'Bunker' },
+  [T_WATER]:   { bounceKeep: 0, rollDecel: 0, label: 'Water', hazard: true },
+};
+
+function surfacePropsAt(wx, wy) {
+  if (wx < 0 || wx > WORLD_W || wy < 0 || wy > WORLD_H) {
+    return { bounceKeep: 0, rollDecel: 0, label: 'Out of Bounds', ob: true };
+  }
+  const s = surfaceAt(wx, wy);
+  return SURFACE_PROPS[s] || SURFACE_PROPS[T_ROUGH];
 }
 
 const TREES = [
@@ -463,7 +485,7 @@ function drawBall(ctx, px, py, z) {
   const lift = Math.max(0, z | 0);
   const x = Math.floor(px), y = Math.floor(py);
   ctx.fillStyle = COLORS.shadow;
-  const inset = Math.min(1, lift / 14);
+  const inset = Math.min(1, lift / 20);
   ctx.fillRect(x - 1 + inset, y, 3 - inset * 2, 1);
   ctx.fillStyle = COLORS.ballShadow;
   ctx.fillRect(x - 1, y - 2 - lift, 2, 2);
@@ -471,7 +493,119 @@ function drawBall(ctx, px, py, z) {
   ctx.fillRect(x - 1, y - 2 - lift, 1, 1);
 }
 
-const SWING = { IDLE: 'idle', CHARGING: 'charging', FLYING: 'flying', LANDED: 'landed' };
+function drawAimLine(ctx, startX, startY, aimAngle, length, time) {
+  const dx = Math.sin(aimAngle);
+  const dy = -Math.cos(aimAngle);
+  const steps = Math.max(6, Math.floor(length / 5));
+  ctx.fillStyle = '#fff6d8';
+  for (let i = 2; i <= steps; i++) {
+    const t = i / steps;
+    const px = Math.floor(startX + dx * length * t);
+    const py = Math.floor(startY + dy * length * t);
+    const anim = (Math.floor(time * 0.008) + i) & 1;
+    if (anim) ctx.fillRect(px, py, 1, 1);
+  }
+  const tx = Math.floor(startX + dx * length);
+  const ty = Math.floor(startY + dy * length);
+  ctx.fillStyle = COLORS.flagRed;
+  ctx.fillRect(tx - 2, ty, 5, 1);
+  ctx.fillRect(tx, ty - 2, 1, 5);
+  ctx.fillStyle = '#fff6d8';
+  ctx.fillRect(tx, ty, 1, 1);
+}
+
+function computeCarry(club, power) {
+  const v = club.v * power;
+  const angleRad = (club.angle * Math.PI) / 180;
+  if (club.angle === 0) return v * 0.9;
+  return Math.max(0, (v * v * Math.sin(2 * angleRad)) / GRAVITY);
+}
+
+function launchBall(b, aimAngle, power, accuracyOffset, club) {
+  const v0 = club.v * power;
+  const angleRad = (club.angle * Math.PI) / 180;
+  const deflectionRad = ((accuracyOffset * 18 * club.accMult) * Math.PI) / 180;
+  const effectiveDir = aimAngle + deflectionRad;
+  const horizVel = club.angle === 0 ? v0 : v0 * Math.cos(angleRad);
+  b.vx = horizVel * Math.sin(effectiveDir);
+  b.vy = horizVel * -Math.cos(effectiveDir);
+  b.vz = club.angle === 0 ? 0 : v0 * Math.sin(angleRad);
+  b.z = 0;
+  b.state = 'flying';
+}
+
+function stepBall(b, dt, windX, windY, flagX, flagY) {
+  if (b.state === 'flying') {
+    const heightFactor = Math.min(1, b.z / 15);
+    b.vx += windX * heightFactor * dt;
+    b.vy += windY * heightFactor * dt;
+    b.vz -= GRAVITY * dt;
+    const drag = 0.1 * dt;
+    b.vx *= 1 - drag;
+    b.vy *= 1 - drag;
+    b.vz *= 1 - drag * 0.5;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.z += b.vz * dt;
+    if (b.x < 0 || b.x > WORLD_W || b.y < 0 || b.y > WORLD_H) {
+      b.state = 'ob';
+      return;
+    }
+    if (b.z < 5) {
+      const dcx = b.x - flagX, dcy = b.y - flagY;
+      if (Math.hypot(dcx, dcy) < HOLE_RADIUS && Math.hypot(b.vx, b.vy) < 90) {
+        b.state = 'holed';
+        return;
+      }
+    }
+    if (b.z <= 0) {
+      b.z = 0;
+      const sp = surfacePropsAt(b.x, b.y);
+      if (sp.hazard) { b.state = 'hazard'; return; }
+      if (sp.ob) { b.state = 'ob'; return; }
+      const impactVz = -b.vz;
+      const horizSpeed = Math.hypot(b.vx, b.vy);
+      if (impactVz > 18 && horizSpeed > 20) {
+        b.vz = impactVz * sp.bounceKeep;
+        b.vx *= 0.75;
+        b.vy *= 0.75;
+      } else {
+        b.vz = 0;
+        b.state = 'rolling';
+      }
+    }
+  } else if (b.state === 'rolling') {
+    const sp = surfacePropsAt(b.x, b.y);
+    if (sp.hazard) { b.state = 'hazard'; return; }
+    if (sp.ob) { b.state = 'ob'; return; }
+    const speed = Math.hypot(b.vx, b.vy);
+    if (speed < 4) {
+      b.state = 'stopped';
+      b.vx = 0; b.vy = 0;
+      return;
+    }
+    const decel = sp.rollDecel * 40 * dt;
+    const factor = Math.max(0, 1 - decel / Math.max(speed, 0.01));
+    b.vx *= factor;
+    b.vy *= factor;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    if (b.x < 0 || b.x > WORLD_W || b.y < 0 || b.y > WORLD_H) {
+      b.state = 'ob';
+      return;
+    }
+    const dcx = b.x - flagX, dcy = b.y - flagY;
+    if (Math.hypot(dcx, dcy) < HOLE_RADIUS && speed < 60) {
+      b.state = 'holed';
+    }
+  }
+}
+
+const SW = {
+  IDLE: 'idle', AIMING: 'aiming', POWER: 'power', ACCURACY: 'accuracy',
+  FLYING: 'flying', ROLLING: 'rolling', STOPPED: 'stopped',
+  HAZARD: 'hazard', OB: 'ob', HOLED: 'holed',
+};
 
 export default function GolfStoryScreen({ onExit }) {
   const canvasRef = useRef(null);
@@ -479,13 +613,32 @@ export default function GolfStoryScreen({ onExit }) {
   const posRef = useRef({ x: TEE.x * TILE, y: TEE.y * TILE, facing: 'N', walkPhase: 0, moving: false });
   const ballRef = useRef({
     x: TEE.x * TILE - 4, y: TEE.y * TILE + 2, z: 0,
-    startX: 0, startY: 0, endX: 0, endY: 0,
-    flightT: 0, flightDuration: 1, maxHeight: 0,
-    lastSurface: T_TEE,
+    vx: 0, vy: 0, vz: 0,
+    state: 'rest',
+    lastGoodX: TEE.x * TILE - 4,
+    lastGoodY: TEE.y * TILE + 2,
   });
-  const swingRef = useRef({ state: SWING.IDLE, power: 0, chargePhase: 0, landedT: 0 });
+  const swingRef = useRef({
+    state: SW.IDLE,
+    aimAngle: 0,
+    clubIdx: 4,
+    power: 0,
+    powerPhase: 0,
+    accuracy: 0,
+    accuracyPhase: 0,
+    strokeCount: 0,
+    messageTimer: 0,
+    hudVersion: 0,
+  });
+  const windRef = useRef({ x: 0, y: 0, angle: 0, speed: 0, mph: 0 });
   const keysRef = useRef({});
   const rafRef = useRef(null);
+
+  const [hud, setHud] = useState({
+    state: SW.IDLE, club: 'Driver', clubShort: 'DR',
+    clubCarryYd: 250, strokes: 1, pinYd: 0, lie: 'Tee Box',
+    windMph: 0, windAngleDeg: 0, message: null, power: 0, accuracy: 0,
+  });
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -513,60 +666,138 @@ export default function GolfStoryScreen({ onExit }) {
     resize();
     window.addEventListener('resize', resize);
 
-    const launchSwing = () => {
-      const sw = swingRef.current;
-      const b = ballRef.current;
-      const flagX = FLAG.x * TILE;
-      const flagY = FLAG.y * TILE;
-      const dx = flagX - b.x;
-      const dy = flagY - b.y;
-      const distToFlag = Math.max(1, Math.hypot(dx, dy));
-      const maxRange = Math.max(distToFlag * 1.15, 260);
-      const range = sw.power * maxRange;
-      b.startX = b.x; b.startY = b.y;
-      b.endX = b.x + (dx / distToFlag) * range;
-      b.endY = b.y + (dy / distToFlag) * range;
-      b.flightT = 0;
-      b.flightDuration = 0.7 + sw.power * 0.9;
-      b.maxHeight = 14 + sw.power * 34;
-      sw.state = SWING.FLYING;
+    const windAngle = Math.random() * Math.PI * 2;
+    const windSpeed = 4 + Math.random() * 18;
+    windRef.current = {
+      x: Math.sin(windAngle) * windSpeed,
+      y: -Math.cos(windAngle) * windSpeed,
+      angle: windAngle,
+      speed: windSpeed,
+      mph: Math.round(windSpeed * 0.55),
     };
 
-    const trySwing = () => {
+    swingRef.current.strokeCount = 1;
+    const b = ballRef.current;
+    const aim = Math.atan2(FLAG.x * TILE - b.x, -(FLAG.y * TILE - b.y));
+    swingRef.current.aimAngle = aim;
+
+    const flushHud = () => {
       const sw = swingRef.current;
-      const b = ballRef.current;
+      const ball = ballRef.current;
+      const club = CLUBS[sw.clubIdx];
+      const carryPx = computeCarry(club, 1.0);
+      const carryYd = Math.round(carryPx / TILE * YARDS_PER_TILE);
+      const pinDistPx = Math.hypot(ball.x - FLAG.x * TILE, ball.y - FLAG.y * TILE);
+      const pinYd = Math.round(pinDistPx / TILE * YARDS_PER_TILE);
+      const lie = surfacePropsAt(ball.x, ball.y).label;
+      let message = null;
+      if (sw.state === SW.HAZARD) message = 'IN THE WATER — +1 penalty';
+      else if (sw.state === SW.OB) message = 'OUT OF BOUNDS — +1 penalty';
+      else if (sw.state === SW.HOLED) message = `HOLED IT IN ${sw.strokeCount}!`;
+      setHud({
+        state: sw.state,
+        club: club.name, clubShort: club.short, clubCarryYd: carryYd,
+        strokes: sw.strokeCount, pinYd, lie,
+        windMph: windRef.current.mph,
+        windAngleDeg: (windRef.current.angle * 180 / Math.PI) % 360,
+        message, power: sw.power, accuracy: sw.accuracy,
+      });
+    };
+    flushHud();
+
+    const resetHole = () => {
+      const ball = ballRef.current;
       const p = posRef.current;
-      if (sw.state === SWING.IDLE) {
-        if (Math.hypot(p.x - b.x, p.y - b.y) < 18) {
-          sw.state = SWING.CHARGING;
-          sw.chargePhase = 0;
-          sw.power = 0;
+      ball.x = TEE.x * TILE - 4;
+      ball.y = TEE.y * TILE + 2;
+      ball.z = 0; ball.vx = 0; ball.vy = 0; ball.vz = 0;
+      ball.state = 'rest';
+      ball.lastGoodX = ball.x; ball.lastGoodY = ball.y;
+      p.x = ball.x + 4; p.y = ball.y - 2;
+      p.facing = 'N'; p.moving = false;
+      swingRef.current.state = SW.IDLE;
+      swingRef.current.strokeCount = 1;
+      swingRef.current.aimAngle = Math.atan2(FLAG.x * TILE - ball.x, -(FLAG.y * TILE - ball.y));
+      flushHud();
+    };
+
+    const tryAction = () => {
+      const sw = swingRef.current;
+      const ball = ballRef.current;
+      const p = posRef.current;
+      if (sw.state === SW.IDLE) {
+        if (Math.hypot(p.x - ball.x, p.y - ball.y) < 26) {
+          sw.state = SW.AIMING;
+          sw.aimAngle = Math.atan2(FLAG.x * TILE - ball.x, -(FLAG.y * TILE - ball.y));
+          flushHud();
         }
-      } else if (sw.state === SWING.CHARGING) {
-        launchSwing();
+      } else if (sw.state === SW.AIMING) {
+        sw.state = SW.POWER;
+        sw.powerPhase = 0; sw.power = 0;
+        flushHud();
+      } else if (sw.state === SW.POWER) {
+        sw.state = SW.ACCURACY;
+        sw.accuracyPhase = 0; sw.accuracy = 0;
+        flushHud();
+      } else if (sw.state === SW.ACCURACY) {
+        const club = CLUBS[sw.clubIdx];
+        ball.lastGoodX = ball.x; ball.lastGoodY = ball.y;
+        launchBall(ball, sw.aimAngle, Math.max(0.15, sw.power), sw.accuracy, club);
+        sw.state = SW.FLYING;
+        sw.strokeCount++;
+        flushHud();
+      } else if (sw.state === SW.HOLED) {
+        resetHole();
+      }
+    };
+
+    const cycleClub = (dir) => {
+      const sw = swingRef.current;
+      if (sw.state !== SW.AIMING) return;
+      sw.clubIdx = (sw.clubIdx + dir + CLUBS.length) % CLUBS.length;
+      flushHud();
+    };
+
+    const cancelAim = () => {
+      const sw = swingRef.current;
+      if (sw.state === SW.AIMING) {
+        sw.state = SW.IDLE;
+        flushHud();
       }
     };
 
     const kd = (e) => {
       keysRef.current[e.key.toLowerCase()] = true;
-      if (e.key === ' ') { trySwing(); e.preventDefault(); }
-      else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault();
+      const sw = swingRef.current;
+      if (e.key === ' ' || e.key === 'Enter') { tryAction(); e.preventDefault(); return; }
+      if (e.key === 'Escape') { cancelAim(); e.preventDefault(); return; }
+      if (sw.state === SW.AIMING) {
+        if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') { cycleClub(-1); e.preventDefault(); }
+        else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') { cycleClub(+1); e.preventDefault(); }
+        else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); }
+      } else if (sw.state === SW.IDLE) {
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault();
+      }
     };
     const ku = (e) => { keysRef.current[e.key.toLowerCase()] = false; };
     window.addEventListener('keydown', kd);
     window.addEventListener('keyup', ku);
 
     let last = performance.now();
+    let hudAccum = 0;
+    const flagX = FLAG.x * TILE;
+    const flagY = FLAG.y * TILE;
+
     const tick = (now) => {
-      const dt = Math.min(50, now - last) / 1000;
+      const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       const k = keysRef.current;
       const p = posRef.current;
-      const b = ballRef.current;
+      const ball = ballRef.current;
       const sw = swingRef.current;
+      const w = windRef.current;
 
-      const canWalk = sw.state === SWING.IDLE || sw.state === SWING.LANDED;
-      if (canWalk) {
+      if (sw.state === SW.IDLE) {
         const speed = 44;
         let vx = 0, vy = 0;
         if (k.arrowleft || k.a) vx -= 1;
@@ -580,33 +811,57 @@ export default function GolfStoryScreen({ onExit }) {
         p.x = Math.max(8, Math.min(WORLD_W - 8, p.x + vx * speed * dt));
         p.y = Math.max(8, Math.min(WORLD_H - 8, p.y + vy * speed * dt));
         if (p.moving) p.walkPhase += dt * 8; else p.walkPhase = 0;
-      } else {
+      } else if (sw.state === SW.AIMING) {
+        const rotSpeed = 1.6;
+        let rotated = false;
+        if (k.arrowleft || k.a) { sw.aimAngle -= rotSpeed * dt; rotated = true; }
+        if (k.arrowright || k.d) { sw.aimAngle += rotSpeed * dt; rotated = true; }
+        const dx = Math.sin(sw.aimAngle), dy = -Math.cos(sw.aimAngle);
+        if (Math.abs(dx) > Math.abs(dy)) p.facing = dx > 0 ? 'E' : 'W';
+        else p.facing = dy > 0 ? 'S' : 'N';
         p.moving = false;
+        p.x = ball.x + 4;
+        p.y = ball.y - 2;
+      } else if (sw.state === SW.POWER) {
+        sw.powerPhase += dt * 1.2;
+        const u = sw.powerPhase % 2;
+        sw.power = u < 1 ? u : 2 - u;
+        p.x = ball.x + 4; p.y = ball.y - 2; p.moving = false;
+      } else if (sw.state === SW.ACCURACY) {
+        sw.accuracyPhase += dt * 2.0;
+        const u = sw.accuracyPhase % 2;
+        sw.accuracy = (u < 1 ? u : 2 - u) * 2 - 1;
+        p.x = ball.x + 4; p.y = ball.y - 2; p.moving = false;
+      } else if (sw.state === SW.FLYING || sw.state === SW.ROLLING) {
+        stepBall(ball, dt, w.x, w.y, flagX, flagY);
+        if (ball.state === 'rolling') sw.state = SW.ROLLING;
+        else if (ball.state === 'stopped') sw.state = SW.STOPPED;
+        else if (ball.state === 'hazard') { sw.state = SW.HAZARD; sw.messageTimer = 2.2; sw.strokeCount++; flushHud(); }
+        else if (ball.state === 'ob') { sw.state = SW.OB; sw.messageTimer = 2.2; sw.strokeCount++; flushHud(); }
+        else if (ball.state === 'holed') { sw.state = SW.HOLED; sw.messageTimer = 6; flushHud(); }
+      } else if (sw.state === SW.STOPPED) {
+        p.x = ball.x + 4; p.y = ball.y - 2; p.facing = 'N';
+        ball.state = 'rest';
+        sw.state = SW.IDLE;
+        flushHud();
+      } else if (sw.state === SW.HAZARD || sw.state === SW.OB) {
+        sw.messageTimer -= dt;
+        if (sw.messageTimer <= 0) {
+          ball.x = ball.lastGoodX; ball.y = ball.lastGoodY;
+          ball.vx = 0; ball.vy = 0; ball.vz = 0; ball.z = 0;
+          ball.state = 'rest';
+          p.x = ball.x + 4; p.y = ball.y - 2; p.facing = 'N';
+          sw.state = SW.IDLE;
+          flushHud();
+        }
+      } else if (sw.state === SW.HOLED) {
+        sw.messageTimer -= dt;
       }
 
-      if (sw.state === SWING.CHARGING) {
-        sw.chargePhase += dt * 1.1;
-        const u = sw.chargePhase % 2;
-        sw.power = u < 1 ? u : 2 - u;
-      } else if (sw.state === SWING.FLYING) {
-        b.flightT += dt;
-        const u = Math.min(1, b.flightT / b.flightDuration);
-        b.x = b.startX + (b.endX - b.startX) * u;
-        b.y = b.startY + (b.endY - b.startY) * u;
-        b.z = b.maxHeight * Math.sin(Math.PI * u);
-        if (u >= 1) {
-          b.z = 0;
-          b.lastSurface = surfaceAt(b.x, b.y);
-          sw.state = SWING.LANDED;
-          sw.landedT = 0;
-        }
-      } else if (sw.state === SWING.LANDED) {
-        sw.landedT += dt;
-        if (sw.landedT > 1.2) {
-          p.x = b.x + 4;
-          p.y = b.y - 2;
-          sw.state = SWING.IDLE;
-        }
+      hudAccum += dt;
+      if (hudAccum > 0.12 && (sw.state === SW.POWER || sw.state === SW.ACCURACY)) {
+        hudAccum = 0;
+        setHud((h) => ({ ...h, power: sw.power, accuracy: sw.accuracy }));
       }
 
       const viewW = canvas.width;
@@ -616,8 +871,8 @@ export default function GolfStoryScreen({ onExit }) {
         viewW / (WORLD_W * 0.95),
         viewH / (WORLD_H * 0.75),
       ))));
-      const followX = sw.state === SWING.FLYING ? b.x : p.x;
-      const followY = sw.state === SWING.FLYING ? b.y : p.y;
+      const followX = sw.state === SW.IDLE ? p.x : ball.x;
+      const followY = sw.state === SW.IDLE ? p.y : ball.y;
       const camX = Math.max(0, Math.min(Math.max(0, WORLD_W - viewW / scale), followX - viewW / (2 * scale)));
       const camY = Math.max(0, Math.min(Math.max(0, WORLD_H - viewH / scale), followY - viewH / (2 * scale)));
 
@@ -629,11 +884,21 @@ export default function GolfStoryScreen({ onExit }) {
 
       if (staticRef.current) ctx.drawImage(staticRef.current, 0, 0);
 
+      if (sw.state === SW.AIMING || sw.state === SW.POWER || sw.state === SW.ACCURACY) {
+        const club = CLUBS[sw.clubIdx];
+        const powerScale = sw.state === SW.POWER || sw.state === SW.ACCURACY ? Math.max(0.15, sw.power) : 1.0;
+        const aimLen = computeCarry(club, powerScale);
+        drawAimLine(ctx, ball.x, ball.y, sw.aimAngle, aimLen, now);
+      }
+
       const drawables = [];
       for (const t of TREES) drawables.push({ kind: 'tree', x: t.x * TILE, y: t.y * TILE });
       drawables.push({ kind: 'flag', x: FLAG.x * TILE, y: FLAG.y * TILE });
-      drawables.push({ kind: 'ball', x: b.x, y: b.y, z: b.z });
-      drawables.push({ kind: 'golfer', x: p.x, y: p.y, facing: p.facing, phase: p.moving ? p.walkPhase : null });
+      drawables.push({ kind: 'ball', x: ball.x, y: ball.y, z: ball.z });
+      const showGolfer = !(sw.state === SW.FLYING || sw.state === SW.ROLLING || sw.state === SW.HOLED);
+      if (showGolfer) {
+        drawables.push({ kind: 'golfer', x: p.x, y: p.y, facing: p.facing, phase: p.moving ? p.walkPhase : null });
+      }
       drawables.sort((a, b2) => a.y - b2.y);
       for (const d of drawables) {
         if (d.kind === 'tree') drawTree(ctx, d.x, d.y);
@@ -644,23 +909,10 @@ export default function GolfStoryScreen({ onExit }) {
 
       ctx.restore();
 
-      if (sw.state === SWING.CHARGING) {
-        const meterW = Math.min(viewW * 0.55, 360 * dpr);
-        const meterH = 14 * dpr;
-        const mx = Math.floor((viewW - meterW) / 2);
-        const my = Math.floor(viewH * 0.82);
-        ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        ctx.fillRect(mx - 4 * dpr, my - 4 * dpr, meterW + 8 * dpr, meterH + 8 * dpr);
-        ctx.fillStyle = '#111';
-        ctx.fillRect(mx, my, meterW, meterH);
-        const fillW = Math.floor(meterW * sw.power);
-        const hue = 120 - 110 * sw.power;
-        ctx.fillStyle = `hsl(${hue}, 72%, 52%)`;
-        ctx.fillRect(mx, my, fillW, meterH);
-        ctx.fillStyle = '#f5f5ec';
-        for (let i = 1; i < 4; i++) {
-          ctx.fillRect(mx + Math.floor(meterW * i / 4) - 1, my, 1, meterH);
-        }
+      if (sw.state === SW.POWER) {
+        drawMeter(ctx, viewW, viewH, dpr, 'POWER', sw.power, false);
+      } else if (sw.state === SW.ACCURACY) {
+        drawMeter(ctx, viewW, viewH, dpr, 'ACCURACY', sw.accuracy, true);
       }
 
       rafRef.current = requestAnimationFrame(tick);
@@ -689,6 +941,7 @@ export default function GolfStoryScreen({ onExit }) {
     );
   }
 
+  const hint = hintForState(hud.state);
   return (
     <View style={styles.root}>
       <View style={styles.canvasHost}>
@@ -703,11 +956,41 @@ export default function GolfStoryScreen({ onExit }) {
           }}
         />
       </View>
-      <View style={styles.dialogBox} pointerEvents="none">
-        <Text style={styles.dialogText}>
-          Arrows/WASD to walk. SPACE near the ball opens the power meter; SPACE again to launch.
-        </Text>
+
+      <View style={styles.hudTopLeft} pointerEvents="none">
+        <Text style={styles.hudLabel}>CLUB</Text>
+        <Text style={styles.hudClubShort}>{hud.clubShort}</Text>
+        <Text style={styles.hudValue}>{hud.club}</Text>
+        <Text style={styles.hudSub}>{hud.clubCarryYd} yd max</Text>
       </View>
+
+      <View style={styles.hudTopRight} pointerEvents="none">
+        <Text style={styles.hudLabel}>WIND</Text>
+        <View style={styles.windRow}>
+          <Text style={[styles.windArrow, { transform: [{ rotate: `${hud.windAngleDeg.toFixed(0)}deg` }] }]}>↑</Text>
+          <Text style={styles.hudValue}>{hud.windMph} mph</Text>
+        </View>
+      </View>
+
+      <View style={styles.hudBottomLeft} pointerEvents="none">
+        <Text style={styles.hudLabel}>STROKE {hud.strokes}</Text>
+        <Text style={styles.hudValue}>{hud.pinYd} yd to pin</Text>
+        <Text style={styles.hudSub}>Lie: {hud.lie}</Text>
+      </View>
+
+      {hud.message ? (
+        <View style={styles.messageBox} pointerEvents="none">
+          <Text style={styles.messageText}>{hud.message}</Text>
+          {hud.state === SW.HOLED ? (
+            <Text style={styles.messageSub}>SPACE to play again</Text>
+          ) : null}
+        </View>
+      ) : null}
+
+      <View style={styles.dialogBox} pointerEvents="none">
+        <Text style={styles.dialogText}>{hint}</Text>
+      </View>
+
       <Pressable style={styles.exitBtn} onPress={onExit}>
         <Text style={styles.exitText}>✕</Text>
       </Pressable>
@@ -715,31 +998,132 @@ export default function GolfStoryScreen({ onExit }) {
   );
 }
 
+function hintForState(state) {
+  switch (state) {
+    case SW.IDLE: return 'Arrows: walk  ·  SPACE near ball: aim';
+    case SW.AIMING: return '← → rotate aim  ·  ↑ ↓ change club  ·  SPACE: swing  ·  ESC: cancel';
+    case SW.POWER: return 'SPACE to lock POWER';
+    case SW.ACCURACY: return 'SPACE to lock ACCURACY — center is pure';
+    case SW.FLYING: case SW.ROLLING: return '…';
+    case SW.HAZARD: return 'Drop pending…';
+    case SW.OB: return 'Drop pending…';
+    case SW.HOLED: return 'SPACE to play again';
+    default: return '';
+  }
+}
+
+function drawMeter(ctx, viewW, viewH, dpr, label, value, isAccuracy) {
+  const w = Math.min(viewW * 0.6, 420 * dpr);
+  const h = (isAccuracy ? 12 : 16) * dpr;
+  const x = Math.floor((viewW - w) / 2);
+  const y = Math.floor(viewH * (isAccuracy ? 0.74 : 0.83));
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(x - 5 * dpr, y - 22 * dpr, w + 10 * dpr, h + 32 * dpr);
+  ctx.fillStyle = '#f5f5ec';
+  ctx.fillRect(x - 2 * dpr, y - 19 * dpr, w + 4 * dpr, 1 * dpr);
+  ctx.fillRect(x - 2 * dpr, y + h + 9 * dpr, w + 4 * dpr, 1 * dpr);
+  ctx.font = `bold ${11 * dpr}px ui-monospace, Menlo, monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillStyle = '#f5f5ec';
+  ctx.fillText(label, x + w / 2, y - 6 * dpr);
+  ctx.fillStyle = '#111';
+  ctx.fillRect(x, y, w, h);
+  if (isAccuracy) {
+    ctx.fillStyle = '#e33838';
+    ctx.fillRect(x, y, Math.floor(w * 0.2), h);
+    ctx.fillRect(x + Math.floor(w * 0.8), y, Math.floor(w * 0.2), h);
+    ctx.fillStyle = '#fbe043';
+    ctx.fillRect(x + Math.floor(w * 0.2), y, Math.floor(w * 0.2), h);
+    ctx.fillRect(x + Math.floor(w * 0.6), y, Math.floor(w * 0.2), h);
+    ctx.fillStyle = '#77c146';
+    ctx.fillRect(x + Math.floor(w * 0.4), y, Math.floor(w * 0.2), h);
+    const indicatorX = x + Math.floor(w * (0.5 + value * 0.5));
+    ctx.fillStyle = '#f5f5ec';
+    ctx.fillRect(indicatorX - 2 * dpr, y - 4 * dpr, 4 * dpr, h + 8 * dpr);
+    ctx.fillStyle = '#111';
+    ctx.fillRect(indicatorX - 1, y - 4 * dpr, 1, h + 8 * dpr);
+  } else {
+    const fw = Math.floor(w * value);
+    const hue = 120 - 110 * value;
+    ctx.fillStyle = `hsl(${hue}, 74%, 52%)`;
+    ctx.fillRect(x, y, fw, h);
+    ctx.fillStyle = '#f5f5ec';
+    for (let i = 1; i < 4; i++) ctx.fillRect(x + Math.floor(w * i / 4) - 1, y, 1, h);
+  }
+}
+
+const HUD_BORDER = '#f5f5ec';
+const HUD_BG = 'rgba(14,26,18,0.9)';
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.skyVoid },
   canvasHost: { flex: 1 },
   dialogBox: {
-    position: 'absolute',
-    left: 16, right: 16, bottom: 24,
-    backgroundColor: '#0e1a12',
-    borderWidth: 3,
-    borderColor: '#f5f5ec',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    position: 'absolute', left: 16, right: 16, bottom: 24,
+    backgroundColor: HUD_BG, borderWidth: 3, borderColor: HUD_BORDER,
+    paddingVertical: 10, paddingHorizontal: 14,
   },
   dialogText: {
     color: '#f5f5ec',
     fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 13, lineHeight: 18, textAlign: 'center',
   },
   exitBtn: {
     position: 'absolute', top: 16, right: 16,
-    backgroundColor: '#0e1a12',
-    borderWidth: 2, borderColor: '#f5f5ec',
+    backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
     width: 38, height: 38, alignItems: 'center', justifyContent: 'center',
   },
   exitText: { color: '#f5f5ec', fontSize: 18, lineHeight: 20 },
+  hudTopLeft: {
+    position: 'absolute', top: 16, left: 16,
+    backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
+    paddingHorizontal: 10, paddingVertical: 8, minWidth: 120,
+  },
+  hudTopRight: {
+    position: 'absolute', top: 16, right: 60,
+    backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
+    paddingHorizontal: 10, paddingVertical: 8, minWidth: 110, alignItems: 'center',
+  },
+  hudBottomLeft: {
+    position: 'absolute', bottom: 88, left: 16,
+    backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
+    paddingHorizontal: 10, paddingVertical: 8, minWidth: 140,
+  },
+  hudLabel: {
+    color: '#a9d4a9', fontSize: 10, letterSpacing: 1,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  hudClubShort: {
+    color: '#fff6d8', fontSize: 22, fontWeight: '900',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  hudValue: {
+    color: '#f5f5ec', fontSize: 13, fontWeight: '700',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  hudSub: {
+    color: '#bfc4b9', fontSize: 11,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  windRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  windArrow: {
+    color: '#fff6d8', fontSize: 22, marginRight: 4,
+  },
+  messageBox: {
+    position: 'absolute', top: '40%', left: 16, right: 16,
+    backgroundColor: '#0e1a12', borderWidth: 3, borderColor: '#fbe043',
+    paddingVertical: 20, paddingHorizontal: 20, alignItems: 'center',
+  },
+  messageText: {
+    color: '#fbe043', fontSize: 22, fontWeight: '900',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+    textAlign: 'center',
+  },
+  messageSub: {
+    color: '#f5f5ec', fontSize: 12, marginTop: 8,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
   nativeMsg: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   nativeTitle: { color: '#f5f5ec', fontSize: 18, marginBottom: 12 },
   nativeBody: { color: '#bfc4b9', fontSize: 14, textAlign: 'center', marginBottom: 20 },
