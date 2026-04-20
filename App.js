@@ -1796,7 +1796,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.19';
+const BUILD_VERSION = 'IGT v3.20';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -2084,11 +2084,20 @@ const getSurfaceAtPoint = (hole, point) => {
   if (inSand) return 'sand';
   const terrain = hole.terrain;
   if (terrain?.tee && pointInRect(point, terrain.tee)) return 'tee';
+  // Green detection: the vector polygon (from editorVectors) is a straight-line
+  // approximation of the bezier-rendered green, and it's usually slightly
+  // SMALLER than the terrain.green rect. Check BOTH together — if the ball is
+  // inside either shape, it's on the green. Previously the vector's fringe-
+  // near check fired before the rect check, so a ball inside the rect but
+  // just outside the vector polygon got classified as fringe and rolled with
+  // rough-ish friction even though the player saw it sitting on the green.
   const greenPoly = editorVectors?.terrain?.green ? vectorShapeToPolygon(editorVectors.terrain.green) : null;
-  if (greenPoly?.length && pointInPolygon(point, greenPoly)) return 'green';
-  if (greenPoly?.length && pointNearPolygon(point, greenPoly, FRINGE_BUFFER)) return 'fringe';
-  if (terrain?.green && pointInRect(point, terrain.green)) return 'green';
-  if (terrain?.green && pointInRect(point, expandRect(terrain.green, FRINGE_BUFFER))) return 'fringe';
+  const inGreenPoly = greenPoly?.length ? pointInPolygon(point, greenPoly) : false;
+  const inGreenRect = terrain?.green ? pointInRect(point, terrain.green) : false;
+  if (inGreenPoly || inGreenRect) return 'green';
+  const nearGreenPoly = greenPoly?.length ? pointNearPolygon(point, greenPoly, FRINGE_BUFFER) : false;
+  const nearGreenRect = terrain?.green ? pointInRect(point, expandRect(terrain.green, FRINGE_BUFFER)) : false;
+  if (nearGreenPoly || nearGreenRect) return 'fringe';
   const fairwayPolys = editorVectors?.terrain?.fairway?.map(vectorShapeToPolygon) || [];
   if (fairwayPolys.some((poly) => pointInPolygon(point, poly))) return 'fairway';
   if (fairwayPolys.some((poly) => pointNearPolygon(point, poly, 12))) return 'secondCut';
