@@ -25,6 +25,7 @@ import Svg, {
 // for the designer Vercel project is `designer/` and can't see above it).
 // The game reaches in for the same file so both renderers stay in sync.
 import { SURFACE_COLORS, PATTERNS, TREES, GENERIC_TREE } from './designer/shared/theme';
+import GolfStoryScreen from './GolfStory/GolfStoryScreen';
 import testCourseData from './courses/test-course.json';
 import test2CourseData from './courses/test-2.json';
 import test4CourseData from './courses/test-4.json';
@@ -1806,7 +1807,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.21';
+const BUILD_VERSION = 'IGT v3.21 · GS spike v0.1';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -4154,6 +4155,18 @@ export default function App() {
               </Pressable>
 
               <Pressable
+                style={styles.spaceMenuBtnActive}
+                onPress={() => setGameScreen('golf-story')}
+              >
+                <Text style={styles.spaceMenuBtnLeft}>GOLF STORY</Text>
+                <Text style={styles.spaceMenuBtnRight}>SPIKE v0.1 &gt;</Text>
+                <View style={[styles.lCorner, styles.lCornerTopLeft]} />
+                <View style={[styles.lCorner, styles.lCornerTopRight]} />
+                <View style={[styles.lCorner, styles.lCornerBottomLeft]} />
+                <View style={[styles.lCorner, styles.lCornerBottomRight]} />
+              </Pressable>
+
+              <Pressable
                 style={styles.spaceMenuBtn}
                 onPress={() => setGameScreen('settings')}
               >
@@ -4172,6 +4185,11 @@ export default function App() {
         </View>
       </SafeAreaView>
     );
+  }
+
+  // ═══════════════ GOLF STORY SPIKE SCREEN ═══════════════
+  if (gameScreen === 'golf-story') {
+    return <GolfStoryScreen onExit={() => setGameScreen('menu')} />;
   }
 
   // ═══════════════ GOLFER SELECT SCREEN ═══════════════
