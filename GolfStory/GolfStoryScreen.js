@@ -51,64 +51,145 @@ function fbm(x, y) {
   return a + b + c;
 }
 
-const SURFACES = [
+const HOLES = [
   {
-    type: T_FAIRWAY,
-    shape: { kind: 'polygon', points: [
-      [7.2, 8.8], [10, 8.6], [12.8, 8.8], [13.4, 9.4], [13.9, 10.4],
-      [14.2, 11.8], [14.3, 13.5], [14.1, 15.5], [13.9, 17.5],
-      [13.7, 19.3], [13.4, 20.8], [13, 21.9], [12.6, 22.8],
-      [12.2, 23.6], [11.8, 24.4], [11.4, 25.1], [11.1, 25.7],
-      [9, 25.7], [8.9, 25.1], [8.5, 24.4], [8.1, 23.6],
-      [7.7, 22.8], [7.3, 21.9], [7, 20.8], [6.7, 19.3],
-      [6.4, 17.5], [6.2, 15.5], [6, 13.5], [6.1, 11.8],
-      [6.3, 10.4], [6.8, 9.4],
-    ]},
+    name: 'Hole 1', par: 3,
+    tee: { x: 9.5, y: 24.8 },
+    flag: { x: 9.5, y: 5.5 },
+    greenSlope: { angle: Math.PI * 0.3, mag: 7 },
+    surfaces: [
+      { type: T_FAIRWAY, shape: { kind: 'polygon', points: [
+        [7.2, 8.8], [10, 8.6], [12.8, 8.8], [13.4, 9.4], [13.9, 10.4],
+        [14.2, 11.8], [14.3, 13.5], [14.1, 15.5], [13.9, 17.5],
+        [13.7, 19.3], [13.4, 20.8], [13, 21.9], [12.6, 22.8],
+        [12.2, 23.6], [11.8, 24.4], [11.4, 25.1], [11.1, 25.7],
+        [9, 25.7], [8.9, 25.1], [8.5, 24.4], [8.1, 23.6],
+        [7.7, 22.8], [7.3, 21.9], [7, 20.8], [6.7, 19.3],
+        [6.4, 17.5], [6.2, 15.5], [6, 13.5], [6.1, 11.8],
+        [6.3, 10.4], [6.8, 9.4],
+      ]}},
+      { type: T_SAND, shape: { kind: 'polygon', points: [
+        [12.9, 10.8], [13.8, 10.7], [14.6, 11], [14.9, 11.8],
+        [14.8, 12.8], [14.4, 13.6], [13.6, 13.8], [12.9, 13.5],
+        [12.5, 12.6], [12.6, 11.5],
+      ]}},
+      { type: T_SAND, shape: { kind: 'circle', cx: 13.9, cy: 7.4, r: 1.1 }},
+      { type: T_SHORE, shape: { kind: 'polygon', points: [
+        [1.05, 12.7], [3, 12.45], [4.85, 12.75], [5.75, 13.55], [6.15, 15.05],
+        [6.2, 17.05], [5.85, 18.6], [4.95, 19.3], [3.55, 19.65], [1.9, 19.55],
+        [0.55, 18.75], [0.25, 17.0], [0.35, 15.1], [0.7, 13.7],
+      ]}},
+      { type: T_WATER, shape: { kind: 'polygon', points: [
+        [1.5, 13.2], [3, 13], [4.8, 13.3], [5.6, 14], [5.9, 15.3],
+        [5.9, 17], [5.6, 18.4], [4.8, 19], [3.5, 19.3], [2, 19.2],
+        [1, 18.4], [0.7, 17], [0.8, 15.3], [1.1, 14],
+      ]}},
+      { type: T_FRINGE, shape: { kind: 'annulus', cx: 9.5, cy: 5.5, inner: 3.2, outer: 4.05 }},
+      { type: T_GREEN, shape: { kind: 'circle', cx: 9.5, cy: 5.5, r: 3.2 }},
+      { type: T_TEE, shape: { kind: 'rect', x: 8.7, y: 24.2, w: 1.6, h: 1.1 }},
+    ],
+    trees: [
+      { x: 3.5, y: 8 }, { x: 16.5, y: 6.5 }, { x: 2.5, y: 11.2 }, { x: 17.5, y: 14 },
+      { x: 4.5, y: 22 }, { x: 14.5, y: 24.5 }, { x: 1.5, y: 3.5 }, { x: 18.5, y: 2.5 },
+      { x: 2.5, y: 27.5 }, { x: 17.5, y: 28 }, { x: 6.5, y: 27.5 }, { x: 13.5, y: 21.5 },
+      { x: 1.5, y: 20.5 }, { x: 15.5, y: 19.5 }, { x: 0.5, y: 9 }, { x: 19.5, y: 10 },
+      { x: 2, y: 23.5 }, { x: 16.5, y: 10.5 }, { x: 16.5, y: 16.5 },
+      { x: 18.5, y: 19 }, { x: 0.5, y: 26 }, { x: 19.5, y: 23 }, { x: 4, y: 25.5 },
+      { x: 15, y: 28 },
+    ],
   },
   {
-    type: T_SAND,
-    shape: { kind: 'polygon', points: [
-      [12.9, 10.8], [13.8, 10.7], [14.6, 11], [14.9, 11.8],
-      [14.8, 12.8], [14.4, 13.6], [13.6, 13.8], [12.9, 13.5],
-      [12.5, 12.6], [12.6, 11.5],
-    ]},
+    name: 'Hole 2', par: 4,
+    tee: { x: 9.5, y: 27.6 },
+    flag: { x: 11.2, y: 4.5 },
+    greenSlope: { angle: Math.PI * 1.05, mag: 8 },
+    surfaces: [
+      { type: T_FAIRWAY, shape: { kind: 'polygon', points: [
+        [8.0, 28.2], [11.0, 28.2], [11.8, 27.2], [12.5, 25], [13.2, 22],
+        [13.8, 18], [14.2, 14], [14.5, 11], [14.4, 9], [13.9, 7.5],
+        [12.9, 6.3], [11.5, 5.5], [10, 5.3], [8.5, 5.5], [7.5, 6.3],
+        [6.9, 7.5], [6.5, 9], [6.4, 11], [6.6, 14], [6.8, 18],
+        [7, 22], [7.3, 25], [7.6, 27.2],
+      ]}},
+      { type: T_SAND, shape: { kind: 'polygon', points: [
+        [13.5, 5.1], [14.3, 5.4], [14.7, 6.2], [14.4, 7.0],
+        [13.6, 7.2], [12.9, 6.8], [13, 5.7],
+      ]}},
+      { type: T_SAND, shape: { kind: 'polygon', points: [
+        [7.3, 15.5], [8.2, 15.3], [9, 15.9], [8.9, 17], [8, 17.2], [7.1, 16.8],
+      ]}},
+      { type: T_SHORE, shape: { kind: 'polygon', points: [
+        [0.15, 7.0], [2, 6.7], [4, 6.9], [5.3, 7.9], [5.85, 10], [5.95, 14],
+        [5.9, 18], [5.6, 22], [4.9, 24.5], [3.4, 25.3], [1.5, 25], [0.15, 23.8],
+      ]}},
+      { type: T_WATER, shape: { kind: 'polygon', points: [
+        [0.4, 7.6], [2, 7.3], [3.8, 7.6], [4.8, 8.6], [5.2, 10.5], [5.3, 14],
+        [5.2, 17.8], [4.9, 21.5], [4.3, 23.6], [3, 24.4], [1.5, 24.3], [0.4, 22.7],
+      ]}},
+      { type: T_FRINGE, shape: { kind: 'annulus', cx: 11.2, cy: 4.5, inner: 2.7, outer: 3.45 }},
+      { type: T_GREEN, shape: { kind: 'circle', cx: 11.2, cy: 4.5, r: 2.7 }},
+      { type: T_TEE, shape: { kind: 'rect', x: 8.7, y: 27.2, w: 1.6, h: 1.0 }},
+    ],
+    trees: [
+      { x: 17.5, y: 4 }, { x: 18, y: 8 }, { x: 17.5, y: 12 }, { x: 18, y: 16 },
+      { x: 17.5, y: 20 }, { x: 18, y: 24 }, { x: 16.5, y: 27 }, { x: 14, y: 28 },
+      { x: 19, y: 27 }, { x: 17, y: 2.5 }, { x: 19, y: 5 },
+      { x: 7, y: 28 }, { x: 4, y: 28 }, { x: 1, y: 27 },
+      { x: 1, y: 3 }, { x: 3, y: 2 }, { x: 6, y: 2 }, { x: 9, y: 1.5 }, { x: 13, y: 2 },
+      { x: 8, y: 9 }, { x: 4, y: 4 }, { x: 16, y: 5.5 },
+    ],
   },
   {
-    type: T_SAND,
-    shape: { kind: 'circle', cx: 13.9, cy: 7.4, r: 1.1 },
-  },
-  {
-    type: T_SHORE,
-    shape: { kind: 'polygon', points: [
-      [1.05, 12.7], [3, 12.45], [4.85, 12.75], [5.75, 13.55], [6.15, 15.05],
-      [6.2, 17.05], [5.85, 18.6], [4.95, 19.3], [3.55, 19.65], [1.9, 19.55],
-      [0.55, 18.75], [0.25, 17.0], [0.35, 15.1], [0.7, 13.7],
-    ]},
-  },
-  {
-    type: T_WATER,
-    shape: { kind: 'polygon', points: [
-      [1.5, 13.2], [3, 13], [4.8, 13.3], [5.6, 14], [5.9, 15.3],
-      [5.9, 17], [5.6, 18.4], [4.8, 19], [3.5, 19.3], [2, 19.2],
-      [1, 18.4], [0.7, 17], [0.8, 15.3], [1.1, 14],
-    ]},
-  },
-  {
-    type: T_FRINGE,
-    shape: { kind: 'annulus', cx: 9.5, cy: 5.5, inner: 3.2, outer: 4.05 },
-  },
-  {
-    type: T_GREEN,
-    shape: { kind: 'circle', cx: 9.5, cy: 5.5, r: 3.2 },
-  },
-  {
-    type: T_TEE,
-    shape: { kind: 'rect', x: 8.7, y: 24.2, w: 1.6, h: 1.1 },
+    name: 'Hole 3', par: 5,
+    tee: { x: 15, y: 27.8 },
+    flag: { x: 3.6, y: 4.5 },
+    greenSlope: { angle: Math.PI * 0.55, mag: 7 },
+    surfaces: [
+      { type: T_FAIRWAY, shape: { kind: 'polygon', points: [
+        [13.7, 28.4], [16.3, 28.4],
+        [16.4, 27], [16.3, 24], [16.1, 20], [15.7, 17], [15, 15.2],
+        [13.7, 13.9], [11.5, 12.9], [9, 12],
+        [6.5, 11.2], [5.3, 10.2], [4.8, 8.5], [4.7, 6.5], [4.7, 4.7],
+        [4.4, 3.5], [3.2, 3.2], [2.2, 3.5], [1.7, 4.8],
+        [1.8, 6.8], [2.1, 9], [2.6, 11.2], [3.6, 13.4],
+        [4.7, 15.2], [6.5, 16.5], [9.5, 17.6], [12.5, 18.3],
+        [13.3, 20], [13.5, 23], [13.6, 25.5], [13.7, 28.4],
+      ]}},
+      { type: T_SAND, shape: { kind: 'circle', cx: 12.2, cy: 15.9, r: 1.25 }},
+      { type: T_SAND, shape: { kind: 'polygon', points: [
+        [5.6, 4.8], [6.3, 4.7], [6.8, 5.3], [6.7, 6.1], [6, 6.2], [5.4, 5.7],
+      ]}},
+      { type: T_FRINGE, shape: { kind: 'annulus', cx: 3.6, cy: 4.5, inner: 2.4, outer: 3.1 }},
+      { type: T_GREEN, shape: { kind: 'circle', cx: 3.6, cy: 4.5, r: 2.4 }},
+      { type: T_TEE, shape: { kind: 'rect', x: 14.3, y: 27.2, w: 1.5, h: 1.0 }},
+    ],
+    trees: [
+      { x: 9, y: 20 }, { x: 10, y: 18 }, { x: 11, y: 16.5 }, { x: 12.5, y: 19 },
+      { x: 13.5, y: 21.5 }, { x: 14, y: 24 }, { x: 11, y: 23 }, { x: 9, y: 22 },
+      { x: 8.5, y: 19.5 }, { x: 10.5, y: 24.5 }, { x: 12, y: 25.5 }, { x: 8, y: 17.5 },
+      { x: 13, y: 26 }, { x: 7.5, y: 21.5 }, { x: 7, y: 18.5 }, { x: 10, y: 26 },
+      { x: 11.5, y: 21 },
+      { x: 0.5, y: 6.5 }, { x: 0.5, y: 10.5 }, { x: 0.5, y: 14.5 }, { x: 0.5, y: 18.5 },
+      { x: 0.5, y: 22.5 }, { x: 1, y: 26.5 },
+      { x: 18, y: 3 }, { x: 18, y: 6.5 }, { x: 18.5, y: 10 }, { x: 18.5, y: 13 },
+      { x: 18.5, y: 17 }, { x: 19, y: 21 }, { x: 18.5, y: 25 }, { x: 16.5, y: 28 },
+      { x: 6, y: 1.5 }, { x: 9, y: 2 }, { x: 12.5, y: 2 }, { x: 1.5, y: 2 },
+    ],
   },
 ];
 
-for (const surf of SURFACES) {
-  const s = surf.shape;
+let SURFACES = null;
+let TREES = null;
+let FLAG = null;
+let TEE = null;
+let GREEN_SLOPE = null;
+let BUSHES = null;
+let PROPS = null;
+let WATER_PIXELS = null;
+let CURRENT_HOLE = null;
+
+function addBbox(surf) {
+  const s = Object.assign({}, surf.shape);
   if (s.kind === 'circle') {
     s._bbox = [(s.cx - s.r) * TILE, (s.cy - s.r) * TILE, (s.cx + s.r) * TILE, (s.cy + s.r) * TILE];
   } else if (s.kind === 'annulus') {
@@ -123,6 +204,7 @@ for (const surf of SURFACES) {
     }
     s._bbox = [x0 * TILE, y0 * TILE, x1 * TILE, y1 * TILE];
   }
+  return { type: surf.type, shape: s };
 }
 
 function pointInShape(x, y, shape) {
@@ -271,7 +353,7 @@ function buildWorldImageData() {
   return new ImageData(data, WORLD_W, WORLD_H);
 }
 
-const WATER_PIXELS = (() => {
+function computeWaterPixels() {
   const out = [];
   for (let y = 0; y < WORLD_H; y += 2) {
     for (let x = 0; x < WORLD_W; x += 2) {
@@ -279,7 +361,7 @@ const WATER_PIXELS = (() => {
     }
   }
   return out;
-})();
+}
 
 const CLUBS = [
   { key: 'DR', name: 'Driver',      short: 'DR', v: 225, angle: 20, accMult: 1.25, powerRate: 1.2 },
@@ -293,16 +375,14 @@ const CLUBS = [
   { key: 'PT', name: 'Putter',      short: 'PT', v: 110, angle: 0,  accMult: 0.55, powerRate: 0.55 },
 ];
 
-const GREEN_SLOPE = { angle: Math.PI * 0.3, mag: 7 };
-
 const SURFACE_PROPS = {
-  [T_GREEN]:   { bounceKeep: 0.32, rollDecel: 0.85, label: 'Green', slopeAng: GREEN_SLOPE.angle, slopeMag: GREEN_SLOPE.mag },
-  [T_FAIRWAY]: { bounceKeep: 0.55, rollDecel: 0.55, label: 'Fairway' },
-  [T_ROUGH]:   { bounceKeep: 0.26, rollDecel: 2.2, label: 'Rough' },
-  [T_FRINGE]:  { bounceKeep: 0.38, rollDecel: 0.8, label: 'Fringe' },
-  [T_TEE]:     { bounceKeep: 0.52, rollDecel: 0.6, label: 'Tee Box' },
-  [T_SAND]:    { bounceKeep: 0.1,  rollDecel: 4.5, label: 'Bunker' },
-  [T_SHORE]:   { bounceKeep: 0.2,  rollDecel: 3.0, label: 'Dirt' },
+  [T_GREEN]:   { bounceKeep: 0.32, rollDecel: 0.85, label: 'Green', slopeAng: 0, slopeMag: 0 },
+  [T_FAIRWAY]: { bounceKeep: 0.55, rollDecel: 0.78, label: 'Fairway' },
+  [T_ROUGH]:   { bounceKeep: 0.26, rollDecel: 2.9,  label: 'Rough' },
+  [T_FRINGE]:  { bounceKeep: 0.38, rollDecel: 1.05, label: 'Fringe' },
+  [T_TEE]:     { bounceKeep: 0.52, rollDecel: 0.82, label: 'Tee Box' },
+  [T_SAND]:    { bounceKeep: 0.1,  rollDecel: 5.5,  label: 'Bunker' },
+  [T_SHORE]:   { bounceKeep: 0.2,  rollDecel: 3.8,  label: 'Dirt' },
   [T_WATER]:   { bounceKeep: 0, rollDecel: 0, label: 'Water', hazard: true },
 };
 
@@ -314,19 +394,7 @@ function surfacePropsAt(wx, wy) {
   return SURFACE_PROPS[s] || SURFACE_PROPS[T_ROUGH];
 }
 
-const TREES = [
-  { x: 3.5, y: 8 }, { x: 16.5, y: 6.5 }, { x: 2.5, y: 11.2 }, { x: 17.5, y: 14 },
-  { x: 4.5, y: 22 }, { x: 14.5, y: 24.5 }, { x: 1.5, y: 3.5 }, { x: 18.5, y: 2.5 },
-  { x: 2.5, y: 27.5 }, { x: 17.5, y: 28 }, { x: 6.5, y: 27.5 }, { x: 13.5, y: 21.5 },
-  { x: 1.5, y: 20.5 }, { x: 15.5, y: 19.5 }, { x: 0.5, y: 9 }, { x: 19.5, y: 10 },
-  { x: 2, y: 23.5 }, { x: 16.5, y: 10.5 }, { x: 16.5, y: 16.5 },
-  { x: 18.5, y: 19 }, { x: 0.5, y: 26 }, { x: 19.5, y: 23 }, { x: 4, y: 25.5 },
-  { x: 15, y: 28 },
-];
-const FLAG = { x: 9.5, y: 5.5 };
-const TEE = { x: 9.5, y: 24.8 };
-
-const BUSHES = (() => {
+function computeBushes() {
   const out = [];
   for (let ty = 0; ty < MAP_H; ty++) {
     for (let tx = 0; tx < MAP_W; tx++) {
@@ -344,9 +412,9 @@ const BUSHES = (() => {
     }
   }
   return out;
-})();
+}
 
-const PROPS = (() => {
+function computeProps() {
   const out = [];
   for (let ty = 0; ty < MAP_H; ty++) {
     for (let tx = 0; tx < MAP_W; tx++) {
@@ -389,7 +457,25 @@ const PROPS = (() => {
     }
   }
   return out;
-})();
+}
+
+function loadHole(idx) {
+  const h = HOLES[((idx % HOLES.length) + HOLES.length) % HOLES.length];
+  CURRENT_HOLE = h;
+  SURFACES = h.surfaces.map(addBbox);
+  TREES = h.trees;
+  FLAG = h.flag;
+  TEE = h.tee;
+  GREEN_SLOPE = h.greenSlope;
+  SURFACE_PROPS[T_GREEN].slopeAng = GREEN_SLOPE.angle;
+  SURFACE_PROPS[T_GREEN].slopeMag = GREEN_SLOPE.mag;
+  WATER_PIXELS = computeWaterPixels();
+  BUSHES = computeBushes();
+  PROPS = computeProps();
+  return h;
+}
+
+loadHole(0);
 
 function drawProp(ctx, p) {
   if (p.kind === 'tuft') {
@@ -748,12 +834,27 @@ function drawShotPredict(ctx, points) {
 }
 
 function drawFlightTrail(ctx, trail) {
-  for (let i = 0; i < trail.length; i++) {
-    const p = trail[i];
-    const a = 0.75 * (i / trail.length);
-    ctx.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
-    ctx.fillRect(Math.floor(p.x), Math.floor(p.y - p.z), 2, 2);
+  if (trail.length < 2) return;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (let i = 1; i < trail.length; i++) {
+    const p0 = trail[i - 1], p1 = trail[i];
+    const a = (i / trail.length);
+    ctx.strokeStyle = `rgba(255,246,216,${(a * 0.42).toFixed(3)})`;
+    ctx.lineWidth = 3.2;
+    ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y - p0.z);
+    ctx.lineTo(p1.x, p1.y - p1.z);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(255,255,255,${(a * 0.8).toFixed(3)})`;
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y - p0.z);
+    ctx.lineTo(p1.x, p1.y - p1.z);
+    ctx.stroke();
   }
+  ctx.restore();
 }
 
 function computeCarry(club, power) {
@@ -879,6 +980,7 @@ function shapeLabel(spinX, spinY) {
 export default function GolfStoryScreen({ onExit }) {
   const canvasRef = useRef(null);
   const staticRef = useRef(null);
+  const holeIdxRef = useRef(0);
   const posRef = useRef({ x: TEE.x * TILE, y: TEE.y * TILE, facing: 'N', walkPhase: 0, moving: false });
   const ballRef = useRef({
     x: TEE.x * TILE - 4, y: TEE.y * TILE + 2, z: 0,
@@ -911,6 +1013,7 @@ export default function GolfStoryScreen({ onExit }) {
     clubCarryYd: 250, strokes: 1, pinYd: 0, lie: 'Tee Box',
     windMph: 0, windAngleDeg: 0, message: null, power: 0, accuracy: 0,
     spinX: 0, spinY: 0, shape: 'PURE',
+    holeName: HOLES[0].name, holePar: HOLES[0].par, holeIdx: 0,
   });
 
   useEffect(() => {
@@ -923,12 +1026,17 @@ export default function GolfStoryScreen({ onExit }) {
     const staticC = document.createElement('canvas');
     staticC.width = WORLD_W;
     staticC.height = WORLD_H;
-    const sctx = staticC.getContext('2d');
-    sctx.imageSmoothingEnabled = false;
-    const imgData = buildWorldImageData();
-    sctx.putImageData(imgData, 0, 0);
-    for (const p of PROPS) drawProp(sctx, p);
     staticRef.current = staticC;
+
+    const rebuildStatic = () => {
+      const sctx = staticRef.current.getContext('2d');
+      sctx.imageSmoothingEnabled = false;
+      sctx.clearRect(0, 0, WORLD_W, WORLD_H);
+      const imgData = buildWorldImageData();
+      sctx.putImageData(imgData, 0, 0);
+      for (const p of PROPS) drawProp(sctx, p);
+    };
+    rebuildStatic();
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
@@ -939,16 +1047,20 @@ export default function GolfStoryScreen({ onExit }) {
     resize();
     window.addEventListener('resize', resize);
 
-    const windAngle = Math.random() * Math.PI * 2;
-    const windSpeed = 5 + Math.random() * 18;
-    windRef.current = {
-      x: Math.sin(windAngle) * windSpeed,
-      y: -Math.cos(windAngle) * windSpeed,
-      angle: windAngle,
-      speed: windSpeed,
-      mph: Math.round(windSpeed * 0.55),
+    const randomizeWind = () => {
+      const windAngle = Math.random() * Math.PI * 2;
+      const windSpeed = 5 + Math.random() * 18;
+      windRef.current = {
+        x: Math.sin(windAngle) * windSpeed,
+        y: -Math.cos(windAngle) * windSpeed,
+        angle: windAngle,
+        speed: windSpeed,
+        mph: Math.round(windSpeed * 0.55),
+      };
     };
+    randomizeWind();
 
+    leavesRef.current = [];
     for (let i = 0; i < MAX_LEAVES; i++) {
       const l = spawnLeaf(windRef.current.x, windRef.current.y);
       l.age = Math.random() * l.maxAge;
@@ -957,9 +1069,20 @@ export default function GolfStoryScreen({ onExit }) {
       leavesRef.current.push(l);
     }
 
-    swingRef.current.strokeCount = 1;
-    const b0 = ballRef.current;
-    swingRef.current.aimAngle = Math.atan2(FLAG.x * TILE - b0.x, -(FLAG.y * TILE - b0.y));
+    const setBallOnTee = () => {
+      const b = ballRef.current;
+      b.x = TEE.x * TILE - 4; b.y = TEE.y * TILE + 2;
+      b.z = 0; b.vx = 0; b.vy = 0; b.vz = 0;
+      b.state = 'rest';
+      b.lastGoodX = b.x; b.lastGoodY = b.y;
+      b.trail = [];
+      const p = posRef.current;
+      p.x = b.x + 4; p.y = b.y - 2; p.facing = 'N'; p.moving = false;
+      swingRef.current.state = SW.IDLE;
+      swingRef.current.strokeCount = 1;
+      swingRef.current.aimAngle = Math.atan2(FLAG.x * TILE - b.x, -(FLAG.y * TILE - b.y));
+    };
+    setBallOnTee();
 
     const flushHud = () => {
       const sw = swingRef.current;
@@ -973,7 +1096,20 @@ export default function GolfStoryScreen({ onExit }) {
       let message = null;
       if (sw.state === SW.HAZARD) message = 'IN THE WATER — +1 penalty';
       else if (sw.state === SW.OB) message = 'OUT OF BOUNDS — +1 penalty';
-      else if (sw.state === SW.HOLED) message = `HOLED IT IN ${sw.strokeCount}!`;
+      else if (sw.state === SW.HOLED) {
+        const par = CURRENT_HOLE.par;
+        const s = sw.strokeCount;
+        const vs = s - par;
+        let tag = '';
+        if (vs <= -3) tag = 'ALBATROSS';
+        else if (vs === -2) tag = 'EAGLE';
+        else if (vs === -1) tag = 'BIRDIE';
+        else if (vs === 0) tag = 'PAR';
+        else if (vs === 1) tag = 'BOGEY';
+        else if (vs === 2) tag = 'DOUBLE';
+        else tag = `+${vs}`;
+        message = `HOLED IN ${s}  ·  ${tag}`;
+      }
       setHud({
         state: sw.state,
         club: club.name, clubShort: club.short, clubCarryYd: carryYd,
@@ -982,26 +1118,26 @@ export default function GolfStoryScreen({ onExit }) {
         windAngleDeg: (windRef.current.angle * 180 / Math.PI) % 360,
         message, power: sw.power, accuracy: sw.accuracy,
         spinX: sw.spinX, spinY: sw.spinY, shape: shapeLabel(sw.spinX, sw.spinY),
+        holeName: CURRENT_HOLE.name, holePar: CURRENT_HOLE.par, holeIdx: holeIdxRef.current,
       });
     };
     flushHud();
 
-    const resetHole = () => {
-      const ball = ballRef.current;
-      const p = posRef.current;
-      ball.x = TEE.x * TILE - 4;
-      ball.y = TEE.y * TILE + 2;
-      ball.z = 0; ball.vx = 0; ball.vy = 0; ball.vz = 0;
-      ball.state = 'rest';
-      ball.lastGoodX = ball.x; ball.lastGoodY = ball.y;
-      ball.trail = [];
-      p.x = ball.x + 4; p.y = ball.y - 2;
-      p.facing = 'N'; p.moving = false;
-      swingRef.current.state = SW.IDLE;
-      swingRef.current.strokeCount = 1;
-      swingRef.current.spinX = 0;
-      swingRef.current.spinY = 0;
-      swingRef.current.aimAngle = Math.atan2(FLAG.x * TILE - ball.x, -(FLAG.y * TILE - ball.y));
+    const advanceHole = () => {
+      holeIdxRef.current = (holeIdxRef.current + 1) % HOLES.length;
+      loadHole(holeIdxRef.current);
+      rebuildStatic();
+      randomizeWind();
+      leavesRef.current = [];
+      for (let i = 0; i < MAX_LEAVES; i++) {
+        const l = spawnLeaf(windRef.current.x, windRef.current.y);
+        l.age = Math.random() * l.maxAge;
+        l.x = Math.random() * WORLD_W;
+        l.y = Math.random() * WORLD_H;
+        leavesRef.current.push(l);
+      }
+      swingRef.current.spinX = 0; swingRef.current.spinY = 0;
+      setBallOnTee();
       flushHud();
     };
 
@@ -1032,7 +1168,7 @@ export default function GolfStoryScreen({ onExit }) {
         sw.strokeCount++;
         flushHud();
       } else if (sw.state === SW.HOLED) {
-        resetHole();
+        advanceHole();
       }
     };
 
@@ -1094,8 +1230,6 @@ export default function GolfStoryScreen({ onExit }) {
 
     let last = performance.now();
     let hudAccum = 0;
-    const flagX = FLAG.x * TILE;
-    const flagY = FLAG.y * TILE;
 
     const tick = (now) => {
       const dt = Math.min(0.05, (now - last) / 1000);
@@ -1105,6 +1239,8 @@ export default function GolfStoryScreen({ onExit }) {
       const ball = ballRef.current;
       const sw = swingRef.current;
       const w = windRef.current;
+      const flagX = FLAG.x * TILE;
+      const flagY = FLAG.y * TILE;
 
       for (const leaf of leavesRef.current) {
         leaf.vx += w.x * 0.35 * dt + (Math.random() - 0.5) * 2 * dt;
@@ -1308,6 +1444,11 @@ export default function GolfStoryScreen({ onExit }) {
         <Text style={styles.hudSub}>{hud.clubCarryYd} yd max</Text>
       </View>
 
+      <View style={styles.hudTopCenter} pointerEvents="none">
+        <Text style={styles.hudLabel}>{hud.holeName}</Text>
+        <Text style={styles.hudClubShort}>PAR {hud.holePar}</Text>
+      </View>
+
       <View style={styles.hudTopRight} pointerEvents="none">
         <Text style={styles.hudLabel}>WIND</Text>
         <View style={styles.windRow}>
@@ -1336,7 +1477,7 @@ export default function GolfStoryScreen({ onExit }) {
         <View style={styles.messageBox} pointerEvents="none">
           <Text style={styles.messageText}>{hud.message}</Text>
           {hud.state === SW.HOLED ? (
-            <Text style={styles.messageSub}>SPACE to play again</Text>
+            <Text style={styles.messageSub}>SPACE for next hole</Text>
           ) : null}
         </View>
       ) : null}
@@ -1362,7 +1503,7 @@ function hintForState(state) {
     case SW.FLYING: case SW.ROLLING: return '…';
     case SW.HAZARD: return 'Drop pending…';
     case SW.OB: return 'Drop pending…';
-    case SW.HOLED: return 'SPACE to play again';
+    case SW.HOLED: return 'SPACE for next hole';
     default: return '';
   }
 }
@@ -1438,13 +1579,18 @@ const styles = StyleSheet.create({
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
     paddingHorizontal: 10, paddingVertical: 8, minWidth: 120,
   },
+  hudTopCenter: {
+    position: 'absolute', top: 16, left: '50%', transform: [{ translateX: -60 }],
+    backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
+    paddingHorizontal: 10, paddingVertical: 6, width: 120, alignItems: 'center',
+  },
   hudTopRight: {
     position: 'absolute', top: 16, right: 60,
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
     paddingHorizontal: 10, paddingVertical: 8, minWidth: 110, alignItems: 'center',
   },
   hudShape: {
-    position: 'absolute', top: 16, right: 180,
+    position: 'absolute', top: 112, right: 16,
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
     paddingHorizontal: 8, paddingVertical: 6, width: 80, alignItems: 'center',
   },
