@@ -921,14 +921,34 @@ function drawTree(ctx, px, py, time, windStrength) {
   ctx.fillRect(x - 6 + sF, y - 14, 1, 1);
 }
 
-function drawFlag(ctx, px, py, time) {
+// 3D-ish cup: ground shadow, dark pit with a subtle elliptical taper,
+// a lighter inner rim on the "near" side to read as depth, and a
+// white rim highlight on the far side for lift.
+function drawCup(ctx, px, py) {
   const x = Math.floor(px), y = Math.floor(py);
-  ctx.fillStyle = COLORS.shadow;
-  ctx.beginPath(); ctx.ellipse(x, y + 1, 3, 1.5, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = COLORS.cup;
-  ctx.fillRect(x - 2, y - 1, 4, 2);
-  ctx.fillStyle = '#3a3a3a';
-  ctx.fillRect(x - 2, y - 1, 4, 1);
+  // Ground shadow — slightly larger than the rim for softness.
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath(); ctx.ellipse(x, y + 1.5, 4.3, 2.2, 0, 0, Math.PI * 2); ctx.fill();
+  // Dark pit (the hole itself), elongated vertically for a top-down-ish 3D look.
+  ctx.fillStyle = '#050807';
+  ctx.beginPath(); ctx.ellipse(x, y, 3.2, 2.0, 0, 0, Math.PI * 2); ctx.fill();
+  // Inner rim on the NEAR (south) side — slightly lighter so it reads as a lip.
+  ctx.fillStyle = '#13201a';
+  ctx.beginPath(); ctx.ellipse(x, y + 0.4, 3.0, 1.4, 0, 0, Math.PI, false); ctx.fill();
+  // Rim highlight on the FAR (north) side — light, thin.
+  ctx.strokeStyle = 'rgba(236,242,214,0.6)';
+  ctx.lineWidth = 0.6;
+  ctx.beginPath(); ctx.ellipse(x, y - 0.3, 3.05, 1.75, 0, Math.PI, Math.PI * 2); ctx.stroke();
+  // Turf ring around the lip so the hole sits into the grass instead of floating.
+  ctx.strokeStyle = 'rgba(52, 82, 40, 0.8)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.ellipse(x, y, 3.3, 2.05, 0, 0, Math.PI * 2); ctx.stroke();
+}
+
+function drawFlag(ctx, px, py, time, { showPole = true } = {}) {
+  const x = Math.floor(px), y = Math.floor(py);
+  drawCup(ctx, x, y);
+  if (!showPole) return;
   ctx.fillStyle = COLORS.poleDark;
   ctx.fillRect(x + 1, y - 17, 1, 17);
   ctx.fillStyle = COLORS.pole;
@@ -1759,14 +1779,28 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       // Render at up to 3× device pixels so high-DPR phones get crisp
       // tiles at close zoom. Capped at 3× to keep iPad draw costs sane.
       const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+      const prevW = canvas.width;
+      const prevH = canvas.height;
       canvas.width = Math.floor(canvas.clientWidth * dpr);
       canvas.height = Math.floor(canvas.clientHeight * dpr);
       // Keep pixel-art crispness at normal zoom; the per-frame tick flips
       // imageSmoothing on when zoomed past ~1.6× so the grain smooths out.
       ctx.imageSmoothingEnabled = false;
+      // If the viewport dimensions flipped (device rotation), reset the
+      // zoom so the new viewport gets a fresh auto-fit and the min-zoom
+      // clamp doesn't lock the user into a huge close-up. Without this
+      // the minScale grows on rotation, pins zoomRef up, and there's no
+      // way down.
+      const flipped = prevW > 0 && prevH > 0
+        && ((prevW > prevH) !== (canvas.width > canvas.height));
+      if (flipped) {
+        zoomRef.current = 1.0;
+        zoomUserOverrideRef.current = false;
+      }
     };
     resize();
     window.addEventListener('resize', resize);
+    window.addEventListener('orientationchange', resize);
 
     const randomizeWind = () => {
       const windAngle = Math.random() * Math.PI * 2;
@@ -1915,7 +1949,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       }
       else if (ball.state === 'hazard') { sw.state = SW.HAZARD; sw.messageTimer = 2.2; sw.strokeCount++; flushHud(); }
       else if (ball.state === 'ob') { sw.state = SW.OB; sw.messageTimer = 2.2; sw.strokeCount++; flushHud(); }
-      else if (ball.state === 'holed') { sw.state = SW.HOLED; sw.messageTimer = 6; flushHud(); }
+      else if (ball.state === 'holed') { sw.state = SW.HOLED; sw.messageTimer = 3; flushHud(); }
     };
 
     const screenToWorld = (clientX, clientY) => {
@@ -2273,6 +2307,12 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         }
       } else if (sw.state === SW.HOLED) {
         sw.messageTimer -= dt;
+        // Auto-advance to the next hole when the holed-out message
+        // expires, so the game never gets stuck waiting for a tap on a
+        // canvas region that might be hidden behind HUD chrome.
+        if (sw.messageTimer <= 0) {
+          advanceHole();
+        }
       }
 
       hudAccum += dt;
@@ -2439,7 +2479,15 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       const drawables = [];
       for (const t of TREES) drawables.push({ kind: 'tree', x: t.x * TILE, y: t.y * TILE });
       for (const b of BUSHES) drawables.push({ kind: 'bush', x: b.x * TILE, y: b.y * TILE, variant: b.variant });
-      drawables.push({ kind: 'flag', x: FLAG.x * TILE, y: FLAG.y * TILE });
+      // Hide the flag pole while the player is putting (putter selected).
+      // The cup itself still draws — the tall red pin is what would be
+      // pulled for a real putt, so we pull it here too.
+      drawables.push({
+        kind: 'flag',
+        x: FLAG.x * TILE,
+        y: FLAG.y * TILE,
+        showPole: !(isPutting && (sw.state === SW.IDLE || sw.state === SW.AIMING || sw.state === SW.SWIPING || sw.state === SW.STOPPED)),
+      });
       if (ball.state === 'dropping') {
         drawables.push({ kind: 'balldrop', x: ball.x, y: ball.y, t: ball.dropT / 0.75 });
       } else if (sw.state !== SW.HOLED) {
@@ -2457,7 +2505,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       for (const d of drawables) {
         if (d.kind === 'tree') drawTree(ctx, d.x, d.y, now, windStrength);
         else if (d.kind === 'bush') drawBush(ctx, d.x, d.y, d.variant, now, windStrength);
-        else if (d.kind === 'flag') drawFlag(ctx, d.x, d.y, now);
+        else if (d.kind === 'flag') drawFlag(ctx, d.x, d.y, now, { showPole: d.showPole !== false });
         else if (d.kind === 'ball') drawBall(ctx, d.x, d.y, d.z || 0);
         else if (d.kind === 'balldrop') drawBallDropping(ctx, d.x, d.y, d.t);
         else if (d.kind === 'golfer') drawGolfer(ctx, d.x, d.y, d.facing, d.phase);
