@@ -949,33 +949,59 @@ function drawFlag(ctx, px, py, time, { showPole = true } = {}) {
   const x = Math.floor(px), y = Math.floor(py);
   drawCup(ctx, x, y);
   if (!showPole) return;
+  // Pole: 2-column flagstick with a light/dark shade for round feel,
+  // plus a gold finial at the very top.
   ctx.fillStyle = COLORS.poleDark;
   ctx.fillRect(x + 1, y - 17, 1, 17);
   ctx.fillStyle = COLORS.pole;
   ctx.fillRect(x, y - 17, 1, 17);
+  // Bright highlight on the sun side of the pole.
+  ctx.fillStyle = 'rgba(255,246,216,0.55)';
+  ctx.fillRect(x, y - 14, 1, 10);
+  // Gold finial (ball) at the very top.
+  ctx.fillStyle = COLORS.flagYellow;
+  ctx.beginPath(); ctx.arc(x + 0.5, y - 17.5, 1, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillRect(x + 1, y - 17, 1, 1);
+  // Flag cloth — triangular with a gentle wave, two colour bands + a
+  // darker lower stripe for depth.
   const wave = Math.sin(time * 0.004);
+  const wave2 = Math.sin(time * 0.004 + 0.6);
   const flapX = x + 2;
   const flapY = y - 17;
+  // Main flag body.
   ctx.fillStyle = COLORS.flagRed;
   ctx.beginPath();
   ctx.moveTo(flapX, flapY);
-  ctx.lineTo(flapX + 8, flapY + 1 + wave * 0.5);
-  ctx.lineTo(flapX + 8, flapY + 3 + wave);
+  ctx.lineTo(flapX + 9, flapY + 1 + wave * 0.5);
+  ctx.lineTo(flapX + 9, flapY + 3 + wave);
   ctx.lineTo(flapX, flapY + 5);
   ctx.closePath();
   ctx.fill();
+  // Middle band — slightly lighter for depth.
+  ctx.fillStyle = COLORS.flagHi;
+  ctx.beginPath();
+  ctx.moveTo(flapX, flapY + 0.8);
+  ctx.lineTo(flapX + 8, flapY + 1.6 + wave2 * 0.4);
+  ctx.lineTo(flapX + 8, flapY + 2.6 + wave2 * 0.4);
+  ctx.lineTo(flapX, flapY + 2.3);
+  ctx.closePath();
+  ctx.fill();
+  // Dark lower stripe (wave into shadow).
   ctx.fillStyle = COLORS.flagDark;
   ctx.beginPath();
-  ctx.moveTo(flapX, flapY + 3);
-  ctx.lineTo(flapX + 6, flapY + 3 + wave * 0.7);
-  ctx.lineTo(flapX + 7, flapY + 4 + wave);
+  ctx.moveTo(flapX, flapY + 3.4);
+  ctx.lineTo(flapX + 7, flapY + 3.3 + wave * 0.7);
+  ctx.lineTo(flapX + 7.5, flapY + 4.1 + wave);
   ctx.lineTo(flapX, flapY + 5);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = COLORS.flagHi;
-  ctx.fillRect(flapX, flapY, 5, 1);
+  // Stitch at the hoist (left edge of flag).
+  ctx.fillStyle = 'rgba(255,246,216,0.55)';
+  ctx.fillRect(flapX, flapY, 1, 5);
+  // Tiny yellow pennant detail at the tip.
   ctx.fillStyle = COLORS.flagYellow;
-  ctx.fillRect(flapX + 2, flapY + 2, 1, 1);
+  ctx.fillRect(flapX + 7, flapY + 2, 1, 1);
 }
 
 // Map a club key to a silhouette category so drawClub can render the
@@ -1131,24 +1157,74 @@ function drawGolfer(ctx, px, py, facing, phase, swingInfo) {
   ctx.fillRect(x + 3, y - 21, 1, 2);
   ctx.fillStyle = COLORS.hatBand;
   ctx.fillRect(x - 4, y - 20, 8, 1);
+  // === Detail pass — Golf-Story-style features visible even at close
+  // zoom. Adds eyes / brim shadow / ear / belt / shirt buttons so the
+  // sprite reads as a character rather than a colored pixel stack.
+  // Hat brim shadow along the forehead — thin dark line under the hat.
+  ctx.fillStyle = 'rgba(0,0,0,0.32)';
+  ctx.fillRect(x - 3, y - 18, 6, 1);
+  // Belt (between shirt and pants) — helps separate the blocks.
+  ctx.fillStyle = '#1a2a1e';
+  ctx.fillRect(x - 3, y - 8, 6, 1);
+  // Belt buckle centered.
+  ctx.fillStyle = COLORS.hatBand;
+  ctx.fillRect(x - 0.5, y - 8, 1, 1);
   if (facing === 'S') {
+    // Eyes — small dark cup-color dots, one per eye.
     ctx.fillStyle = COLORS.cup;
-    ctx.fillRect(x - 2, y - 18, 1, 1);
-    ctx.fillRect(x + 1, y - 18, 1, 1);
+    ctx.fillRect(x - 2, y - 17, 1, 1);
+    ctx.fillRect(x + 1, y - 17, 1, 1);
+    // Mouth — 1px on the jaw.
     ctx.fillStyle = '#a83030';
-    ctx.fillRect(x, y - 17, 1, 1);
+    ctx.fillRect(x, y - 15, 1, 1);
+    // Shirt buttons — small darker dots down the center.
+    ctx.fillStyle = COLORS.shirtDark;
+    ctx.fillRect(x, y - 12, 1, 1);
+    ctx.fillRect(x, y - 10, 1, 1);
   } else if (facing === 'E') {
+    // Side-view eye + ear.
     ctx.fillStyle = COLORS.cup;
-    ctx.fillRect(x + 1, y - 18, 1, 1);
+    ctx.fillRect(x + 1, y - 17, 1, 1);
+    ctx.fillStyle = COLORS.skinShadow;
+    ctx.fillRect(x - 3, y - 17, 1, 1);
+    // Shoulder seam hint — 1px dark on the right sleeve.
+    ctx.fillStyle = COLORS.shirtDark;
+    ctx.fillRect(x + 3, y - 13, 1, 2);
   } else if (facing === 'W') {
     ctx.fillStyle = COLORS.cup;
-    ctx.fillRect(x - 2, y - 18, 1, 1);
+    ctx.fillRect(x - 2, y - 17, 1, 1);
+    ctx.fillStyle = COLORS.skinShadow;
+    ctx.fillRect(x + 2, y - 17, 1, 1);
+    ctx.fillStyle = COLORS.shirtDark;
+    ctx.fillRect(x - 4, y - 13, 1, 2);
+  } else if (facing === 'N') {
+    // Back of head — hair detail only, no face.
+    ctx.fillStyle = COLORS.hatDark;
+    ctx.fillRect(x - 2, y - 18, 5, 1);
   }
-  // Club overlay — only when facing east (the address pose) so the club
-  // doesn't stick out through the body on other facings.
-  if (swingInfo && facing === 'E') {
-    const hx = x + 4, hy = y - 9;
-    drawClub(ctx, hx, hy, swingAngleDeg(swingInfo), swingInfo.clubCategory || 'iron');
+  // Hat brim highlight (always) — bright edge along the front of the hat.
+  ctx.fillStyle = 'rgba(255,246,216,0.35)';
+  ctx.fillRect(x - 3, y - 19, 6, 1);
+  // Club overlay — rotated toward the club-head direction derived from
+  // the golfer's facing. This way the address/backswing/follow-through
+  // animate in the correct plane regardless of hole orientation.
+  if (swingInfo) {
+    // Hand position offset FROM the golfer, perpendicular to their body
+    // on the club-side. For right-handed address pose, the hand sits
+    // slightly in front (toward the target) on the golfer's right.
+    const facingRad =
+      facing === 'E' ? 0 :
+      facing === 'S' ? Math.PI / 2 :
+      facing === 'W' ? Math.PI :
+      -Math.PI / 2;
+    const hOff = 4;
+    const hx = x + Math.cos(facingRad) * hOff;
+    const hy = y - 9 + Math.sin(facingRad) * hOff;
+    // Swing angle is defined relative to the facing direction (0° = toward
+    // target = facingRad). Convert to screen-space angle.
+    const swingRelDeg = swingAngleDeg(swingInfo);
+    const screenDeg = (facingRad * 180) / Math.PI + swingRelDeg;
+    drawClub(ctx, hx, hy, screenDeg, swingInfo.clubCategory || 'iron');
   }
 }
 
@@ -1954,8 +2030,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       if (ball.state === 'rolling') sw.state = SW.ROLLING;
       else if (ball.state === 'dropping') sw.state = SW.DROPPING;
       else if (ball.state === 'stopped' || ball.state === 'holed') {
-        // Finalize the last-shot stats before transitioning so the summary
-        // card has carry + end lie.
+        // Finalize the last-shot stats (summary card needs carry + end lie).
         if (lastShotRef.current && lastShotRef.current.carryYd === null) {
           const ls = lastShotRef.current;
           const distPx = Math.hypot(ball.x - ls.startX, ball.y - ls.startY);
@@ -1975,11 +2050,18 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
           const pose = addressPose(ball, sw.aimAngle);
           p.x = pose.px; p.y = pose.py; p.facing = pose.facing;
           flushHud();
+        } else {
+          // ball.state === 'holed' — transition the swing state here too.
+          // Before this fix the stopped/holed branch ate the holed case
+          // and the subsequent `else if (holed)` never ran, so sw.state
+          // stayed at SW.DROPPING and the game stuck on the hole.
+          sw.state = SW.HOLED;
+          sw.messageTimer = 3;
+          flushHud();
         }
       }
       else if (ball.state === 'hazard') { sw.state = SW.HAZARD; sw.messageTimer = 2.2; sw.strokeCount++; flushHud(); }
       else if (ball.state === 'ob') { sw.state = SW.OB; sw.messageTimer = 2.2; sw.strokeCount++; flushHud(); }
-      else if (ball.state === 'holed') { sw.state = SW.HOLED; sw.messageTimer = 3; flushHud(); }
     };
 
     const screenToWorld = (clientX, clientY) => {
