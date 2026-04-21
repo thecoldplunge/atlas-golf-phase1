@@ -2730,23 +2730,40 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       // rad; a 40-accuracy golfer drifts ±~0.18 rad.
       const accNoise = (Math.random() - 0.5) * 2 * (0.20 - Math.min(0.18, acc / 600));
       sw.aimAngle = Math.atan2(dx, -dy) + accNoise;
-      // Power scales so full carry ≈ distance with +/- power noise.
-      const carryPx = computeCarry(club, 1.0);
-      let powerPct = distPx / Math.max(1, carryPx);
-      // Short putts use touch to dial tempo more precisely.
+      let powerPct;
       if (onGreen) {
-        const tapReach = club.v * 0.5 / TILE * YARDS_PER_TILE;
-        if (distYd <= tapReach) {
+        // Putting physics: ball launches horizontally and decays
+        // LINEARLY via sp.rollDecel * 40 px/s², so roll distance
+        // scales with v0² — a linear dist/carry ratio wildly under-
+        // hits. Invert the quadratic so the NPC actually reaches the
+        // cup: v0 = sqrt(2 · R · d). That was the "12 on a short putt
+        // because it kept missing short" bug.
+        const surf = surfacePropsAt(b.x, b.y);
+        const R = (surf?.rollDecel || 0.85) * 40;
+        const overshoot = 1.08; // bias slightly past the hole
+        const desiredV0 = Math.sqrt(2 * R * Math.max(1, distPx)) * overshoot;
+        const tapFullV0 = club.v * 0.5;   // SHOT_TYPE_PROFILES.tap.carry
+        const normalFullV0 = club.v * 1.0;
+        if (desiredV0 <= tapFullV0) {
           sw.shotType = 'tap';
-          powerPct = distPx / Math.max(1, computeCarry(club, 1.0) * 0.5);
+          powerPct = desiredV0 / tapFullV0;
         } else {
           sw.shotType = 'normal';
+          powerPct = desiredV0 / normalFullV0;
         }
+        // Putt precision comes from TOUCH, not raw power. Small noise
+        // so the NPC doesn't yank a gimme 40% short.
+        const puttNoise = (Math.random() - 0.5) * 2 * Math.max(0.02, 0.14 - touch / 700);
+        powerPct = Math.max(0.25, Math.min(1.0, powerPct + puttNoise));
+      } else {
+        // Approach / tee shots: full-power carry ≈ distance.
+        const carryPx = computeCarry(club, 1.0);
+        powerPct = distPx / Math.max(1, carryPx);
+        powerPct = Math.max(0.15, Math.min(1.0, powerPct));
+        const powerNoise = (Math.random() - 0.5) * 2 * (0.22 - power / 600);
+        const clutchBump = (distYd < 80 ? (composure - 50) / 800 : 0);
+        powerPct = Math.max(0.1, Math.min(1.0, powerPct + powerNoise + clutchBump));
       }
-      powerPct = Math.max(0.15, Math.min(1.0, powerPct));
-      const powerNoise = (Math.random() - 0.5) * 2 * (0.22 - power / 600);
-      const clutchBump = (distYd < 80 ? (composure - 50) / 800 : 0);
-      powerPct = Math.max(0.1, Math.min(1.0, powerPct + powerNoise + clutchBump));
       // Shape: small spin coming from touch.
       sw.spinX = ((Math.random() - 0.5) * 2) * (1 - touch / 120) * 0.35;
       sw.spinY = 0;
@@ -3074,7 +3091,15 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       const dx = worldX - ball.x;
       const dy = worldY - ball.y;
       if (Math.hypot(dx, dy) < 4) return;
-      sw.aimAngle = Math.atan2(dx, -dy);
+      const targetAngle = Math.atan2(dx, -dy);
+      // Damp the aim change. Without this, the projected landing spot
+      // sweeps ~3× as fast as the finger on long clubs because a small
+      // angle change at the ball maps to a big arc at carry distance.
+      // 1/3 lerp per update matches the "about 3x too fast" feedback.
+      let delta = targetAngle - sw.aimAngle;
+      while (delta > Math.PI) delta -= 2 * Math.PI;
+      while (delta < -Math.PI) delta += 2 * Math.PI;
+      sw.aimAngle += delta / 3;
     };
 
     const activePointers = new Map();
