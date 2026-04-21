@@ -209,7 +209,12 @@ function rotateHole90CCW(h) {
 // Pad each hole's tile dimensions by 30% so the camera has rough margin to
 // pan into past the designed playfield — matches the main game's WORLD
 // inflation. Course features stay anchored to the original layout coords.
-const WORLD_PAD_FACTOR = 1.3;
+// Course playfield is 1.8× larger than the designed hole dimensions so
+// there's a generous rough/OOB buffer on every side of the green, tee,
+// and fairway. Course features get centered in the padded world via
+// the shift helpers below, so the margin sits on ALL sides (not just
+// the right + bottom like the 1.3× pad did).
+const WORLD_PAD_FACTOR = 1.8;
 
 let ORIENTATION = 'portrait';
 let MAP_W = Math.ceil(HOLES[0].width * WORLD_PAD_FACTOR);
@@ -225,6 +230,23 @@ let BUSHES = null;
 let PROPS = null;
 let WATER_PIXELS = null;
 let CURRENT_HOLE = null;
+
+// Shift every coordinate-bearing field on a surface shape by (dx, dy)
+// tile units. Used by loadHole to CENTER each hole's original features
+// inside the padded WORLD, so the OOB buffer sits equally on all sides.
+function shiftShape(shape, dx, dy) {
+  const s = { ...shape };
+  if (s.kind === 'circle' || s.kind === 'annulus') {
+    s.cx = (s.cx || 0) + dx;
+    s.cy = (s.cy || 0) + dy;
+  } else if (s.kind === 'rect') {
+    s.x = (s.x || 0) + dx;
+    s.y = (s.y || 0) + dy;
+  } else if (s.kind === 'polygon') {
+    s.points = s.points.map(([x, y]) => [x + dx, y + dy]);
+  }
+  return s;
+}
 
 function addBbox(surf) {
   const s = Object.assign({}, surf.shape);
@@ -539,15 +561,19 @@ function loadHole(idx, orientation) {
   const base = HOLES[baseIdx];
   ORIENTATION = orientation || ORIENTATION || 'portrait';
   const h = ORIENTATION === 'landscape' ? rotateHole90CCW(base) : base;
-  CURRENT_HOLE = { ...h, idxBase: baseIdx };
   MAP_W = Math.ceil(h.width * WORLD_PAD_FACTOR);
   MAP_H = Math.ceil(h.height * WORLD_PAD_FACTOR);
   WORLD_W = MAP_W * TILE;
   WORLD_H = MAP_H * TILE;
-  SURFACES = h.surfaces.map(addBbox);
-  TREES = h.trees;
-  FLAG = h.flag;
-  TEE = h.tee;
+  // Center the designed hole inside the padded map so margin sits on
+  // every side, not just right+bottom.
+  const padDx = Math.floor((MAP_W - h.width) / 2);
+  const padDy = Math.floor((MAP_H - h.height) / 2);
+  CURRENT_HOLE = { ...h, idxBase: baseIdx, padDx, padDy };
+  SURFACES = h.surfaces.map((surf) => addBbox({ type: surf.type, shape: shiftShape(surf.shape, padDx, padDy) }));
+  TREES = (h.trees || []).map((t) => ({ ...t, x: t.x + padDx, y: t.y + padDy }));
+  FLAG = { ...h.flag, x: h.flag.x + padDx, y: h.flag.y + padDy };
+  TEE = { ...h.tee, x: h.tee.x + padDx, y: h.tee.y + padDy };
   GREEN_SLOPE = h.greenSlope;
   SURFACE_PROPS[T_GREEN].slopeAng = GREEN_SLOPE.angle;
   SURFACE_PROPS[T_GREEN].slopeMag = GREEN_SLOPE.mag;
