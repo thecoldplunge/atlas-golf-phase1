@@ -421,6 +421,9 @@ const SHOT_TYPE_PROFILES = {
   flop:    { carry: 0.33, apex: 2.0,  label: 'Flop' },
   stinger: { carry: 1.0,  apex: 0.5,  label: 'Stinger' },
   bump:    { carry: 0.75, apex: 0.4,  label: 'Bump & Run' },
+  // Putter-only. 'tap' rolls a short putt; 'blast' charges past the cup.
+  tap:     { carry: 0.5,  apex: 1.0,  label: 'Tap' },
+  blast:   { carry: 1.5,  apex: 1.0,  label: 'Blast' },
 };
 
 const WEDGE_KEYS_GS = new Set(['LW', 'SW', 'PW']); // GS only ships SW + PW
@@ -429,7 +432,11 @@ const clubIsIronOrWoodGS = (club) => !!club && club.key !== 'PT' && !WEDGE_KEYS_
 // GS surface labels live in SURFACE_PROPS.label — Stinger needs a clean lie.
 const STINGER_GOOD_LIES = new Set(['Tee Box', 'Fairway', 'Fringe']);
 const shotTypeEligibleGS = (type, club, lieLabel) => {
-  if (!club || club.key === 'PT') return type === 'normal';
+  if (!club) return type === 'normal';
+  // Putter gets its own shortlist: Normal, Tap (50%), Blast (150%).
+  if (club.key === 'PT') return type === 'normal' || type === 'tap' || type === 'blast';
+  // Non-putters can't tap/blast — those are putter-exclusive.
+  if (type === 'tap' || type === 'blast') return false;
   if (type === 'normal') return true;
   if (type === 'chip')   return true;
   if (type === 'flop')   return clubIsWedgeGS(club);
@@ -446,7 +453,7 @@ const shotTypeEligibleGS = (type, club, lieLabel) => {
 const SURFACE_PROPS = {
   [T_GREEN]:   { bounceKeep: 0.20, rollDecel: 0.85, label: 'Green',   slopeAng: 0, slopeMag: 0, powerPenalty: [1.0, 1.0],   swingSensitivity: 1.0 },
   [T_FAIRWAY]: { bounceKeep: 0.28, rollDecel: 0.78, label: 'Fairway',                           powerPenalty: [0.95, 0.98], swingSensitivity: 1.0 },
-  [T_ROUGH]:   { bounceKeep: 0.15, rollDecel: 2.9,  label: 'Rough',                             powerPenalty: [0.78, 0.9],  swingSensitivity: 1.25 },
+  [T_ROUGH]:   { bounceKeep: 0.15, rollDecel: 2.9,  label: 'Rough',                             powerPenalty: [0.835, 0.925], swingSensitivity: 1.25 },
   [T_FRINGE]:  { bounceKeep: 0.22, rollDecel: 1.05, label: 'Fringe',                            powerPenalty: [0.93, 0.97], swingSensitivity: 1.05 },
   [T_TEE]:     { bounceKeep: 0.26, rollDecel: 0.82, label: 'Tee Box',                           powerPenalty: [1.0, 1.0],   swingSensitivity: 1.0 },
   [T_SAND]:    { bounceKeep: 0.05, rollDecel: 5.5,  label: 'Bunker',                            powerPenalty: [0.55, 0.7],  swingSensitivity: 1.6 },
@@ -821,14 +828,17 @@ function shotParams(club, power, spinY, accuracyOffset) {
 
 const MAGNUS_MAX = 38;
 
-function simulateFlight(startX, startY, aimAngle, accuracy, power, spinX, spinY, club, windX, windY, stopAtGround) {
+function simulateFlight(startX, startY, aimAngle, accuracy, power, spinX, spinY, club, windX, windY, stopAtGround, shotType = 'normal') {
   const { v0, angleRad, curveDeg } = shotParams(club, power, spinY, accuracy);
+  const prof = SHOT_TYPE_PROFILES[shotType] || SHOT_TYPE_PROFILES.normal;
+  const v0Typed = v0 * prof.carry;
   const deflectionRad = (curveDeg * Math.PI) / 180;
   const dir = aimAngle + deflectionRad;
   const cosAng = club.angle === 0 ? 1 : Math.cos(angleRad);
-  let vx = v0 * cosAng * Math.sin(dir);
-  let vy = v0 * cosAng * -Math.cos(dir);
-  let vz = club.angle === 0 ? 0 : v0 * Math.sin(angleRad);
+  let vx = v0Typed * cosAng * Math.sin(dir);
+  let vy = v0Typed * cosAng * -Math.cos(dir);
+  // Apex modifier — flop balloons, stinger/bump run low.
+  let vz = club.angle === 0 ? 0 : v0Typed * Math.sin(angleRad) * prof.apex;
   let x = startX, y = startY, z = 0;
   const stepDt = 0.04;
   const maxSteps = 220;
@@ -861,8 +871,12 @@ function simulateFlight(startX, startY, aimAngle, accuracy, power, spinX, spinY,
   return points;
 }
 
-function simulatePutt(startX, startY, aimAngle, accuracy, power, club, spinX) {
-  const v0 = club.v * power;
+function simulatePutt(startX, startY, aimAngle, accuracy, power, club, spinX, shotType = 'normal') {
+  // Putter profiles: 'tap' 50%, 'blast' 150%. Other putter types fall back
+  // to 1.0. Applied BEFORE the physics loop so the roll decays from the
+  // adjusted launch speed.
+  const prof = SHOT_TYPE_PROFILES[shotType] || SHOT_TYPE_PROFILES.normal;
+  const v0 = club.v * power * prof.carry;
   const curveDeg = (accuracy + spinX * 0.4) * 18 * club.accMult;
   const dir = aimAngle + (curveDeg * Math.PI) / 180;
   let vx = v0 * Math.sin(dir);
@@ -1848,27 +1862,57 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       const minScale = Math.max(viewW / WORLD_W, viewH / WORLD_H);
       const minZoomHere = Math.max(0.5, minScale / baseScale);
       if (zoomRef.current < minZoomHere) zoomRef.current = minZoomHere;
-      const scale = baseScale * zoomRef.current;
-      // Camera focus: 'aim' frames the projected landing spot (offset
-      // toward phone top / tablet right). 'golfer' centers on the player.
       const cMode = cameraModeRef.current;
       const isTabletGS = (viewW / dpr) >= 700;
+      const selectedClub = CLUBS[sw.clubIdx] || CLUBS[0];
+      const isPutting = selectedClub.key === 'PT';
+      // Putting framing beats the normal aim/golfer toggle: always center
+      // between ball and flag, and dial the zoom so the entire putt sits
+      // comfortably in the frame. Runs BEFORE `scale` is finalised so
+      // anchor-offset math uses the putting scale this same frame.
+      if (isPutting && (sw.state === SW.IDLE || sw.state === SW.AIMING || sw.state === SW.SWIPING || sw.state === SW.STOPPED)) {
+        const flagX = FLAG.x * TILE;
+        const flagY = FLAG.y * TILE;
+        const dist = Math.hypot(flagX - ball.x, flagY - ball.y);
+        const shortPx = Math.min(viewW, viewH);
+        const desiredScale = (shortPx * 0.55) / Math.max(16, dist);
+        zoomRef.current = Math.max(1.5, Math.min(3.2, desiredScale / baseScale));
+      }
+      const scale = baseScale * zoomRef.current;
       let followX, followY, anchorOffsetX = 0, anchorOffsetY = 0;
-      if (cMode === 'golfer') {
+      if (isPutting && (sw.state === SW.IDLE || sw.state === SW.AIMING || sw.state === SW.SWIPING || sw.state === SW.STOPPED)) {
+        const flagX = FLAG.x * TILE;
+        const flagY = FLAG.y * TILE;
+        followX = (ball.x + flagX) / 2;
+        followY = (ball.y + flagY) / 2;
+      } else if (cMode === 'golfer') {
         followX = p.x;
         followY = p.y;
       } else {
-        // Aim mode — when aiming/swiping, project where the ball will land
-        // based on stock club carry; while flying/rolling, follow the ball;
-        // while idle, use the ball spot so the next shot setup is framed.
+        // Aim mode — project where the ball will land so the camera shows
+        // the LANDING SPOT, not the player. Applies on the tee (state=IDLE),
+        // while aiming, and during the swipe — otherwise the aim toggle
+        // would read "Aim" but the view would be on the player at setup,
+        // which matches the bug the player reported on the tee.
+        // While the ball is flying/rolling/settling, follow the ball itself
+        // with a small velocity lead so fast shots don't outrun the frame.
         const club = CLUBS[sw.clubIdx] || CLUBS[0];
         const clubCarryPx = (club.v || 100) * 0.9;
-        if (sw.state === SW.AIMING || sw.state === SW.SWIPING) {
+        const isSetupPhase =
+          sw.state === SW.AIMING || sw.state === SW.SWIPING || sw.state === SW.IDLE;
+        const isBallMoving =
+          sw.state === SW.FLYING || sw.state === SW.ROLLING || sw.state === SW.DROPPING;
+        if (isSetupPhase) {
           followX = ball.x + Math.sin(sw.aimAngle) * clubCarryPx;
           followY = ball.y - Math.cos(sw.aimAngle) * clubCarryPx;
           // Push the landing spot toward top (phone) or right (tablet).
           anchorOffsetX = isTabletGS ? (viewW * 0.22) / scale : 0;
           anchorOffsetY = isTabletGS ? 0 : -(viewH * 0.28) / scale;
+        } else if (isBallMoving) {
+          // Lead the ball by ~0.25s of its current velocity so the shot
+          // feels tracked from the impact side, not chasing from behind.
+          followX = ball.x + (ball.vx || 0) * 0.25;
+          followY = ball.y + (ball.vy || 0) * 0.25;
         } else {
           followX = ball.x;
           followY = ball.y;
@@ -1896,8 +1940,8 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       if (sw.state === SW.AIMING || sw.state === SW.SWIPING) {
         const club = CLUBS[sw.clubIdx];
         const pts = club.angle === 0
-          ? simulatePutt(ball.x, ball.y, sw.aimAngle, 0, 1.0, club, sw.spinX)
-          : simulateFlight(ball.x, ball.y, sw.aimAngle, 0, 1.0, sw.spinX, sw.spinY, club, w.x, w.y, true);
+          ? simulatePutt(ball.x, ball.y, sw.aimAngle, 0, 1.0, club, sw.spinX, sw.shotType || 'normal')
+          : simulateFlight(ball.x, ball.y, sw.aimAngle, 0, 1.0, sw.spinX, sw.spinY, club, w.x, w.y, true, sw.shotType || 'normal');
         drawShotPredict(ctx, pts);
       }
 
@@ -2115,7 +2159,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
 
       {shotTypeMenuOpen ? (
         <View style={styles.shotTypeOverlay}>
-          {['normal', 'chip', 'flop', 'stinger', 'bump'].map((t) => {
+          {['normal', 'chip', 'flop', 'stinger', 'bump', 'tap', 'blast'].map((t) => {
             const club = CLUBS[swingRef.current.clubIdx] || CLUBS[0];
             const liePhys = surfacePropsAt(ballRef.current.x, ballRef.current.y);
             const eligible = shotTypeEligibleGS(t, club, liePhys?.label);
@@ -2143,7 +2187,10 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
                    t === 'chip' ? '50% carry · 70% apex' :
                    t === 'flop' ? '33% carry · 2× apex (wedge only)' :
                    t === 'stinger' ? 'Full carry · 50% apex (iron/wood, clean lie)' :
-                   '75% carry · 40% apex (wedge only)'}
+                   t === 'bump' ? '75% carry · 40% apex (wedge only)' :
+                   t === 'tap' ? '50% roll (putter only)' :
+                   t === 'blast' ? '150% roll (putter only)' :
+                   ''}
                 </Text>
               </Pressable>
             );
