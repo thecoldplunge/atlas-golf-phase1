@@ -74,7 +74,10 @@ const HOLES = [
         [7.7, 22.8], [7.3, 21.9], [7, 20.8], [6.7, 19.3],
         [6.4, 17.5], [6.2, 15.5], [6, 13.5], [6.1, 11.8],
         [6.3, 10.4], [6.8, 9.4],
-      ]}},
+      ],
+      // Fairway slopes gently east-to-green, pushing anything rolling
+      // through the dogleg toward the cup side.
+      }, slope: { angle: Math.PI * 0.35, mag: 3 } },
       { type: T_SAND, shape: { kind: 'polygon', points: [
         [12.9, 10.8], [13.8, 10.7], [14.6, 11], [14.9, 11.8],
         [14.8, 12.8], [14.4, 13.6], [13.6, 13.8], [12.9, 13.5],
@@ -158,7 +161,10 @@ const HOLES = [
         [1.6, 5], [1.4, 10], [1.5, 16], [1.7, 22], [2.1, 27], [3, 31],
         [4.8, 32.5], [8, 33.3], [12, 33.8], [15.5, 34], [18, 34.5],
         [20, 35.5], [20.6, 39], [20.8, 44], [20.6, 49], [20.3, 53], [20, 56.2]
-      ]}},
+      ],
+      // Par-5 dogleg: fairway tilts north-west so a well-struck drive
+      // chases the corner and rolls further toward the green.
+      }, slope: { angle: Math.PI * 1.2, mag: 4 } },
       { type: T_SAND, shape: { kind: 'circle', cx: 17.5, cy: 29.5, r: 1.3 }},
       { type: T_SAND, shape: { kind: 'polygon', points: [
         [5.3, 7], [6.2, 6.8], [6.8, 7.5], [6.5, 8.3], [5.6, 8.4], [5, 7.7]
@@ -453,7 +459,11 @@ function rotateHole90CCW(h) {
     tee: { x: H - h.tee.y, y: h.tee.x },
     flag: { x: H - h.flag.y, y: h.flag.x },
     greenSlope: { angle: h.greenSlope.angle + Math.PI / 2, mag: h.greenSlope.mag },
-    surfaces: h.surfaces.map((s) => ({ type: s.type, shape: rotateShape90CCW(s.shape, H) })),
+    surfaces: h.surfaces.map((s) => ({
+      type: s.type,
+      shape: rotateShape90CCW(s.shape, H),
+      slope: s.slope ? { angle: s.slope.angle + Math.PI / 2, mag: s.slope.mag } : undefined,
+    })),
     trees: h.trees.map((t) => ({ x: H - t.y, y: t.x })),
   };
 }
@@ -516,7 +526,9 @@ function addBbox(surf) {
     }
     s._bbox = [x0 * TILE, y0 * TILE, x1 * TILE, y1 * TILE];
   }
-  return { type: surf.type, shape: s };
+  const out = { type: surf.type, shape: s };
+  if (surf.slope) out.slope = surf.slope;
+  return out;
 }
 
 function pointInShape(x, y, shape) {
@@ -742,8 +754,24 @@ function surfacePropsAt(wx, wy) {
   if (wx < 0 || wx > WORLD_W || wy < 0 || wy > WORLD_H) {
     return { bounceKeep: 0, rollDecel: 0, label: 'Out of Bounds', ob: true };
   }
-  const s = surfaceAt(wx, wy);
-  return SURFACE_PROPS[s] || SURFACE_PROPS[T_ROUGH];
+  // Walk the surface stack top-down so the topmost shape wins. Pick up
+  // any region-specific slope from that same surface so the ball
+  // physics feels the localised grade (hills on the fairway etc.),
+  // not just the per-type default.
+  let type = T_ROUGH;
+  let regionSlope = null;
+  for (let i = SURFACES.length - 1; i >= 0; i--) {
+    if (pointInShape(wx, wy, SURFACES[i].shape)) {
+      type = SURFACES[i].type;
+      regionSlope = SURFACES[i].slope || null;
+      break;
+    }
+  }
+  const base = SURFACE_PROPS[type] || SURFACE_PROPS[T_ROUGH];
+  if (regionSlope) {
+    return { ...base, slopeAng: regionSlope.angle, slopeMag: regionSlope.mag };
+  }
+  return base;
 }
 
 function computeBushes() {
@@ -825,7 +853,11 @@ function loadHole(idx, orientation) {
   const padDx = Math.floor((MAP_W - h.width) / 2);
   const padDy = Math.floor((MAP_H - h.height) / 2);
   CURRENT_HOLE = { ...h, idxBase: baseIdx, padDx, padDy };
-  SURFACES = h.surfaces.map((surf) => addBbox({ type: surf.type, shape: shiftShape(surf.shape, padDx, padDy) }));
+  SURFACES = h.surfaces.map((surf) => addBbox({
+    type: surf.type,
+    shape: shiftShape(surf.shape, padDx, padDy),
+    slope: surf.slope || null,
+  }));
   TREES = (h.trees || []).map((t) => {
     // Deterministic 5-bucket variant hash — 20% palm, 20% pine, 60% leafy.
     const hash = ((t.x * 73.3 + t.y * 31.7) | 0);
@@ -2168,6 +2200,35 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       sctx.clearRect(0, 0, WORLD_W, WORLD_H);
       const imgData = buildWorldImageData();
       sctx.putImageData(imgData, 0, 0);
+      // Contour lines on sloped surfaces — thin 1-px dashes running
+      // perpendicular to the gradient, spaced ~6 px along it. Darker on
+      // steeper grades (mag scales alpha). Rendered before props so a
+      // tree / bush can still overdraw them if they sit on the slope.
+      for (const surf of SURFACES) {
+        if (!surf.slope || !surf.slope.mag) continue;
+        const bb = surf.shape._bbox;
+        if (!bb) continue;
+        const gx = Math.sin(surf.slope.angle);
+        const gy = -Math.cos(surf.slope.angle);
+        const step = 6;
+        const alpha = Math.min(0.35, 0.08 + surf.slope.mag * 0.03);
+        sctx.fillStyle = `rgba(236,242,214,${alpha.toFixed(3)})`;
+        const x0 = Math.max(0, Math.floor(bb[0]));
+        const y0 = Math.max(0, Math.floor(bb[1]));
+        const x1 = Math.min(WORLD_W, Math.ceil(bb[2]));
+        const y1 = Math.min(WORLD_H, Math.ceil(bb[3]));
+        for (let y = y0; y < y1; y++) {
+          for (let x = x0; x < x1; x++) {
+            const d = gx * x + gy * y;
+            const phase = ((d % step) + step) % step;
+            if (phase < 1) {
+              if (pointInShape(x + 0.5, y + 0.5, surf.shape)) {
+                sctx.fillRect(x, y, 1, 1);
+              }
+            }
+          }
+        }
+      }
       for (const p of PROPS) drawProp(sctx, p);
     };
     rebuildStatic();
@@ -3320,10 +3381,6 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         <Text style={styles.exitText}>✕</Text>
       </Pressable>
 
-      <Pressable style={styles.cardBtn} onPress={() => setScorecardOpen(true)}>
-        <Text style={styles.cardBtnLabel}>CARD</Text>
-      </Pressable>
-
       {scorecardOpen ? (
         <GSScorecardOverlay
           scores={scoresHud}
@@ -3702,18 +3759,6 @@ const scStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.skyVoid, overscrollBehavior: 'none', touchAction: 'none' },
   canvasHost: { flex: 1, touchAction: 'none' },
-  cardBtn: {
-    // Sits below both EXIT and the WIND panel (WIND bottom = 76) so
-    // nothing on the right edge crowds it on narrow viewports.
-    position: 'absolute', top: 82, right: 16,
-    width: 52, height: 30,
-    backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  cardBtnLabel: {
-    color: '#fff6d8', fontSize: 12, fontWeight: '900', letterSpacing: 2,
-    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
-  },
   exitBtn: {
     position: 'absolute', top: 16, right: 16,
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
@@ -3751,8 +3796,9 @@ const styles = StyleSheet.create({
   windArrow: { color: '#fff6d8', fontSize: 22, marginRight: 4 },
 
   zoomColumn: {
-    // Below the CARD button (CARD bottom = 112) with a 6 px gap.
-    position: 'absolute', top: 118, right: 16, alignItems: 'center',
+    // Below EXIT (bottom at y=54) with a 6 px gap. Cleared of the CARD
+    // button that briefly lived here in v0.41–v0.43.
+    position: 'absolute', top: 60, right: 16, alignItems: 'center',
   },
   zoomBtn: {
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
