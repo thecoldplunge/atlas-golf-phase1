@@ -1216,14 +1216,16 @@ function drawGolfer(ctx, px, py, facing, phase, swingInfo) {
 function drawBall(ctx, px, py, z) {
   const lift = Math.max(0, z | 0);
   const x = Math.floor(px), y = Math.floor(py);
-  // Ground shadow — 6×2 centered on the ball, darker than the global
-  // shadow rgba so the ball visibly lifts off the turf. Shrinks with
-  // altitude (inset scales both width and height toward the footprint).
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  const inset = Math.min(2, lift / 10);
-  const shW = Math.max(2, 6 - inset * 2);
-  const shH = Math.max(1, 2 - Math.floor(inset));
-  ctx.fillRect(x - shW / 2, y, shW, shH);
+  // Ground shadow — only while the ball is actually airborne. When it
+  // settles on the turf the ball sprite itself is the ground contact,
+  // so a separate shadow reads as a duplicate blob.
+  if (lift > 0) {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    const inset = Math.min(2, lift / 10);
+    const shW = Math.max(2, 6 - inset * 2);
+    const shH = Math.max(1, 2 - Math.floor(inset));
+    ctx.fillRect(x - shW / 2, y, shW, shH);
+  }
   // Ball body — 3×3 (50% larger than the previous 2×2 sprite).
   ctx.fillStyle = COLORS.ballShadow;
   ctx.fillRect(x - 1, y - 3 - lift, 3, 3);
