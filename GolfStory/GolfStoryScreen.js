@@ -2871,20 +2871,17 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         const isBallMoving =
           sw.state === SW.FLYING || sw.state === SW.ROLLING || sw.state === SW.DROPPING;
         if (isSetupPhase) {
-          // Keep the camera anchored on the BALL during aim so a tap on
-          // screen coordinate (X, Y) reliably points the aim vector at
-          // the world point under the tap. (Previously the camera tracked
-          // the projected landing spot — which moves when the aim moves
-          // — so tapping a target would pan the view, the tap would
-          // miss, and the golfer could slide off-screen.)
-          // A gentle lead toward the aim direction keeps the target
-          // side of the frame biased upward so the landing area is
-          // still visible on the typical tee shot.
-          const lead = Math.min(clubCarryPx * 0.35, 120);
-          followX = ball.x + Math.sin(sw.aimAngle) * lead;
-          followY = ball.y - Math.cos(sw.aimAngle) * lead;
-          anchorOffsetX = 0;
-          anchorOffsetY = isTabletGS ? 0 : -(viewH * 0.14) / scale;
+          // VIEW=AIM framing: centre on the projected landing spot so
+          // the player sees where the shot will come down, then push
+          // that point toward the TOP of the frame so the ball / golfer
+          // stays visible at the bottom. Tap-to-aim still works because
+          // setAimFromCanvas converts a tap to a world coord via the
+          // live camera (camX + canvasX / scale), independent of where
+          // the camera happens to be looking.
+          followX = ball.x + Math.sin(sw.aimAngle) * clubCarryPx;
+          followY = ball.y - Math.cos(sw.aimAngle) * clubCarryPx;
+          anchorOffsetX = isTabletGS ? (viewW * 0.22) / scale : 0;
+          anchorOffsetY = isTabletGS ? 0 : -(viewH * 0.28) / scale;
         } else if (isBallMoving) {
           // Flight framing: lead the ball aggressively and push it toward
           // the BOTTOM of the frame so the arc/apex/landing fills the top
@@ -3706,8 +3703,10 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.skyVoid, overscrollBehavior: 'none', touchAction: 'none' },
   canvasHost: { flex: 1, touchAction: 'none' },
   cardBtn: {
-    position: 'absolute', top: 16, right: 60,
-    paddingHorizontal: 10, height: 38,
+    // Sits below both EXIT and the WIND panel (WIND bottom = 76) so
+    // nothing on the right edge crowds it on narrow viewports.
+    position: 'absolute', top: 82, right: 16,
+    width: 52, height: 30,
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
     alignItems: 'center', justifyContent: 'center',
   },
@@ -3752,7 +3751,8 @@ const styles = StyleSheet.create({
   windArrow: { color: '#fff6d8', fontSize: 22, marginRight: 4 },
 
   zoomColumn: {
-    position: 'absolute', top: 78, right: 16, alignItems: 'center',
+    // Below the CARD button (CARD bottom = 112) with a 6 px gap.
+    position: 'absolute', top: 118, right: 16, alignItems: 'center',
   },
   zoomBtn: {
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
