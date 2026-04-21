@@ -2796,11 +2796,6 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       flushHud();
     };
 
-    initPlayersFromMatch();
-    // Place first player's ball and begin their tee shot.
-    loadActivePlayer(true);
-
-
     const flushHud = () => {
       const sw = swingRef.current;
       const ball = ballRef.current;
@@ -2840,6 +2835,13 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       });
     };
     flushHud();
+
+    // All helpers are defined now — it's safe to init the players
+    // array and place the first player's ball. (loadActivePlayer
+    // calls flushHud internally, so this block has to run AFTER
+    // flushHud's declaration — otherwise TDZ.)
+    initPlayersFromMatch();
+    loadActivePlayer(true);
 
     const advanceHole = () => {
       const wrapping = (holeIdxRef.current + 1) >= HOLES.length;
