@@ -1044,7 +1044,11 @@ const COURSES = [
   }
 ];
 
-const WORLD = { w: 1040, h: 1100 };
+// World playfield is 30% larger than the 1040x1100 course layout so every
+// hole has breathing room around the edges (camera can pan past the
+// tree/fairway bounds without running into a hard wall right at the shoulder
+// of the course).
+const WORLD = { w: 1352, h: 1430 };
 const CAMERA_ZOOM = 3.2;
 // Discrete zoom steps applied on top of CAMERA_ZOOM. 1.0x matches the prior
 // default; 0.4x gives a near-full-hole overview; 2.4x is tight-to-the-ball.
@@ -1840,7 +1844,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.39 · GS spike v0.12';
+const BUILD_VERSION = 'IGT v3.40 · GS spike v0.12';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -2312,6 +2316,37 @@ const simulateAimTrajectory = ({
   return path;
 };
 
+// Per-shot-type carry and apex multipliers, plus a small spin nudge for
+// shapes that should feel different in flight (flop balloons; stinger runs).
+const SHOT_TYPE_PROFILES = {
+  normal:  { carry: 1.0,  apex: 1.0,  spinBonus: 0,    label: 'Normal' },
+  chip:    { carry: 0.5,  apex: 0.7,  spinBonus: 0,    label: 'Chip' },
+  flop:    { carry: 0.33, apex: 2.0,  spinBonus: 0.25, label: 'Flop' },
+  stinger: { carry: 1.0,  apex: 0.5,  spinBonus: -0.25, label: 'Stinger' },
+  bump:    { carry: 0.75, apex: 0.4,  spinBonus: -0.15, label: 'Bump & Run' },
+};
+
+// clubIsWedge / isIronWood classify by key. PT is the putter (no shot type
+// choices). Wedges are the four specialty clubs. Everything else is
+// iron/wood/driver.
+const WEDGE_KEYS = new Set(['LW', 'SW', 'GW', 'PW']);
+const clubIsWedge = (club) => !!club && WEDGE_KEYS.has(club.key);
+const clubIsIronOrWood = (club) => !!club && club.key !== 'PT' && !WEDGE_KEYS.has(club.key);
+
+// Stinger is only legal off a clean lie with an iron or wood. Bump-and-run
+// and Flop are wedge-only (Flop wants loft; Bump wants low trajectory).
+// Chip is allowed with everything except the putter. Normal is always legal.
+const GOOD_LIES_FOR_STINGER = new Set(['tee', 'fairway', 'secondCut']);
+const shotTypeEligible = (type, club, lie) => {
+  if (!club || club.key === 'PT') return type === 'normal';
+  if (type === 'normal') return true;
+  if (type === 'chip')   return true;
+  if (type === 'flop')   return clubIsWedge(club);
+  if (type === 'bump')   return clubIsWedge(club);
+  if (type === 'stinger') return clubIsIronOrWood(club) && GOOD_LIES_FOR_STINGER.has(lie);
+  return false;
+};
+
 const estimateStraightDistance = (powerPct, club, strike = { launch: 1, spin: 1 }, distanceMult = 1) => {
   const shotRatio = clamp(powerPct / 100, 0, 1.2);
   return (club.carryYards * shotRatio * strike.launch * distanceMult) / YARDS_PER_WORLD;
@@ -2449,6 +2484,19 @@ export default function App() {
   const lastShotPosRef = useRef(null); // position before current shot (for stroke & distance)
   const [shotControlOpen, setShotControlOpen] = useState(false);
   const [spinOffset, setSpinOffset] = useState({ x: 0, y: 0 });
+  // Shot type — shapes distance and apex on top of power/club. Auto-resets
+  // to 'normal' after each shot (same rhythm as spin shaping).
+  //   normal: 1.0× / 1.0×
+  //   chip:   0.50× carry, 0.70× apex (low flight)
+  //   flop:   0.33× carry, 2.00× apex (wedges only)
+  //   stinger:1.0×  carry, 0.50× apex (irons/woods only, off tee/fairway)
+  //   bump:   0.75× carry, 0.40× apex (wedges only)
+  const [shotType, setShotType] = useState('normal');
+  const [shotTypeMenuOpen, setShotTypeMenuOpen] = useState(false);
+  // Camera focus mode. 'aim' = follow the spot where the ball will land
+  // based on the current aim (with a phone-vs-tablet anchor offset).
+  // 'golfer' = snap back to the player sprite so you can get your bearings.
+  const [cameraFocus, setCameraFocus] = useState('aim');
   const [powerPct, setPowerPct] = useState(0);
   const powerRef = useRef(0);
   const [swingPhase, setSwingPhase] = useState('idle'); // idle | backswing | forward
@@ -2512,6 +2560,9 @@ export default function App() {
   const flightRef = useRef({ z: 0, vz: 0 });
   const lastTsRef = useRef(null);
   const frameRef = useRef(null);
+  const aimFrameRef = useRef(null);
+  const cameraFocusRef = useRef('aim');
+  const aimAngleRef = useRef(0);
   const courseRef = useRef(null);
   const courseFrameRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
   const sunkRef = useRef(false);
@@ -2649,6 +2700,41 @@ export default function App() {
     const padPx = 80;
     const anchorY = viewHeight * 0.74;
     const ppw = Math.max(0.0001, pixelsPerWorld);
+    const ballScreenX = (ballPos.x - target.x) * ppw + viewWidth / 2;
+    const ballScreenY = (ballPos.y - target.y) * ppw + anchorY;
+    if (ballScreenX < padPx) target.x -= (padPx - ballScreenX) / ppw;
+    if (ballScreenX > viewWidth - padPx) target.x += (ballScreenX - (viewWidth - padPx)) / ppw;
+    if (ballScreenY < padPx) target.y -= (padPx - ballScreenY) / ppw;
+    if (ballScreenY > viewHeight - padPx) target.y += (ballScreenY - (viewHeight - padPx)) / ppw;
+    return clampCamera(target);
+  };
+
+  // Frame the camera around where the ball will land based on current aim.
+  // On phone, put the landing spot ~22% down from the top (top-middle
+  // anchor). On tablet, push it to the right side (~72% across, middle
+  // vertically) so the left side stays available for swing input. Always
+  // keep the ball itself visible with a padding fallback.
+  const isTablet = viewWidth >= 700;
+  const cameraForAim = (ballPos, aimAng, distanceWorld) => {
+    const ppw = Math.max(0.0001, pixelsPerWorld);
+    const land = {
+      x: ballPos.x + Math.cos(aimAng) * distanceWorld,
+      y: ballPos.y + Math.sin(aimAng) * distanceWorld,
+    };
+    // Desired screen position of the landing spot.
+    const desiredSx = isTablet ? viewWidth * 0.72 : viewWidth / 2;
+    const desiredSy = isTablet ? viewHeight * 0.5 : viewHeight * 0.22;
+    // Solve for camera such that toScreen(land) = desired.
+    //   sx = (land.x - cam.x) * ppw + viewWidth/2   ⇒ cam.x = land.x + (viewWidth/2 - desiredSx)/ppw
+    //   sy = (land.y - cam.y) * ppw + cameraAnchorY ⇒ cam.y = land.y + (cameraAnchorY - desiredSy)/ppw
+    const anchorY = viewHeight * 0.74;
+    let target = {
+      x: land.x + (viewWidth / 2 - desiredSx) / ppw,
+      y: land.y + (anchorY - desiredSy) / ppw,
+    };
+    // Keep the ball in the viewport even if the landing point is near the
+    // edge (bigger pad than cameraForShot so the swing sprite stays in view).
+    const padPx = 70;
     const ballScreenX = (ballPos.x - target.x) * ppw + viewWidth / 2;
     const ballScreenY = (ballPos.y - target.y) * ppw + anchorY;
     if (ballScreenX < padPx) target.x -= (padPx - ballScreenX) / ppw;
@@ -2859,6 +2945,8 @@ export default function App() {
   useEffect(() => { ballRef.current = ball; }, [ball]);
   useEffect(() => { cameraRef.current = camera; }, [camera]);
   useEffect(() => { sunkRef.current = sunk; }, [sunk]);
+  useEffect(() => { cameraFocusRef.current = cameraFocus; }, [cameraFocus]);
+  useEffect(() => { aimAngleRef.current = aimAngle; }, [aimAngle]);
   useEffect(() => { holeOutPhaseRef.current = holeOutPhase; }, [holeOutPhase]);
   useEffect(() => { holeIndexRef.current = safeHoleIndex; }, [safeHoleIndex]);
   useEffect(() => { roundWindRef.current = roundWind; }, [roundWind]);
@@ -3227,14 +3315,55 @@ export default function App() {
       frameRef.current = requestAnimationFrame(tick);
     };
 
+    // Aim-follow: whenever the ball is at rest and camera focus is 'aim',
+    // nudge the camera to put the projected landing spot at the phone top-
+    // middle (or tablet right-middle) so the player sees where they're
+    // pointing. Runs at a slower cadence than the flight follow so
+    // rapid aim-drag stays smooth.
+    const aimFrame = () => {
+      if (!sunkRef.current) {
+        const movingNow = magnitude(velocityRef.current) > 0.3
+          || flightRef.current.z > 0.04
+          || Math.abs(flightRef.current.vz) > 0.35;
+        if (!movingNow && cameraFocusRef.current === 'aim' && Date.now() >= manualPanUntilRef.current) {
+          const distWorld = (selectedClub?.carryYards || 200) / YARDS_PER_WORLD;
+          const cam = cameraForAim(ballRef.current, aimAngleRef.current, distWorld);
+          setCamera((prev) => {
+            const ease = 0.18;
+            return {
+              x: prev.x + (cam.x - prev.x) * ease,
+              y: prev.y + (cam.y - prev.y) * ease,
+            };
+          });
+        }
+      }
+      aimFrameRef.current = requestAnimationFrame(aimFrame);
+    };
+    aimFrameRef.current = requestAnimationFrame(aimFrame);
+
     frameRef.current = requestAnimationFrame(tick);
     return () => {
       if (frameRef.current) {
         cancelAnimationFrame(frameRef.current);
       }
+      if (aimFrameRef.current) {
+        cancelAnimationFrame(aimFrameRef.current);
+      }
       lastTsRef.current = null;
     };
   }, []);
+
+  // When the user flips the camera-focus toggle to 'golfer', snap once to
+  // the ball's current position so they see the player in frame. Don't
+  // subscribe to ball movement here — that would fight the flight follow.
+  useEffect(() => {
+    if (cameraFocus === 'golfer' && !sunk) {
+      const b = ballRef.current;
+      const nc = clampCameraRef.current ? clampCameraRef.current(b) : b;
+      setCamera(nc);
+      cameraRef.current = nc;
+    }
+  }, [cameraFocus, sunk]);
 
   useEffect(() => {
     if (sunk || currentHole.isRange) {
@@ -3938,12 +4067,18 @@ export default function App() {
     const tempoCarryMult = tempoMult > 1
       ? clamp(1 / Math.pow(tempoMult, 0.3), 0.55, 1.0)
       : 1.0;
+    // Shot-type profile — chip/flop/stinger/bump scale carry (and apex down
+    // below). If the chosen type is ineligible for this club+lie we fall
+    // back to 'normal' so nothing is ever silently partial.
+    const activeShotType = shotTypeEligible(shotType, selectedClub, currentLie) ? shotType : 'normal';
+    const shotProfile = SHOT_TYPE_PROFILES[activeShotType] || SHOT_TYPE_PROFILES.normal;
     const targetCarryWorld = (selectedClub.carryYards / YARDS_PER_WORLD)
       * powerFrac
       * launch.powerFactor
       * launch.touchFactor
       * pauseDistanceMult
-      * tempoCarryMult;
+      * tempoCarryMult
+      * shotProfile.carry;
     const expFactor = 1 - Math.exp(-0.14 * actualHangTime);
     const speed = expFactor > 0.001
       ? (targetCarryWorld * 0.14 / expFactor)
@@ -3964,6 +4099,13 @@ export default function App() {
     // Normalize curveDeg (-85…+85) to spin (-1…+1) for Magnus physics.
     shotSpinNormRef.current = clamp(launch.totalCurveDeg / 85, -1.2, 1.2);
     shotAimAngleRef.current = aimAngle;
+    // Shot shape auto-resets after the swing — each new shot starts neutral
+    // so the player has to opt back in to fade/draw/high/low every time.
+    setSpinOffset({ x: 0, y: 0 });
+    // Shot type (chip/flop/stinger/bump) likewise resets to normal so the
+    // selection is a deliberate per-shot choice.
+    setShotType('normal');
+    setShotTypeMenuOpen(false);
     // Course Management reduces in-air wind drift (reads line and plays it).
     // 0 CIQ → wind ×1.30, 50 → ×1.0, 100 → ×0.70.
     const courseMgmt = selectedMentalStats.courseManagement ?? 50;
@@ -3992,7 +4134,9 @@ export default function App() {
       // peak heights match the old feel; short-shot feel is now tuned via
       // the softer wind force (v3.22) instead of squashing the trajectory.
       const targetHangTime = (3.2 + selectedClub.launch * 0.8) * clamp(launch.launchRatio, 0, 1.1);
-      const launchVz = (GRAVITY * targetHangTime * 0.5) * launch.shotMetrics.launchAdjust * clamp(0.94 + (launch.spinFactor - 1) * 0.35, 0.82, 1.12);
+      // Shot-type apex multiplier. Flop balloons, Stinger + Bump run low.
+      const apexMult = shotProfile.apex;
+      const launchVz = (GRAVITY * targetHangTime * 0.5) * launch.shotMetrics.launchAdjust * clamp(0.94 + (launch.spinFactor - 1) * 0.35, 0.82, 1.12) * apexMult;
       flightRef.current = {
         z: 0.08,
         vz: launchVz
@@ -5746,6 +5890,32 @@ export default function App() {
                 style={[
                   styles.hudItemCompactWide,
                   styles.hudItemPressable,
+                  (shotType !== 'normal') && styles.hudItemActive,
+                  puttingMode && styles.disabled
+                ]}
+                disabled={puttingMode}
+                onPress={() => {
+                  setShotTypeMenuOpen((v) => !v);
+                }}
+              >
+                <Text style={styles.hudLabelCompact}>Type</Text>
+                <Text style={styles.hudValueCompact}>{(SHOT_TYPE_PROFILES[shotType] || SHOT_TYPE_PROFILES.normal).label}</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.hudItemCompactWide,
+                  styles.hudItemPressable,
+                  cameraFocus === 'golfer' && styles.hudItemActive,
+                ]}
+                onPress={() => setCameraFocus((v) => (v === 'aim' ? 'golfer' : 'aim'))}
+              >
+                <Text style={styles.hudLabelCompact}>View</Text>
+                <Text style={styles.hudValueCompact}>{cameraFocus === 'aim' ? 'Aim' : 'Me'}</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.hudItemCompactWide,
+                  styles.hudItemPressable,
                   shotControlOpen && styles.hudItemActive,
                   puttingMode && styles.disabled
                 ]}
@@ -5775,6 +5945,42 @@ export default function App() {
             </View>
           </View>
         </View>
+
+        {shotTypeMenuOpen && !puttingMode && !sunk ? (
+          <View style={styles.shotTypeMenu} pointerEvents="box-none">
+            {['normal', 'chip', 'flop', 'stinger', 'bump'].map((type) => {
+              const eligible = shotTypeEligible(type, selectedClub, currentLie);
+              const prof = SHOT_TYPE_PROFILES[type];
+              const active = shotType === type;
+              return (
+                <Pressable
+                  key={type}
+                  disabled={!eligible}
+                  style={[
+                    styles.shotTypeOption,
+                    active && styles.shotTypeOptionActive,
+                    !eligible && styles.disabled,
+                  ]}
+                  onPress={() => {
+                    if (!eligible) return;
+                    setShotType(type);
+                    setShotTypeMenuOpen(false);
+                  }}
+                >
+                  <Text style={[styles.shotTypeOptionLabel, active && styles.shotTypeOptionLabelActive]}>{prof.label}</Text>
+                  <Text style={styles.shotTypeOptionSub}>
+                    {type === 'normal' ? 'Full carry, full height' :
+                     type === 'chip' ? '50% carry, 70% apex' :
+                     type === 'flop' ? '33% carry, 2x apex · wedge only' :
+                     type === 'stinger' ? 'Full carry, 50% apex · iron/wood off tee or fairway' :
+                     '75% carry, 40% apex · wedge only'}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+
 
 
         <View style={styles.bottomOverlay}>
@@ -6767,6 +6973,43 @@ const styles = StyleSheet.create({
     color: '#f2f9ec',
     fontWeight: '700',
     fontSize: 13
+  },
+  shotTypeMenu: {
+    position: 'absolute',
+    top: 96,
+    right: 12,
+    backgroundColor: 'rgba(7, 11, 9, 0.92)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(111,174,255,0.4)',
+    padding: 6,
+    gap: 4,
+    minWidth: 220,
+    zIndex: 50,
+  },
+  shotTypeOption: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  shotTypeOptionActive: {
+    backgroundColor: 'rgba(52, 102, 173, 0.42)',
+    borderWidth: 1,
+    borderColor: 'rgba(111, 174, 255, 0.9)',
+  },
+  shotTypeOptionLabel: {
+    color: '#d4e0d4',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  shotTypeOptionLabelActive: {
+    color: '#f5fbef',
+  },
+  shotTypeOptionSub: {
+    color: '#7f968b',
+    fontSize: 10,
+    marginTop: 2,
   },
   hudStrip: {
     flex: 1,
