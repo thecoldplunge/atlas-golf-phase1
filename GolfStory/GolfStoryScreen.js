@@ -1281,17 +1281,26 @@ function drawSwipeFeedback(ctx, swipe, dpr) {
   const sx = swipe.startX, sy = swipe.startY;
   const cx = swipe.currentX, cy = swipe.currentY;
   const mag = Math.hypot(cx - sx, cy - sy);
-  // 100% power is 170 * dpr px (matches endSwipe's divisor). Clamp the
-  // visible feedback line at that radius so pulling further doesn't make
-  // the line grow past the 100% mark — it just reads 100% and holds.
-  const maxRadius = 170 * dpr;
+  // 100% power radius. Kept short (~110 css px) so the player can reach
+  // 100% with a pull that fits between the SWING pad and the bottom edge
+  // of the screen. Line, label, and head-dot ALL clamp to this radius —
+  // pulling past it only holds the 100% reading, nothing grows past the
+  // ring.
+  const maxRadius = 110 * dpr;
   const ratio = mag > 0 ? Math.min(1, maxRadius / mag) : 1;
   const ex = sx + (cx - sx) * ratio;
   const ey = sy + (cy - sy) * ratio;
   const norm = Math.min(1, mag / maxRadius);
+  const headR = (8 + norm * 12) * dpr; // was 22 — no more balloon past cap
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  // Always draw the 100% ring so the player sees where the cap sits.
+  ctx.strokeStyle = norm >= 1 ? 'rgba(255,240,170,0.85)' : 'rgba(255,255,255,0.32)';
+  ctx.lineWidth = (norm >= 1 ? 1.5 : 1) * dpr;
+  ctx.setLineDash([4 * dpr, 4 * dpr]);
+  ctx.beginPath(); ctx.arc(sx, sy, maxRadius, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
   ctx.strokeStyle = 'rgba(0,0,0,0.45)';
   ctx.lineWidth = 10 * dpr;
   ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
@@ -1302,24 +1311,22 @@ function drawSwipeFeedback(ctx, swipe, dpr) {
   ctx.strokeStyle = 'rgba(255,255,255,0.95)';
   ctx.lineWidth = 2 * dpr;
   ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+  // Origin halo — does NOT grow past the 100% ring radius.
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.beginPath(); ctx.arc(sx, sy, (10 + norm * 26) * dpr, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(sx, sy, (10 + norm * 14) * dpr, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = `hsla(${hue}, 80%, 55%, 0.7)`;
-  ctx.beginPath(); ctx.arc(sx, sy, (8 + norm * 22) * dpr, 0, Math.PI * 2); ctx.fill();
-  // Draw the 100% ring as a subtle reference so the player sees they've
-  // hit the cap. Only visible once they're in the final ~15%.
-  if (norm > 0.85) {
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    ctx.lineWidth = 1 * dpr;
-    ctx.setLineDash([4 * dpr, 4 * dpr]);
-    ctx.beginPath(); ctx.arc(sx, sy, maxRadius, 0, Math.PI * 2); ctx.stroke();
-    ctx.setLineDash([]);
-  }
+  ctx.beginPath(); ctx.arc(sx, sy, (8 + norm * 10) * dpr, 0, Math.PI * 2); ctx.fill();
+  // Head dot at the clamped endpoint, never outside the ring.
+  ctx.fillStyle = `hsla(${hue}, 85%, 60%, 0.95)`;
+  ctx.beginPath(); ctx.arc(ex, ey, headR, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 1 * dpr;
+  ctx.beginPath(); ctx.arc(ex, ey, headR, 0, Math.PI * 2); ctx.stroke();
   ctx.font = `bold ${14 * dpr}px ui-monospace, Menlo, monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#f5f5ec';
-  ctx.fillText(`${Math.round(norm * 100)}%`, ex, ey - 24 * dpr);
+  ctx.fillStyle = '#fff6d8';
+  ctx.fillText(`${Math.round(norm * 100)}%`, ex, ey - (headR + 10 * dpr));
   ctx.restore();
 }
 
@@ -1687,7 +1694,10 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       const ball = ballRef.current;
       const club = CLUBS[sw.clubIdx];
       const dpr = window.devicePixelRatio || 1;
-      const power = Math.max(0.1, Math.min(1, s.maxMag / (170 * dpr)));
+      // 100% power at 110 css px of pull — keeps the full swing reachable
+      // even when the player starts pulling from the SWING pad (which
+      // sits at bottom-right with ~80 px of clearance below it).
+      const power = Math.max(0.1, Math.min(1, s.maxMag / (110 * dpr)));
       const accuracy = Math.max(-1, Math.min(1, s.maxDx / (55 * dpr)));
       if (s.maxMag < 20 * dpr) {
         sw.state = SW.AIMING;
