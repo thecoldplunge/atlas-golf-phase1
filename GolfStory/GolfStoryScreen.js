@@ -1429,6 +1429,10 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
   // menu. Cleared on strike (endSwipe) so every new shot setup re-runs
   // the auto-Tap heuristic from scratch.
   const shotTypeManualRef = useRef(false);
+  // Set to true when the user taps zoom in/out manually. Auto-fit branches
+  // (aim zoom, flight zoom, putting zoom) honor this and stop overriding
+  // until the next shot clears it.
+  const zoomUserOverrideRef = useRef(false);
   // Last-shot stats — captured at strike time, finalised when the ball
   // comes to rest (or drops). Drives the small summary card on the
   // right side of the screen.
@@ -1485,9 +1489,13 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
     rebuildStatic();
 
     const resize = () => {
-      const dpr = window.devicePixelRatio || 1;
+      // Render at up to 3× device pixels so high-DPR phones get crisp
+      // tiles at close zoom. Capped at 3× to keep iPad draw costs sane.
+      const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
       canvas.width = Math.floor(canvas.clientWidth * dpr);
       canvas.height = Math.floor(canvas.clientHeight * dpr);
+      // Keep pixel-art crispness at normal zoom; the per-frame tick flips
+      // imageSmoothing on when zoomed past ~1.6× so the grain smooths out.
       ctx.imageSmoothingEnabled = false;
     };
     resize();
@@ -1737,6 +1745,8 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       sw.spinY = 0;
       sw.shotType = 'normal';
       shotTypeManualRef.current = false;
+      // Release manual zoom override so the next shot gets fresh auto-fit.
+      zoomUserOverrideRef.current = false;
       setHudShotType('normal');
       setShotTypeMenuOpen(false);
       swipeRef.current = null;
@@ -1863,10 +1873,14 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
     zoomActions.current = {
       zoomIn: () => {
         zoomRef.current = clampZoom(zoomRef.current + 0.25);
+        // User has taken manual control — stop the aim/putting auto-fit
+        // from overriding until the next shot.
+        zoomUserOverrideRef.current = true;
         flushHud();
       },
       zoomOut: () => {
         zoomRef.current = clampZoom(zoomRef.current - 0.25);
+        zoomUserOverrideRef.current = true;
         flushHud();
       },
     };
@@ -2015,7 +2029,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       // between ball and flag, and dial the zoom so the entire putt sits
       // comfortably in the frame. Runs BEFORE `scale` is finalised so
       // anchor-offset math uses the putting scale this same frame.
-      if (isPutting && (sw.state === SW.IDLE || sw.state === SW.AIMING || sw.state === SW.SWIPING || sw.state === SW.STOPPED)) {
+      if (isPutting && !zoomUserOverrideRef.current && (sw.state === SW.IDLE || sw.state === SW.AIMING || sw.state === SW.SWIPING || sw.state === SW.STOPPED)) {
         const flagX = FLAG.x * TILE;
         const flagY = FLAG.y * TILE;
         const dist = Math.hypot(flagX - ball.x, flagY - ball.y);
@@ -2037,6 +2051,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         }
       } else if (
         cMode === 'aim'
+        && !zoomUserOverrideRef.current
         && (sw.state === SW.IDLE || sw.state === SW.AIMING || sw.state === SW.SWIPING)
       ) {
         // Aim-mode auto-zoom: at default 1.0× a 7-iron or driver carry
@@ -2054,6 +2069,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         zoomRef.current = Math.max(minZoomHere, Math.min(zoomRef.current, fitZoom));
       } else if (
         cMode === 'aim'
+        && !zoomUserOverrideRef.current
         && (sw.state === SW.FLYING || sw.state === SW.ROLLING)
         && !isPutting
       ) {
@@ -2127,6 +2143,11 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
 
       ctx.fillStyle = COLORS.skyVoid;
       ctx.fillRect(0, 0, viewW, viewH);
+      // Smooth the pixel art when zoomed in past ~1.6× — the tile grid
+      // only has 16 px of detail, so hard nearest-neighbor sampling at
+      // 2× + zoom reads as grainy. Slight bilinear softens the crunch.
+      ctx.imageSmoothingEnabled = zoomRef.current > 1.6;
+      ctx.imageSmoothingQuality = 'high';
       ctx.save();
       ctx.scale(scale, scale);
       ctx.translate(-camX, -camY);
