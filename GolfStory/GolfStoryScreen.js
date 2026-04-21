@@ -926,9 +926,6 @@ function drawTree(ctx, px, py, time, windStrength) {
 // white rim highlight on the far side for lift.
 function drawCup(ctx, px, py) {
   const x = Math.floor(px), y = Math.floor(py);
-  // Ground shadow — slightly larger than the rim for softness.
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  ctx.beginPath(); ctx.ellipse(x, y + 1.5, 4.3, 2.2, 0, 0, Math.PI * 2); ctx.fill();
   // Dark pit (the hole itself), elongated vertically for a top-down-ish 3D look.
   ctx.fillStyle = '#050807';
   ctx.beginPath(); ctx.ellipse(x, y, 3.2, 2.0, 0, 0, Math.PI * 2); ctx.fill();
@@ -2328,7 +2325,12 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
 
     const clampZoom = (z) => {
       const minZ = computeMinZoom();
-      return Math.max(minZ, Math.min(3.0, z));
+      // Putting caps out at 2.0× — anything tighter than that makes the
+      // green read as noise and fights the auto-framing on the green.
+      const sw = swingRef.current;
+      const isPutt = sw && CLUBS[sw.clubIdx] && CLUBS[sw.clubIdx].key === 'PT';
+      const maxZ = isPutt ? 2.0 : 3.0;
+      return Math.max(minZ, Math.min(maxZ, z));
     };
 
     zoomActions.current = {
@@ -2515,7 +2517,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         const dist = Math.hypot(flagX - ball.x, flagY - ball.y);
         const shortPx = Math.min(viewW, viewH);
         const desiredScale = (shortPx * 0.55) / Math.max(16, dist);
-        zoomRef.current = Math.max(1.5, Math.min(3.2, desiredScale / baseScale));
+        zoomRef.current = Math.max(1.5, Math.min(2.0, desiredScale / baseScale));
         // Auto-select Tap (50% roll) if it would reach the hole. Tap's
         // full-power carry is 0.5 × club.v in world pixels; if the ball is
         // that close, a normal putt would sail past the cup. Only applies
@@ -2652,14 +2654,14 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       const drawables = [];
       for (const t of TREES) drawables.push({ kind: 'tree', x: t.x * TILE, y: t.y * TILE });
       for (const b of BUSHES) drawables.push({ kind: 'bush', x: b.x * TILE, y: b.y * TILE, variant: b.variant });
-      // Hide the flag pole while the player is putting (putter selected).
-      // The cup itself still draws — the tall red pin is what would be
-      // pulled for a real putt, so we pull it here too.
+      // Pull the flag pole whenever the putter is equipped — the tall
+      // red pin is what a caddie would remove for a real putt. Applies
+      // across every swing state so the pin doesn't reappear mid-putt.
       drawables.push({
         kind: 'flag',
         x: FLAG.x * TILE,
         y: FLAG.y * TILE,
-        showPole: !(isPutting && (sw.state === SW.IDLE || sw.state === SW.AIMING || sw.state === SW.SWIPING || sw.state === SW.STOPPED)),
+        showPole: !isPutting,
       });
       if (ball.state === 'dropping') {
         drawables.push({ kind: 'balldrop', x: ball.x, y: ball.y, t: ball.dropT / 0.75 });
