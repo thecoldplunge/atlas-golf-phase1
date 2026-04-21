@@ -173,6 +173,247 @@ const HOLES = [
       { x: 20, y: 57.5 }, { x: 23, y: 57.5 },
     ],
   },
+  {
+    // Hole 4 — "Frogman": forced water carry from tee to a small green.
+    // No bail-out. Short but demands commitment.
+    name: 'Hole 4', par: 3, width: 22, height: 30,
+    tee: { x: 11, y: 26 },
+    flag: { x: 11, y: 5 },
+    greenSlope: { angle: Math.PI * 0.15, mag: 5 },
+    surfaces: [
+      { type: T_FAIRWAY, shape: { kind: 'polygon', points: [
+        [9.5, 27], [12.5, 27], [12.5, 23.5], [11, 22.5], [9.5, 23.5]
+      ]}},
+      { type: T_SHORE, shape: { kind: 'polygon', points: [
+        [2, 9], [4, 8.3], [7, 8.2], [10, 8.1], [13, 8.2], [16, 8.3], [19, 8.7], [20.5, 10],
+        [20.3, 16], [19, 20.5], [16.5, 22.5], [13, 23], [9, 23.3], [5, 23], [3, 21.7],
+        [1.7, 19], [1.5, 15], [1.5, 11.5]
+      ]}},
+      { type: T_WATER, shape: { kind: 'polygon', points: [
+        [3, 10], [6, 9.3], [10, 9.1], [14, 9.3], [17.5, 9.7], [19.3, 11],
+        [19.2, 16], [18, 19.7], [16, 21.3], [13, 21.9], [9, 22.1], [5.5, 21.7],
+        [3.5, 20.5], [2.6, 18], [2.5, 15], [2.6, 12]
+      ]}},
+      { type: T_FRINGE, shape: { kind: 'annulus', cx: 11, cy: 5, inner: 2.3, outer: 3.0 }},
+      { type: T_GREEN, shape: { kind: 'circle', cx: 11, cy: 5, r: 2.3 }},
+      { type: T_SAND, shape: { kind: 'circle', cx: 8, cy: 5.5, r: 0.9 }},
+      { type: T_SAND, shape: { kind: 'circle', cx: 14, cy: 6, r: 0.9 }},
+      { type: T_TEE, shape: { kind: 'rect', x: 10.2, y: 25.6, w: 1.6, h: 1.0 }},
+    ],
+    trees: [
+      { x: 0.8, y: 3 }, { x: 3, y: 3.5 }, { x: 5.5, y: 3 }, { x: 8, y: 2.5 }, { x: 13.5, y: 2.5 },
+      { x: 16, y: 3 }, { x: 18.5, y: 3.5 }, { x: 21, y: 3 },
+      { x: 0.5, y: 7 }, { x: 21.3, y: 6.5 }, { x: 0.5, y: 23 }, { x: 21, y: 23 },
+      { x: 0.5, y: 27 }, { x: 2.5, y: 28.5 }, { x: 5.5, y: 28.5 }, { x: 8, y: 28.5 },
+      { x: 14, y: 28.5 }, { x: 16.5, y: 28.5 }, { x: 19, y: 28.5 }, { x: 21.3, y: 28 },
+    ],
+  },
+  {
+    // Hole 5 — "Hook Around": par 3 dogleg-left. Straight shot is blocked
+    // by trees; player must shape a draw or play conservatively.
+    name: 'Hole 5', par: 3, width: 24, height: 30,
+    tee: { x: 20, y: 26 },
+    flag: { x: 4, y: 5 },
+    greenSlope: { angle: Math.PI * 0.75, mag: 6 },
+    surfaces: [
+      { type: T_FAIRWAY, shape: { kind: 'polygon', points: [
+        [18.5, 27], [21.5, 27], [21.5, 22], [20.5, 18], [19, 15], [16, 12],
+        [12, 10], [8, 9], [5.5, 9], [3.5, 9.5], [2.5, 11], [2.5, 14],
+        [3, 16.5], [5, 17.5], [9, 17], [13, 16], [15.5, 15], [17, 18],
+        [18, 22], [18.5, 26]
+      ]}},
+      { type: T_SAND, shape: { kind: 'circle', cx: 6.3, cy: 7, r: 1.1 }},
+      { type: T_SAND, shape: { kind: 'polygon', points: [
+        [13, 14.3], [14.5, 14.1], [15.3, 14.8], [14.8, 15.6], [13.2, 15.4]
+      ]}},
+      { type: T_FRINGE, shape: { kind: 'annulus', cx: 4, cy: 5, inner: 2.2, outer: 2.9 }},
+      { type: T_GREEN, shape: { kind: 'circle', cx: 4, cy: 5, r: 2.2 }},
+      { type: T_TEE, shape: { kind: 'rect', x: 19.2, y: 25.6, w: 1.6, h: 1.0 }},
+    ],
+    trees: [
+      // Dogleg blockade — a wall of trees the player must curve around.
+      { x: 7, y: 12.5 }, { x: 8.5, y: 13 }, { x: 10, y: 13.5 }, { x: 11.5, y: 14 },
+      { x: 13, y: 13 }, { x: 14.5, y: 12.5 }, { x: 16, y: 13 }, { x: 10, y: 15 },
+      { x: 11.5, y: 16 }, { x: 13, y: 17 },
+      { x: 0.5, y: 2 }, { x: 3, y: 2 }, { x: 6, y: 2.5 }, { x: 9, y: 2.5 },
+      { x: 12, y: 2 }, { x: 15, y: 2.5 }, { x: 18, y: 2 }, { x: 21, y: 2 }, { x: 23, y: 2 },
+      { x: 0.5, y: 10 }, { x: 0.5, y: 16 }, { x: 0.5, y: 22 }, { x: 0.5, y: 28 },
+      { x: 23, y: 8 }, { x: 23, y: 14 }, { x: 23, y: 20 }, { x: 23, y: 26 },
+      { x: 3, y: 28 }, { x: 6, y: 28 }, { x: 10, y: 28 }, { x: 14, y: 28 }, { x: 17, y: 28 },
+    ],
+  },
+  {
+    // Hole 6 — "The Fork": par 4 with a ribbon of rough + water down the
+    // middle splitting the fairway into two paths (safe right / aggressive
+    // left with a shorter approach).
+    name: 'Hole 6', par: 4, width: 26, height: 48,
+    tee: { x: 13, y: 45.5 },
+    flag: { x: 13, y: 5 },
+    greenSlope: { angle: Math.PI * 1.2, mag: 6 },
+    surfaces: [
+      // LEFT fairway (aggressive) — shorter but tight between water + trees.
+      { type: T_FAIRWAY, shape: { kind: 'polygon', points: [
+        [9, 44], [12, 44], [11.5, 40], [10, 35], [8, 30], [6, 25], [5.5, 20],
+        [6.5, 15], [9, 12], [11, 10], [10.5, 9], [9, 9.5], [7, 11.5], [5, 15],
+        [4, 20], [3.8, 26], [4.7, 32], [6.5, 38], [8, 42]
+      ]}},
+      // RIGHT fairway (safe) — wider, more trees to clear on the approach.
+      { type: T_FAIRWAY, shape: { kind: 'polygon', points: [
+        [14, 44], [17, 44], [18.5, 40], [19.5, 35], [20, 28], [20, 22], [19.5, 16],
+        [18, 12], [15.5, 9.5], [13, 9], [14, 10.5], [15.5, 12.5], [17, 15.5], [17.5, 20],
+        [17.3, 26], [16.8, 32], [15.3, 38], [14, 42]
+      ]}},
+      // Water + shore splitting the two fairways.
+      { type: T_SHORE, shape: { kind: 'polygon', points: [
+        [12, 40], [14, 40], [14.5, 34], [14.5, 28], [14.2, 22], [13.5, 16], [13, 13],
+        [12.5, 16], [11.8, 22], [11.5, 28], [11.5, 34]
+      ]}},
+      { type: T_WATER, shape: { kind: 'polygon', points: [
+        [12.4, 39], [13.6, 39], [14, 34], [14, 28], [13.7, 22], [13.2, 17], [13, 14],
+        [12.8, 17], [12.3, 22], [12, 28], [12, 34]
+      ]}},
+      { type: T_SAND, shape: { kind: 'circle', cx: 8, cy: 8, r: 1.2 }},
+      { type: T_SAND, shape: { kind: 'circle', cx: 18, cy: 8, r: 1.2 }},
+      { type: T_FRINGE, shape: { kind: 'annulus', cx: 13, cy: 5, inner: 2.8, outer: 3.5 }},
+      { type: T_GREEN, shape: { kind: 'circle', cx: 13, cy: 5, r: 2.8 }},
+      { type: T_TEE, shape: { kind: 'rect', x: 12.2, y: 45.1, w: 1.6, h: 1.0 }},
+    ],
+    trees: [
+      { x: 0.5, y: 5 }, { x: 0.5, y: 11 }, { x: 0.5, y: 17 }, { x: 0.5, y: 23 },
+      { x: 0.5, y: 29 }, { x: 0.5, y: 35 }, { x: 0.5, y: 41 }, { x: 0.5, y: 47 },
+      { x: 25, y: 5 }, { x: 25, y: 11 }, { x: 25, y: 17 }, { x: 25, y: 23 },
+      { x: 25, y: 29 }, { x: 25, y: 35 }, { x: 25, y: 41 }, { x: 25, y: 47 },
+      { x: 3, y: 2 }, { x: 7, y: 2 }, { x: 13, y: 2 }, { x: 19, y: 2 }, { x: 23, y: 2 },
+      { x: 5, y: 47 }, { x: 9, y: 47 }, { x: 17, y: 47 }, { x: 21, y: 47 },
+      // Tight trees near the fork chokepoint to punish risky left route.
+      { x: 3, y: 20 }, { x: 2.5, y: 25 }, { x: 3, y: 30 }, { x: 3, y: 35 },
+    ],
+  },
+  {
+    // Hole 7 — "Cape": par 3 with water down the full right side. Longer
+    // aggressive line cuts the corner over water; safe line plays left.
+    name: 'Hole 7', par: 3, width: 22, height: 32,
+    tee: { x: 6, y: 28 },
+    flag: { x: 15, y: 5 },
+    greenSlope: { angle: Math.PI * 0.35, mag: 6 },
+    surfaces: [
+      { type: T_FAIRWAY, shape: { kind: 'polygon', points: [
+        [4, 29], [7.5, 29], [8.5, 24], [9, 20], [9.5, 15], [10.5, 11], [12, 8.5],
+        [14, 7.5], [15, 8], [13.5, 10], [12, 13], [11, 17], [10.5, 21], [10, 25], [9, 28]
+      ]}},
+      { type: T_SHORE, shape: { kind: 'polygon', points: [
+        [12, 10], [14.5, 9.5], [17, 9.8], [19, 10.8], [20.5, 13], [20.8, 16], [20.5, 20],
+        [19.8, 25], [18.5, 29], [17, 30.5], [15, 30.5], [12.5, 29], [11.5, 26], [11.3, 22],
+        [11.6, 18], [11.9, 14]
+      ]}},
+      { type: T_WATER, shape: { kind: 'polygon', points: [
+        [13, 11], [15, 10.5], [17, 10.8], [18.7, 11.8], [19.8, 13.5], [20, 16.5],
+        [19.7, 20.5], [19, 25], [17.8, 28.5], [16.5, 29.5], [14.7, 29.3], [13, 28], [12.5, 25],
+        [12.5, 21], [12.6, 17], [12.8, 14]
+      ]}},
+      { type: T_SAND, shape: { kind: 'polygon', points: [
+        [12.5, 6], [14, 5.7], [15.2, 6.3], [14.7, 7.4], [13, 7.3]
+      ]}},
+      { type: T_FRINGE, shape: { kind: 'annulus', cx: 15, cy: 5, inner: 2.2, outer: 2.9 }},
+      { type: T_GREEN, shape: { kind: 'circle', cx: 15, cy: 5, r: 2.2 }},
+      { type: T_TEE, shape: { kind: 'rect', x: 5.2, y: 27.6, w: 1.6, h: 1.0 }},
+    ],
+    trees: [
+      { x: 0.5, y: 4 }, { x: 2.5, y: 3 }, { x: 5, y: 3 }, { x: 8, y: 3 }, { x: 11, y: 3 },
+      { x: 18, y: 3 }, { x: 21, y: 3 },
+      { x: 0.5, y: 9 }, { x: 0.5, y: 14 }, { x: 0.5, y: 19 }, { x: 0.5, y: 24 },
+      { x: 0.5, y: 29 }, { x: 21, y: 8 }, { x: 21, y: 14 }, { x: 21, y: 20 }, { x: 21, y: 26 },
+      { x: 3, y: 31 }, { x: 7, y: 31 }, { x: 11, y: 31 }, { x: 15, y: 31 }, { x: 19, y: 31 },
+    ],
+  },
+  {
+    // Hole 8 — "Crescent": par 3 with a curved peanut-shaped green. Pin
+    // hidden behind a sand spine; playing to the correct lobe matters.
+    name: 'Hole 8', par: 3, width: 20, height: 28,
+    tee: { x: 10, y: 24 },
+    flag: { x: 12.5, y: 6 },
+    greenSlope: { angle: Math.PI * 0.9, mag: 4 },
+    surfaces: [
+      { type: T_FAIRWAY, shape: { kind: 'polygon', points: [
+        [8.5, 25], [11.5, 25], [12, 22], [11.5, 18], [11, 15], [10.5, 12],
+        [9.5, 12], [8.5, 15], [8, 18], [8, 22]
+      ]}},
+      // Peanut green — two lobes joined by a narrow waist.
+      { type: T_FRINGE, shape: { kind: 'polygon', points: [
+        [6.8, 5.5], [8.5, 4.3], [10.5, 4], [11.3, 5.3], [11.8, 7], [12.2, 7.2],
+        [13.5, 5.5], [15, 4.5], [16.5, 5], [16.8, 7], [16, 8.8], [14.5, 9.5],
+        [13, 9.3], [12, 8.3], [11, 8.5], [9.5, 9.5], [8, 9.5], [6.8, 8.5], [6.3, 7]
+      ]}},
+      { type: T_GREEN, shape: { kind: 'polygon', points: [
+        [7.3, 5.8], [8.8, 4.9], [10.2, 4.7], [10.8, 5.8], [11.2, 7.2], [12, 7.4],
+        [13.2, 6], [14.7, 5.2], [15.9, 5.6], [16.1, 7], [15.5, 8.3], [14.3, 8.9],
+        [13.2, 8.7], [12.2, 8.1], [11.2, 8.2], [9.7, 9], [8.4, 9], [7.4, 8.1], [7, 7]
+      ]}},
+      // Sand spine along the waist of the peanut.
+      { type: T_SAND, shape: { kind: 'polygon', points: [
+        [10.4, 6.5], [11.7, 6.4], [12.6, 7.2], [11.8, 7.8], [10.7, 7.7]
+      ]}},
+      { type: T_SAND, shape: { kind: 'circle', cx: 13, cy: 11, r: 0.9 }},
+      { type: T_TEE, shape: { kind: 'rect', x: 9.2, y: 23.6, w: 1.6, h: 1.0 }},
+    ],
+    trees: [
+      { x: 0.8, y: 3 }, { x: 3, y: 2.5 }, { x: 5, y: 2.5 }, { x: 9, y: 1.5 },
+      { x: 14, y: 2 }, { x: 17, y: 2.5 }, { x: 19.2, y: 3 },
+      { x: 0.5, y: 10 }, { x: 0.5, y: 16 }, { x: 0.5, y: 22 }, { x: 0.5, y: 26 },
+      { x: 19, y: 10 }, { x: 19, y: 16 }, { x: 19, y: 22 }, { x: 19, y: 26 },
+      { x: 3, y: 13 }, { x: 4, y: 17 }, { x: 3.5, y: 21 },
+      { x: 15, y: 13 }, { x: 16, y: 17 }, { x: 15.5, y: 21 },
+      { x: 4, y: 27 }, { x: 7, y: 27 }, { x: 13, y: 27 }, { x: 16, y: 27 },
+    ],
+  },
+  {
+    // Hole 9 — "Amen": closer. Par 3 with water short + long, kidney
+    // green tucked behind a bunker. Miss right = sand; miss left = trees.
+    name: 'Hole 9', par: 3, width: 22, height: 32,
+    tee: { x: 11, y: 28 },
+    flag: { x: 11, y: 6 },
+    greenSlope: { angle: Math.PI * 1.4, mag: 5 },
+    surfaces: [
+      { type: T_FAIRWAY, shape: { kind: 'polygon', points: [
+        [9.5, 29], [12.5, 29], [12.5, 26], [12, 22], [11, 18], [10, 16], [10, 14],
+        [11, 13], [12.5, 13], [13.5, 14], [13, 16], [12, 18], [11, 22], [10.5, 26]
+      ]}},
+      // Front water hazard.
+      { type: T_SHORE, shape: { kind: 'polygon', points: [
+        [5, 11], [8, 10.5], [11.5, 11], [14.5, 10.7], [17, 11.3], [17.8, 12.5],
+        [17.2, 13.8], [15, 14.3], [11, 14], [7, 13.7], [4.7, 13], [4.2, 12]
+      ]}},
+      { type: T_WATER, shape: { kind: 'polygon', points: [
+        [6, 11.7], [9, 11.3], [12, 11.7], [14.5, 11.5], [16.5, 12], [16.8, 12.8],
+        [15.5, 13.5], [12, 13.3], [8, 13], [5.7, 12.5], [5.5, 12.1]
+      ]}},
+      // Kidney green: concave on the front-left.
+      { type: T_FRINGE, shape: { kind: 'polygon', points: [
+        [7.8, 7], [9.5, 4.8], [12, 4], [14.3, 4.7], [15.5, 6.5], [15.2, 8.5], [14, 9.3],
+        [12.2, 9.2], [11, 8.5], [10, 9.2], [8.5, 9.2], [7.5, 8.2]
+      ]}},
+      { type: T_GREEN, shape: { kind: 'polygon', points: [
+        [8.4, 7.1], [9.9, 5.3], [12, 4.7], [14, 5.4], [14.9, 6.8], [14.7, 8.2],
+        [13.7, 8.8], [12.2, 8.7], [11.2, 8.1], [10.2, 8.6], [9, 8.5], [8.2, 7.8]
+      ]}},
+      // Front-greenside bunker blocking a bump-and-run.
+      { type: T_SAND, shape: { kind: 'polygon', points: [
+        [9.5, 8.8], [11, 9], [12.5, 9], [12.8, 9.8], [11, 10.3], [9.5, 9.8]
+      ]}},
+      { type: T_SAND, shape: { kind: 'circle', cx: 15.5, cy: 6, r: 0.9 }},
+      { type: T_TEE, shape: { kind: 'rect', x: 10.2, y: 27.6, w: 1.6, h: 1.0 }},
+    ],
+    trees: [
+      { x: 0.8, y: 3 }, { x: 3, y: 2.5 }, { x: 5.5, y: 2.5 }, { x: 8, y: 2 },
+      { x: 14, y: 2 }, { x: 16.5, y: 2.5 }, { x: 19, y: 2.5 }, { x: 21, y: 3 },
+      { x: 0.5, y: 9 }, { x: 0.5, y: 16 }, { x: 0.5, y: 22 }, { x: 0.5, y: 28 },
+      { x: 21, y: 9 }, { x: 21, y: 16 }, { x: 21, y: 22 }, { x: 21, y: 28 },
+      // Heavy tree line on the left — punishes the pull.
+      { x: 3, y: 10 }, { x: 3, y: 14 }, { x: 3, y: 18 }, { x: 3, y: 22 }, { x: 3, y: 25 },
+      { x: 18.5, y: 10 }, { x: 18.5, y: 16 }, { x: 18.5, y: 22 }, { x: 18.5, y: 26 },
+      { x: 4, y: 31 }, { x: 7, y: 31 }, { x: 11, y: 31 }, { x: 15, y: 31 }, { x: 18, y: 31 },
+    ],
+  },
 ];
 
 function rotateShape90CCW(shape, H) {
