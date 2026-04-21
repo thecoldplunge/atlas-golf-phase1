@@ -1,6 +1,65 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+// Simple on-screen error boundary. When any child throws during
+// render / effect, we fall back to a dark screen with the exact
+// message + stack so the crash is visible to the user instead of
+// vanishing into a blank canvas.
+class GsErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { err: null, stack: '' };
+  }
+  static getDerivedStateFromError(err) {
+    return { err: String(err?.message || err), stack: String(err?.stack || '') };
+  }
+  componentDidCatch(err, info) {
+    try { console.error('[GS crash]', err, info?.componentStack); } catch (_) {}
+  }
+  render() {
+    if (this.state.err) {
+      return (
+        <View style={{
+          flex: 1, backgroundColor: '#0b1a10', alignItems: 'center',
+          justifyContent: 'center', padding: 20,
+        }}>
+          <Text style={{
+            color: '#ff6ad5', fontSize: 14, fontWeight: '900',
+            letterSpacing: 2, marginBottom: 10, textAlign: 'center',
+            fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+          }}>GS HIT A CRASH</Text>
+          <Text style={{
+            color: '#fff6d8', fontSize: 12, marginBottom: 10, textAlign: 'center',
+            fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+          }}>{this.state.err}</Text>
+          <Text style={{
+            color: '#a9d4a9', fontSize: 10, textAlign: 'left',
+            fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+          }}>
+            {this.state.stack.slice(0, 900)}
+          </Text>
+          <Pressable
+            onPress={() => {
+              if (typeof window !== 'undefined') window.location.reload();
+            }}
+            style={{
+              marginTop: 16, paddingVertical: 10, paddingHorizontal: 22,
+              borderWidth: 3, borderColor: '#88f8bb',
+              backgroundColor: 'rgba(136,248,187,0.12)',
+            }}
+          >
+            <Text style={{
+              color: '#f5fbef', fontSize: 13, fontWeight: '900', letterSpacing: 2,
+              fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+            }}>RELOAD</Text>
+          </Pressable>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const TILE = 16;
 const GRAVITY = 70;
 const HOLE_RADIUS = 4;
@@ -2173,7 +2232,15 @@ function clubStatMultipliers(clubStats) {
   return { distanceFactor, clubCurveFactor };
 }
 
-export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, equipmentCatalog, allGolfers = [] }) {
+export default function GolfStoryScreen(props) {
+  return (
+    <GsErrorBoundary>
+      <GolfStoryScreenInner {...props} />
+    </GsErrorBoundary>
+  );
+}
+
+function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCatalog, allGolfers = [] }) {
   const [orientation, setOrientation] = useState(null);
   // matchConfig === null  →  show match-setup picker before any play.
   // Otherwise: { players: [{ id, name, isNPC, golfer }, ...] }
