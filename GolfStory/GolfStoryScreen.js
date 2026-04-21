@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 // Simple on-screen error boundary. When any child throws during
 // render / effect, we fall back to a dark screen with the exact
@@ -2433,85 +2433,71 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       sctx.clearRect(0, 0, WORLD_W, WORLD_H);
       const imgData = buildWorldImageData();
       sctx.putImageData(imgData, 0, 0);
-      // Slope visualisation:
-      //  • 2-px contour dashes perpendicular to the gradient, spaced
-      //    ~10 px along it, at a visible cream tone. Mag scales alpha.
-      //  • A chunky downhill arrow at the centroid pointing along the
-      //    gradient, length / thickness / color scaled by mag — the
-      //    arrow is the primary "this slope goes THAT way" cue.
+      // Slope visualisation: a repeating lattice of small downhill
+      // arrows rendered in two shades of green, as if the greenskeeper
+      // mowed them into the turf. Both fairway AND green surfaces get
+      // the pattern. Density scales subtly with slope magnitude — bigger
+      // grade → tighter spacing → more arrows visible per chunk.
       for (const surf of SURFACES) {
-        if (!surf.slope || !surf.slope.mag) continue;
+        // Greens without a per-region slope inherit the per-hole
+        // GREEN_SLOPE so every green shows mowed downhill arrows too.
+        const slope = surf.slope
+          || (surf.type === T_GREEN && GREEN_SLOPE && GREEN_SLOPE.mag
+              ? { angle: GREEN_SLOPE.angle, mag: GREEN_SLOPE.mag }
+              : null);
+        if (!slope || !slope.mag) continue;
         const bb = surf.shape._bbox;
         if (!bb) continue;
-        const gx = Math.sin(surf.slope.angle);   // downhill vector
-        const gy = -Math.cos(surf.slope.angle);
-        const step = 10;
-        const contourAlpha = Math.min(0.45, 0.14 + surf.slope.mag * 0.035);
-        sctx.fillStyle = `rgba(236,242,214,${contourAlpha.toFixed(3)})`;
-        const x0 = Math.max(0, Math.floor(bb[0]));
-        const y0 = Math.max(0, Math.floor(bb[1]));
-        const x1 = Math.min(WORLD_W, Math.ceil(bb[2]));
-        const y1 = Math.min(WORLD_H, Math.ceil(bb[3]));
-        for (let y = y0; y < y1; y++) {
-          for (let x = x0; x < x1; x++) {
-            const d = gx * x + gy * y;
-            const phase = ((d % step) + step) % step;
-            if (phase < 2 && pointInShape(x + 0.5, y + 0.5, surf.shape)) {
-              sctx.fillRect(x, y, 1, 1);
-            }
-          }
-        }
-        // Downhill arrow. Anchor at bbox centroid, drop back to an
-        // interior point if the centroid happens to fall outside the
-        // polygon (concave shapes).
-        let cx = (bb[0] + bb[2]) * 0.5;
-        let cy = (bb[1] + bb[3]) * 0.5;
-        if (!pointInShape(cx, cy, surf.shape)) {
-          // Scan the centroid row for the widest interior span.
-          let bestStart = -1, bestLen = 0, spanStart = -1;
-          for (let x = x0; x <= x1; x++) {
-            const inside = pointInShape(x + 0.5, cy + 0.5, surf.shape);
-            if (inside && spanStart < 0) spanStart = x;
-            if ((!inside || x === x1) && spanStart >= 0) {
-              const len = x - spanStart;
-              if (len > bestLen) { bestLen = len; bestStart = spanStart; }
-              spanStart = -1;
-            }
-          }
-          if (bestLen > 0) cx = bestStart + bestLen * 0.5;
-        }
-        const arrowLen = 12 + surf.slope.mag * 2.2;
-        const hue = surf.slope.mag >= 6 ? '#ff6ad5' : surf.slope.mag >= 4 ? '#fbe043' : '#88f8bb';
-        // Shaft — 2 px wide dashed segments along the gradient.
-        sctx.fillStyle = hue;
-        const steps = Math.floor(arrowLen);
-        for (let i = 0; i < steps; i++) {
-          const t = i;
-          const sx = Math.round(cx + gx * t);
-          const sy = Math.round(cy + gy * t);
-          sctx.fillRect(sx, sy, 2, 2);
-        }
-        // Arrowhead — two short diagonals.
-        const tipX = Math.round(cx + gx * arrowLen);
-        const tipY = Math.round(cy + gy * arrowLen);
+        const gx = Math.sin(slope.angle);
+        const gy = -Math.cos(slope.angle);
+        // Perpendicular (right-of-gradient) unit vector for row offset.
         const perpX = -gy;
         const perpY = gx;
-        for (let i = 0; i < 5; i++) {
-          // Left fin.
-          const lx = Math.round(tipX - gx * i + perpX * i * 0.6);
-          const ly = Math.round(tipY - gy * i + perpY * i * 0.6);
-          sctx.fillRect(lx, ly, 2, 2);
-          // Right fin.
-          const rx = Math.round(tipX - gx * i - perpX * i * 0.6);
-          const ry = Math.round(tipY - gy * i - perpY * i * 0.6);
-          sctx.fillRect(rx, ry, 2, 2);
-        }
-        // Shadow beneath the arrow for legibility on busy fairway.
-        sctx.fillStyle = 'rgba(0,0,0,0.35)';
-        for (let i = 0; i < steps; i += 2) {
-          const sx = Math.round(cx + gx * i);
-          const sy = Math.round(cy + gy * i) + 1;
-          sctx.fillRect(sx, sy, 2, 1);
+        // Spacing between arrows: ~16 px on gentle slopes, 12 px on steep.
+        const spacing = Math.max(11, 18 - slope.mag);
+        // Two greens mowed into the grass. Darker shade reads as the
+        // shadowed cut, lighter shade as the cross-grain stripe.
+        const darkGreen = '#183a1b';
+        const lightGreen = '#4a8042';
+        const bbW = bb[2] - bb[0];
+        const bbH = bb[3] - bb[1];
+        const diag = Math.sqrt(bbW * bbW + bbH * bbH);
+        const steps = Math.ceil(diag / spacing) + 2;
+        // Walk a rotated grid aligned with (perp, grad) so the arrow
+        // rows all point the same way and line up regardless of surface
+        // orientation. Origin at the bbox center.
+        const cx0 = (bb[0] + bb[2]) * 0.5;
+        const cy0 = (bb[1] + bb[3]) * 0.5;
+        for (let ri = -steps; ri <= steps; ri++) {
+          for (let ai = -steps; ai <= steps; ai++) {
+            // Stagger every other row by half-spacing so arrows
+            // interleave rather than forming a blocky square grid.
+            const stagger = (ri & 1) ? spacing * 0.5 : 0;
+            const tx = cx0 + perpX * ri * spacing + gx * (ai * spacing + stagger);
+            const ty = cy0 + perpY * ri * spacing + gy * (ai * spacing + stagger);
+            if (tx < bb[0] - 4 || tx > bb[2] + 4) continue;
+            if (ty < bb[1] - 4 || ty > bb[3] + 4) continue;
+            if (!pointInShape(tx, ty, surf.shape)) continue;
+            // Each row alternates the mowed shade.
+            sctx.fillStyle = (ri & 1) ? darkGreen : lightGreen;
+            // Shaft — 5 pixels along gradient, 1 px wide.
+            for (let s = -2; s <= 2; s++) {
+              const px = Math.round(tx + gx * s);
+              const py = Math.round(ty + gy * s);
+              sctx.fillRect(px, py, 1, 1);
+            }
+            // Arrowhead — two angled fins at the tip.
+            const hx = Math.round(tx + gx * 2.5);
+            const hy = Math.round(ty + gy * 2.5);
+            for (let f = 1; f <= 2; f++) {
+              const lx = Math.round(hx - gx * f + perpX * f);
+              const ly = Math.round(hy - gy * f + perpY * f);
+              sctx.fillRect(lx, ly, 1, 1);
+              const rx = Math.round(hx - gx * f - perpX * f);
+              const ry = Math.round(hy - gy * f - perpY * f);
+              sctx.fillRect(rx, ry, 1, 1);
+            }
+          }
         }
       }
       for (const p of PROPS) drawProp(sctx, p);
@@ -2804,13 +2790,20 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         const puttNoise = (Math.random() - 0.5) * 2 * Math.max(0.02, 0.14 - touch / 700);
         powerPct = Math.max(0.25, Math.min(1.0, powerPct + puttNoise));
       } else {
-        // Approach / tee shots: full-power carry ≈ distance.
+        // Approach / tee shots: projectile carry scales with v² (which
+        // is power²), so the inverse is sqrt(target / fullCarry), not
+        // target / fullCarry. The legacy linear formula was the reason
+        // NPCs kept coming up short — a 60% target needed ~77% power.
         const carryPx = computeCarry(club, 1.0);
-        powerPct = distPx / Math.max(1, carryPx);
-        powerPct = Math.max(0.15, Math.min(1.0, powerPct));
-        const powerNoise = (Math.random() - 0.5) * 2 * (0.22 - power / 600);
-        const clutchBump = (distYd < 80 ? (composure - 50) / 800 : 0);
-        powerPct = Math.max(0.1, Math.min(1.0, powerPct + powerNoise + clutchBump));
+        const ratio = Math.max(0, Math.min(1, distPx / Math.max(1, carryPx)));
+        // ~3% bias over the exact sqrt so lie penalties + the club's
+        // distanceFactor don't eat the landing.
+        powerPct = Math.max(0.2, Math.min(1.0, Math.sqrt(ratio) * 1.03));
+        // Noise tightens as PWR rises: 50 → ±0.12, 90 → ±0.04.
+        const noiseRange = Math.max(0.03, 0.17 - power / 700);
+        const powerNoise = (Math.random() - 0.5) * 2 * noiseRange;
+        const clutchBump = (distYd < 80 ? (composure - 50) / 700 : 0);
+        powerPct = Math.max(0.15, Math.min(1.0, powerPct + powerNoise + clutchBump));
       }
       // Shape: small spin coming from touch.
       sw.spinX = ((Math.random() - 0.5) * 2) * (1 - touch / 120) * 0.35;
@@ -4108,102 +4101,200 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
 // golfers from the roster. The human player always uses the golfer
 // already selected on the IGT main menu, so we never ask for that
 // twice. Pixel-styled to match the rest of the GS HUD.
+// Mini stat bar used on the golfer picker cards.
+function StatMeter({ label, value }) {
+  const v = Math.max(0, Math.min(100, Number(value) || 0));
+  const tone = v >= 85 ? '#88f8bb' : v >= 70 ? '#a7e87d' : v >= 55 ? '#fbe043' : v >= 40 ? '#c8dfc4' : '#ff6ad5';
+  return (
+    <View style={pickerCardStyles.meterRow}>
+      <Text style={pickerCardStyles.meterLabel}>{label}</Text>
+      <View style={pickerCardStyles.meterTrack}>
+        <View style={[pickerCardStyles.meterFill, { width: `${v}%`, backgroundColor: tone }]} />
+      </View>
+      <Text style={[pickerCardStyles.meterValue, { color: tone }]}>{v}</Text>
+    </View>
+  );
+}
+
+// Small pixel avatar block — stacked skin/shirt/pants palette from
+// the golfer's avatar. Renders as a sharp tile, not a ball-chart.
+function GolferAvatar({ golfer, size = 56 }) {
+  const av = golfer?.avatar || {};
+  const hat = av.hat || '#263246';
+  const skin = av.skin || '#f0c08c';
+  const shirt = av.shirt || '#3f76c1';
+  const pants = av.pants || '#2e563c';
+  const bandH = Math.round(size / 5);
+  return (
+    <View style={[pickerCardStyles.avatarFrame, { width: size, height: size }]}>
+      <View style={{ backgroundColor: hat,   height: bandH }} />
+      <View style={{ backgroundColor: skin,  height: bandH }} />
+      <View style={{ backgroundColor: shirt, height: bandH }} />
+      <View style={{ backgroundColor: pants, flex: 1 }} />
+    </View>
+  );
+}
+
+// Card-style golfer picker: sticky header with the step title, then
+// a scrollable list of golfers with avatar + name + species + three
+// mini stat bars. Tap a card to commit the pick.
+function GsGolferPicker({ title, subtitle, allGolfers, onPick, onBack, excludeIds = [] }) {
+  const roster = (Array.isArray(allGolfers) ? allGolfers : []).filter(
+    (g) => g && !excludeIds.includes(g.id),
+  );
+  return (
+    <View style={pickerCardStyles.root}>
+      <View style={pickerCardStyles.topBar}>
+        <Text style={pickerCardStyles.title}>{title}</Text>
+        {subtitle ? <Text style={pickerCardStyles.subtitle}>{subtitle}</Text> : null}
+      </View>
+      <ScrollView
+        style={pickerCardStyles.scroll}
+        contentContainerStyle={pickerCardStyles.scrollInner}
+        showsVerticalScrollIndicator={false}
+      >
+        {roster.map((g) => (
+          <Pressable key={g.id} style={pickerCardStyles.card} onPress={() => onPick(g)}>
+            <GolferAvatar golfer={g} />
+            <View style={pickerCardStyles.cardRight}>
+              <View style={pickerCardStyles.nameRow}>
+                <Text style={pickerCardStyles.name} numberOfLines={1}>{g.name}</Text>
+                <Text style={pickerCardStyles.species} numberOfLines={1}>{g.species || '—'}</Text>
+              </View>
+              <StatMeter label="PWR" value={g?.stats?.power} />
+              <StatMeter label="ACC" value={g?.stats?.accuracy} />
+              <StatMeter label="TCH" value={g?.stats?.touch} />
+            </View>
+          </Pressable>
+        ))}
+      </ScrollView>
+      <Pressable style={pickerCardStyles.backBtn} onPress={onBack}>
+        <Text style={pickerCardStyles.backText}>← back</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+// Count picker — first step of match setup.
+function MatchCountPicker({ initial = 2, onConfirm, onBack }) {
+  const [playerCount, setPlayerCount] = useState(initial);
+  return (
+    <View style={pickerCardStyles.root}>
+      <View style={pickerCardStyles.topBar}>
+        <Text style={pickerCardStyles.title}>MATCH SETUP</Text>
+        <Text style={pickerCardStyles.subtitle}>How many players?</Text>
+      </View>
+      <View style={pickerCardStyles.countBody}>
+        <View style={pickerCardStyles.countRow}>
+          {[1, 2, 3, 4].map((n) => (
+            <Pressable
+              key={n}
+              style={[pickerCardStyles.countBtn, playerCount === n ? pickerCardStyles.countBtnActive : null]}
+              onPress={() => setPlayerCount(n)}
+            >
+              <Text style={[pickerCardStyles.countBtnText, playerCount === n ? pickerCardStyles.countBtnTextActive : null]}>{n}</Text>
+              <Text style={pickerCardStyles.countBtnSub}>{n === 1 ? 'solo' : 'players'}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <Pressable style={pickerCardStyles.nextBtn} onPress={() => onConfirm(playerCount)}>
+          <Text style={pickerCardStyles.nextBtnText}>NEXT ▸</Text>
+        </Pressable>
+      </View>
+      <Pressable style={pickerCardStyles.backBtn} onPress={onBack}>
+        <Text style={pickerCardStyles.backText}>← back</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+// Top-level match setup coordinator. Walks the player through
+// count → human → (CPU ×N) and emits the final players payload.
 function MatchSetupOverlay({ allGolfers, defaultHuman, onStart, onBack }) {
   const safeRoster = Array.isArray(allGolfers) && allGolfers.length ? allGolfers : [];
+  // step: 'count' | 'human' | 'cpu'
+  const [step, setStep] = useState('count');
   const [playerCount, setPlayerCount] = useState(2);
-  // CPU slot picks only — no human slot. Pre-seed them to different
-  // characters from the human so the match isn't you vs. three clones.
-  const humanIdx = Math.max(0, safeRoster.findIndex((g) => g.id === defaultHuman?.id));
-  const [cpuSlots, setCpuSlots] = useState(() => {
-    const picks = [];
-    for (let i = 0; i < 3; i++) {
-      const idx = safeRoster.length
-        ? (humanIdx + 1 + i) % safeRoster.length
-        : 0;
-      picks.push(idx);
-    }
-    return picks;
-  });
-  const cycleCpu = (i, dir) => {
-    if (!safeRoster.length) return;
-    const next = (cpuSlots[i] + dir + safeRoster.length) % safeRoster.length;
-    setCpuSlots((arr) => arr.map((v, j) => (j === i ? next : v)));
-  };
-  const start = () => {
+  const [humanGolfer, setHumanGolfer] = useState(defaultHuman || safeRoster[0] || null);
+  const [cpuGolfers, setCpuGolfers] = useState([]);
+
+  const commit = (count, human, cpus) => {
     const players = [];
-    const human = defaultHuman || safeRoster[0] || {
-      id: 'human', name: 'YOU', stats: {}, mental: {},
-    };
-    players.push({
-      id: 'p1',
-      name: human.name || 'YOU',
-      isNPC: false,
-      golfer: human,
-    });
-    for (let i = 1; i < playerCount; i++) {
-      const g = safeRoster[cpuSlots[i - 1]] || safeRoster[0] || null;
+    const h = human || safeRoster[0] || { id: 'human', name: 'YOU', stats: {}, mental: {} };
+    players.push({ id: 'p1', name: h.name || 'YOU', isNPC: false, golfer: h });
+    for (let i = 0; i < count - 1; i++) {
+      const g = cpus[i] || safeRoster[0] || null;
       players.push({
-        id: `p${i + 1}`,
-        name: (g && g.name) ? g.name : `CPU ${i}`,
+        id: `p${i + 2}`,
+        name: (g && g.name) ? g.name : `CPU ${i + 1}`,
         isNPC: true,
         golfer: g,
       });
     }
     onStart({ players });
   };
+
+  if (step === 'count') {
+    return (
+      <MatchCountPicker
+        initial={playerCount}
+        onConfirm={(n) => {
+          setPlayerCount(n);
+          if (n === 1) {
+            commit(1, humanGolfer, []);
+          } else {
+            setStep('human');
+          }
+        }}
+        onBack={onBack}
+      />
+    );
+  }
+
+  if (step === 'human') {
+    return (
+      <GsGolferPicker
+        title="CHOOSE YOUR GOLFER"
+        subtitle="Pick the character you'll control"
+        allGolfers={safeRoster}
+        onPick={(g) => {
+          setHumanGolfer(g);
+          if (playerCount === 1) {
+            commit(1, g, []);
+          } else {
+            setCpuGolfers([]);
+            setStep('cpu');
+          }
+        }}
+        onBack={() => setStep('count')}
+      />
+    );
+  }
+
+  // step === 'cpu'
+  const slotIdx = cpuGolfers.length;
+  const slotsNeeded = playerCount - 1;
+  const remaining = slotsNeeded - slotIdx;
+  const exclude = [humanGolfer?.id, ...cpuGolfers.map((g) => g?.id)].filter(Boolean);
   return (
-    <View style={styles.root}>
-      <View style={pickerStyles.wrap}>
-        <Text style={pickerStyles.title}>MATCH SETUP</Text>
-        <Text style={pickerStyles.sub}>Pick player count + opponents</Text>
-        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
-          {[1, 2, 3, 4].map((n) => (
-            <Pressable
-              key={n}
-              style={[matchStyles.countBtn, playerCount === n ? matchStyles.countBtnActive : null]}
-              onPress={() => setPlayerCount(n)}
-            >
-              <Text style={matchStyles.countBtnText}>{n}P</Text>
-            </Pressable>
-          ))}
-        </View>
-        <View style={matchStyles.slotRow}>
-          <Text style={matchStyles.slotLabel}>YOU</Text>
-          <View style={matchStyles.slotName}>
-            <Text style={matchStyles.slotNameText}>{defaultHuman?.name || 'PLAYER 1'}</Text>
-            <Text style={matchStyles.slotStatsText}>
-              PWR {defaultHuman?.stats?.power ?? '—'}  ·  ACC {defaultHuman?.stats?.accuracy ?? '—'}  ·  TCH {defaultHuman?.stats?.touch ?? '—'}
-            </Text>
-          </View>
-        </View>
-        {Array.from({ length: Math.max(0, playerCount - 1) }).map((_, i) => {
-          const g = safeRoster[cpuSlots[i]] || safeRoster[0] || null;
-          return (
-            <View key={i} style={matchStyles.slotRow}>
-              <Text style={matchStyles.slotLabel}>{`CPU ${i + 1}`}</Text>
-              <Pressable style={matchStyles.cycleBtn} onPress={() => cycleCpu(i, -1)}>
-                <Text style={matchStyles.cycleText}>◀</Text>
-              </Pressable>
-              <View style={matchStyles.slotName}>
-                <Text style={matchStyles.slotNameText}>{g?.name || '—'}</Text>
-                <Text style={matchStyles.slotStatsText}>
-                  PWR {g?.stats?.power ?? '—'}  ·  ACC {g?.stats?.accuracy ?? '—'}  ·  TCH {g?.stats?.touch ?? '—'}
-                </Text>
-              </View>
-              <Pressable style={matchStyles.cycleBtn} onPress={() => cycleCpu(i, +1)}>
-                <Text style={matchStyles.cycleText}>▶</Text>
-              </Pressable>
-            </View>
-          );
-        })}
-        <Pressable style={matchStyles.startBtn} onPress={start}>
-          <Text style={matchStyles.startBtnText}>START MATCH ▸</Text>
-        </Pressable>
-        <Pressable style={pickerStyles.back} onPress={onBack}>
-          <Text style={pickerStyles.backText}>← back</Text>
-        </Pressable>
-      </View>
-    </View>
+    <GsGolferPicker
+      title={`CHOOSE NPC ${slotIdx + 1}`}
+      subtitle={`${remaining} opponent${remaining === 1 ? '' : 's'} to pick`}
+      allGolfers={safeRoster}
+      excludeIds={exclude}
+      onPick={(g) => {
+        const nextCpus = [...cpuGolfers, g];
+        if (nextCpus.length >= slotsNeeded) {
+          commit(playerCount, humanGolfer, nextCpus);
+        } else {
+          setCpuGolfers(nextCpus);
+        }
+      }}
+      onBack={() => {
+        if (cpuGolfers.length === 0) setStep('human');
+        else setCpuGolfers((arr) => arr.slice(0, -1));
+      }}
+    />
   );
 }
 
@@ -4531,6 +4622,149 @@ const matchStyles = StyleSheet.create({
   },
   startBtnText: {
     color: '#f5fbef', fontSize: 15, fontWeight: '900', letterSpacing: 3,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+});
+
+const pickerCardStyles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: '#060d17',
+    paddingHorizontal: 12,
+    paddingTop: Platform.OS === 'web' ? 30 : 48,
+  },
+  topBar: {
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingVertical: 10,
+  },
+  title: {
+    color: '#fff6d8',
+    fontSize: 18, fontWeight: '900', letterSpacing: 3,
+    textAlign: 'center',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  subtitle: {
+    color: '#88f8bb', fontSize: 11, letterSpacing: 1.5,
+    marginTop: 6,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  scroll: { flex: 1 },
+  scrollInner: { paddingBottom: 80, gap: 10 },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(16, 32, 26, 0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(136, 248, 187, 0.22)',
+  },
+  avatarFrame: {
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'rgba(245, 245, 236, 0.35)',
+    backgroundColor: '#0b1a10',
+  },
+  cardRight: { flex: 1, gap: 4 },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 4,
+  },
+  name: {
+    color: '#fff6d8',
+    fontSize: 15, fontWeight: '800', letterSpacing: 0.5,
+    flex: 1,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  species: {
+    color: '#a9d4a9', fontSize: 10, letterSpacing: 1,
+    textTransform: 'uppercase',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  meterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 2,
+  },
+  meterLabel: {
+    color: '#c8dfc4', fontSize: 10, fontWeight: '800', letterSpacing: 1,
+    width: 30,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  meterTrack: {
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden',
+  },
+  meterFill: { height: '100%', borderRadius: 3 },
+  meterValue: {
+    width: 24, textAlign: 'right',
+    fontSize: 11, fontWeight: '900',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  countBody: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 32,
+  },
+  countRow: {
+    flexDirection: 'row',
+    gap: 10,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  countBtn: {
+    width: 72, height: 84,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: 'rgba(136, 248, 187, 0.28)',
+    backgroundColor: 'rgba(16, 32, 26, 0.88)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  countBtnActive: {
+    borderColor: '#88f8bb',
+    backgroundColor: 'rgba(136, 248, 187, 0.16)',
+  },
+  countBtnText: {
+    color: '#fff6d8', fontSize: 30, fontWeight: '900',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  countBtnTextActive: { color: '#88f8bb' },
+  countBtnSub: {
+    color: '#a9d4a9', fontSize: 10, letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  nextBtn: {
+    paddingVertical: 14, paddingHorizontal: 38,
+    borderRadius: 12,
+    backgroundColor: 'rgba(136,248,187,0.14)',
+    borderWidth: 2, borderColor: '#88f8bb',
+  },
+  nextBtnText: {
+    color: '#f5fbef', fontSize: 16, fontWeight: '900', letterSpacing: 3,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  backBtn: {
+    alignSelf: 'center',
+    paddingVertical: 10, paddingHorizontal: 16,
+    marginTop: 6, marginBottom: 10,
+  },
+  backText: {
+    color: '#a9d4a9', fontSize: 12, letterSpacing: 2,
+    textTransform: 'uppercase',
     fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
   },
 });
