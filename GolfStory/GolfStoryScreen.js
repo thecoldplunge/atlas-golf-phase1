@@ -206,9 +206,14 @@ function rotateHole90CCW(h) {
   };
 }
 
+// Pad each hole's tile dimensions by 30% so the camera has rough margin to
+// pan into past the designed playfield — matches the main game's WORLD
+// inflation. Course features stay anchored to the original layout coords.
+const WORLD_PAD_FACTOR = 1.3;
+
 let ORIENTATION = 'portrait';
-let MAP_W = HOLES[0].width;
-let MAP_H = HOLES[0].height;
+let MAP_W = Math.ceil(HOLES[0].width * WORLD_PAD_FACTOR);
+let MAP_H = Math.ceil(HOLES[0].height * WORLD_PAD_FACTOR);
 let WORLD_W = MAP_W * TILE;
 let WORLD_H = MAP_H * TILE;
 let SURFACES = null;
@@ -408,6 +413,31 @@ const CLUBS = [
   { key: 'PT', name: 'Putter',      short: 'PT', v: 110, angle: 0,  accMult: 0.55, powerRate: 0.55 },
 ];
 
+// Mirrors the main game (App.js v3.40). Each profile scales carry distance
+// (via v0Final) and apex (via the launch angle / vz factor in launchBall).
+const SHOT_TYPE_PROFILES = {
+  normal:  { carry: 1.0,  apex: 1.0,  label: 'Normal' },
+  chip:    { carry: 0.5,  apex: 0.7,  label: 'Chip' },
+  flop:    { carry: 0.33, apex: 2.0,  label: 'Flop' },
+  stinger: { carry: 1.0,  apex: 0.5,  label: 'Stinger' },
+  bump:    { carry: 0.75, apex: 0.4,  label: 'Bump & Run' },
+};
+
+const WEDGE_KEYS_GS = new Set(['LW', 'SW', 'PW']); // GS only ships SW + PW
+const clubIsWedgeGS = (club) => !!club && WEDGE_KEYS_GS.has(club.key);
+const clubIsIronOrWoodGS = (club) => !!club && club.key !== 'PT' && !WEDGE_KEYS_GS.has(club.key);
+// GS surface labels live in SURFACE_PROPS.label — Stinger needs a clean lie.
+const STINGER_GOOD_LIES = new Set(['Tee Box', 'Fairway', 'Fringe']);
+const shotTypeEligibleGS = (type, club, lieLabel) => {
+  if (!club || club.key === 'PT') return type === 'normal';
+  if (type === 'normal') return true;
+  if (type === 'chip')   return true;
+  if (type === 'flop')   return clubIsWedgeGS(club);
+  if (type === 'bump')   return clubIsWedgeGS(club);
+  if (type === 'stinger') return clubIsIronOrWoodGS(club) && STINGER_GOOD_LIES.has(lieLabel);
+  return false;
+};
+
 // powerPenalty[min..max] caps the fraction of the launch velocity you keep
 // when hitting from the surface (mirrors the main game's lie model).
 // swingSensitivity amplifies the swing-deviation → curve mapping, so bad
@@ -503,8 +533,8 @@ function loadHole(idx, orientation) {
   ORIENTATION = orientation || ORIENTATION || 'portrait';
   const h = ORIENTATION === 'landscape' ? rotateHole90CCW(base) : base;
   CURRENT_HOLE = { ...h, idxBase: baseIdx };
-  MAP_W = h.width;
-  MAP_H = h.height;
+  MAP_W = Math.ceil(h.width * WORLD_PAD_FACTOR);
+  MAP_H = Math.ceil(h.height * WORLD_PAD_FACTOR);
   WORLD_W = MAP_W * TILE;
   WORLD_H = MAP_H * TILE;
   SURFACES = h.surfaces.map(addBbox);
@@ -963,7 +993,13 @@ function launchBall(b, aimAngle, power, accuracyOffset, spinX, spinY, club, opts
     golferFactors = { powerFactor: 1, touchFactor: 1, forgivenessFactor: 1, recoveryFactor: 1, windResist: 1 },
     clubStats = {},
     liePhys = null,
+    shotType = 'normal',
   } = opts;
+  // Shot type: scales carry (via v0Final) and apex (via vz at launch).
+  // Eligibility is enforced at strike time so an invalid combo silently
+  // falls back to normal instead of producing weird results.
+  const activeShotType = shotTypeEligibleGS(shotType, club, liePhys?.label) ? shotType : 'normal';
+  const shotProfile = SHOT_TYPE_PROFILES[activeShotType] || SHOT_TYPE_PROFILES.normal;
   const { v0, angleRad, curveDeg } = shotParams(club, power, spinY, accuracyOffset);
   const cm = clubStatMultipliers(clubStats);
   const lp = liePhys?.powerPenalty || [1.0, 1.0];
@@ -975,7 +1011,8 @@ function launchBall(b, aimAngle, power, accuracyOffset, spinX, spinY, club, opts
     * golferFactors.touchFactor
     * cm.distanceFactor
     * liePowerRoll
-    * recoveryDistBoost;
+    * recoveryDistBoost
+    * shotProfile.carry;
   // Curve amplification: bad lies widen the miss, skilled golfers (low
   // forgivenessFactor) tighten it, high-forgiveness clubs tighten it.
   const lieCurveAmp = liePhys?.swingSensitivity ?? 1;
@@ -989,7 +1026,8 @@ function launchBall(b, aimAngle, power, accuracyOffset, spinX, spinY, club, opts
   const horizVel = club.angle === 0 ? v0Final : v0Final * Math.cos(angleRad);
   b.vx = horizVel * Math.sin(effectiveDir);
   b.vy = horizVel * -Math.cos(effectiveDir);
-  b.vz = club.angle === 0 ? 0 : v0Final * Math.sin(angleRad);
+  // Apex multiplier — flop balloons (×2), stinger / bump run low (<1).
+  b.vz = club.angle === 0 ? 0 : v0Final * Math.sin(angleRad) * shotProfile.apex;
   b.z = 0;
   b.state = 'flying';
   b.trail = [];
@@ -1258,11 +1296,20 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
     spinY: 0,
     strokeCount: 0,
     messageTimer: 0,
+    shotType: 'normal',
   });
   const windRef = useRef({ x: 0, y: 0, angle: 0, speed: 0, mph: 0 });
   const leavesRef = useRef([]);
   const rafRef = useRef(null);
   const cameraRef = useRef({ camX: 0, camY: 0, scale: 2 });
+  // Camera focus mode — 'aim' follows the ball/aim spot, 'golfer' follows
+  // the player sprite. Mirrors v3.40 in the main game.
+  const cameraModeRef = useRef('aim');
+  const [cameraMode, setCameraModeState] = useState('aim');
+  const setCameraMode = (m) => { cameraModeRef.current = m; setCameraModeState(m); };
+  // Mobile UI: which sub-overlay is open. null/'shape'/'club'/'shotType'.
+  const [shotTypeMenuOpen, setShotTypeMenuOpen] = useState(false);
+  const [hudShotType, setHudShotType] = useState('normal');
 
   const [hud, setHud] = useState({
     state: SW.IDLE, club: 'Driver', clubShort: 'DR',
@@ -1522,9 +1569,17 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         golferFactors: golferFactorsRef.current,
         clubStats,
         liePhys,
+        shotType: sw.shotType || 'normal',
       });
       sw.state = SW.FLYING;
       sw.strokeCount++;
+      // Auto-reset shaping + shot type after every swing — each new shot
+      // starts neutral so a deliberate choice is required each time.
+      sw.spinX = 0;
+      sw.spinY = 0;
+      sw.shotType = 'normal';
+      setHudShotType('normal');
+      setShotTypeMenuOpen(false);
       swipeRef.current = null;
       flushHud();
     };
@@ -1794,14 +1849,37 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       const minZoomHere = Math.max(0.5, minScale / baseScale);
       if (zoomRef.current < minZoomHere) zoomRef.current = minZoomHere;
       const scale = baseScale * zoomRef.current;
-      const followX = (sw.state === SW.IDLE) ? p.x : ball.x;
-      const followY = (sw.state === SW.IDLE) ? p.y : ball.y;
+      // Camera focus: 'aim' frames the projected landing spot (offset
+      // toward phone top / tablet right). 'golfer' centers on the player.
+      const cMode = cameraModeRef.current;
+      const isTabletGS = (viewW / dpr) >= 700;
+      let followX, followY, anchorOffsetX = 0, anchorOffsetY = 0;
+      if (cMode === 'golfer') {
+        followX = p.x;
+        followY = p.y;
+      } else {
+        // Aim mode — when aiming/swiping, project where the ball will land
+        // based on stock club carry; while flying/rolling, follow the ball;
+        // while idle, use the ball spot so the next shot setup is framed.
+        const club = CLUBS[sw.clubIdx] || CLUBS[0];
+        const clubCarryPx = (club.v || 100) * 0.9;
+        if (sw.state === SW.AIMING || sw.state === SW.SWIPING) {
+          followX = ball.x + Math.sin(sw.aimAngle) * clubCarryPx;
+          followY = ball.y - Math.cos(sw.aimAngle) * clubCarryPx;
+          // Push the landing spot toward top (phone) or right (tablet).
+          anchorOffsetX = isTabletGS ? (viewW * 0.22) / scale : 0;
+          anchorOffsetY = isTabletGS ? 0 : -(viewH * 0.28) / scale;
+        } else {
+          followX = ball.x;
+          followY = ball.y;
+        }
+      }
       const visibleW = viewW / scale;
       const visibleH = viewH / scale;
       const camMaxX = Math.max(0, WORLD_W - visibleW);
       const camMaxY = Math.max(0, WORLD_H - visibleH);
-      const camX = Math.max(0, Math.min(camMaxX, followX - visibleW / 2));
-      const camY = Math.max(0, Math.min(camMaxY, followY - visibleH / 2));
+      const camX = Math.max(0, Math.min(camMaxX, followX - visibleW / 2 - anchorOffsetX));
+      const camY = Math.max(0, Math.min(camMaxY, followY - visibleH / 2 - anchorOffsetY));
       cameraRef.current.camX = camX;
       cameraRef.current.camY = camY;
       cameraRef.current.scale = scale;
@@ -2021,6 +2099,56 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         </View>
         <Text style={[styles.hudValue, { textAlign: 'center', marginTop: 2 }]}>{hud.shape}</Text>
       </Pressable>
+
+      {/* Shot type picker — Normal / Chip / Flop / Stinger / Bump & Run. */}
+      <Pressable style={styles.typeCard} onPress={() => setShotTypeMenuOpen((v) => !v)}>
+        <Text style={styles.hudLabel}>TYPE · tap</Text>
+        <Text style={[styles.hudValue, { textAlign: 'center', marginTop: 4 }]}>{(SHOT_TYPE_PROFILES[hudShotType] || SHOT_TYPE_PROFILES.normal).label}</Text>
+      </Pressable>
+
+      {/* Camera focus toggle — Aim ↔ Me. */}
+      <Pressable style={styles.viewToggleBtn} onPress={() => setCameraMode(cameraMode === 'aim' ? 'golfer' : 'aim')}>
+        <Text style={styles.hudLabel}>VIEW</Text>
+        <Text style={[styles.hudValue, { textAlign: 'center', marginTop: 4 }]}>{cameraMode === 'aim' ? 'AIM' : 'ME'}</Text>
+      </Pressable>
+
+      {shotTypeMenuOpen ? (
+        <View style={styles.shotTypeOverlay}>
+          {['normal', 'chip', 'flop', 'stinger', 'bump'].map((t) => {
+            const club = CLUBS[swingRef.current.clubIdx] || CLUBS[0];
+            const liePhys = surfacePropsAt(ballRef.current.x, ballRef.current.y);
+            const eligible = shotTypeEligibleGS(t, club, liePhys?.label);
+            const active = (swingRef.current.shotType || 'normal') === t;
+            const prof = SHOT_TYPE_PROFILES[t];
+            return (
+              <Pressable
+                key={t}
+                disabled={!eligible}
+                style={[
+                  styles.shotTypeOpt,
+                  active && styles.shotTypeOptActive,
+                  !eligible && styles.shotTypeOptDisabled,
+                ]}
+                onPress={() => {
+                  if (!eligible) return;
+                  swingRef.current.shotType = t;
+                  setHudShotType(t);
+                  setShotTypeMenuOpen(false);
+                }}
+              >
+                <Text style={[styles.shotTypeOptLabel, active && styles.shotTypeOptLabelActive]}>{prof.label}</Text>
+                <Text style={styles.shotTypeOptSub}>
+                  {t === 'normal' ? 'Full carry, full apex' :
+                   t === 'chip' ? '50% carry · 70% apex' :
+                   t === 'flop' ? '33% carry · 2× apex (wedge only)' :
+                   t === 'stinger' ? 'Full carry · 50% apex (iron/wood, clean lie)' :
+                   '75% carry · 40% apex (wedge only)'}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
 
       {!shapeOverlay && !clubPicker ? (
         <View
@@ -2261,6 +2389,42 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: 24, left: 192,
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
     paddingHorizontal: 8, paddingVertical: 6, width: 96, alignItems: 'center',
+  },
+  typeCard: {
+    position: 'absolute', bottom: 24, left: 296,
+    backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
+    paddingHorizontal: 8, paddingVertical: 6, width: 96, alignItems: 'center',
+  },
+  viewToggleBtn: {
+    position: 'absolute', bottom: 24, left: 400,
+    backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
+    paddingHorizontal: 8, paddingVertical: 6, width: 70, alignItems: 'center',
+  },
+  shotTypeOverlay: {
+    position: 'absolute', bottom: 96, left: 192,
+    backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
+    padding: 8, gap: 4, minWidth: 260, zIndex: 80,
+  },
+  shotTypeOpt: {
+    paddingVertical: 8, paddingHorizontal: 10,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  shotTypeOptActive: {
+    backgroundColor: 'rgba(99, 165, 99, 0.35)',
+    borderColor: '#8be78b',
+  },
+  shotTypeOptDisabled: {
+    opacity: 0.35,
+  },
+  shotTypeOptLabel: {
+    color: '#d4e0d4', fontSize: 13, fontWeight: '700',
+  },
+  shotTypeOptLabelActive: {
+    color: '#fff6d8',
+  },
+  shotTypeOptSub: {
+    color: '#7f968b', fontSize: 10, marginTop: 2,
   },
   shapeBall: {
     width: 48, height: 48, marginTop: 4,
