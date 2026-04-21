@@ -1216,15 +1216,20 @@ function drawGolfer(ctx, px, py, facing, phase, swingInfo) {
 function drawBall(ctx, px, py, z) {
   const lift = Math.max(0, z | 0);
   const x = Math.floor(px), y = Math.floor(py);
-  // Ground shadow — only while the ball is actually airborne. When it
-  // settles on the turf the ball sprite itself is the ground contact,
-  // so a separate shadow reads as a duplicate blob.
+  // Drop shadow — only while airborne. Real shadows grow and SOFTEN
+  // as the caster rises off the ground (penumbra widens, occluded
+  // light area shrinks), so here the ellipse gets larger and more
+  // transparent with lift. Anchored at the ground point directly
+  // under the ball (y), not under the lifted sprite.
   if (lift > 0) {
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    const inset = Math.min(2, lift / 10);
-    const shW = Math.max(2, 6 - inset * 2);
-    const shH = Math.max(1, 2 - Math.floor(inset));
-    ctx.fillRect(x - shW / 2, y, shW, shH);
+    const t = Math.min(1, lift / 35);
+    const rx = 5 + t * 7;         // 5 → 12 radius (10 → 24 wide)
+    const ry = 1.8 + t * 1.6;     // 1.8 → 3.4 radius (tall ~3.6 → 6.8)
+    const alpha = 0.6 - t * 0.38; // 0.6 (just off ground) → 0.22 (high)
+    ctx.fillStyle = `rgba(0,0,0,${alpha.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.ellipse(x, y + 0.5, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
   }
   // Ball body — 3×3 (50% larger than the previous 2×2 sprite).
   ctx.fillStyle = COLORS.ballShadow;
