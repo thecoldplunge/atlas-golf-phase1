@@ -1324,6 +1324,10 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
   // Mobile UI: which sub-overlay is open. null/'shape'/'club'/'shotType'.
   const [shotTypeMenuOpen, setShotTypeMenuOpen] = useState(false);
   const [hudShotType, setHudShotType] = useState('normal');
+  // Set to true whenever the player manually picks a shot type from the
+  // menu. Cleared on strike (endSwipe) so every new shot setup re-runs
+  // the auto-Tap heuristic from scratch.
+  const shotTypeManualRef = useRef(false);
 
   const [hud, setHud] = useState({
     state: SW.IDLE, club: 'Driver', clubShort: 'DR',
@@ -1592,6 +1596,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       sw.spinX = 0;
       sw.spinY = 0;
       sw.shotType = 'normal';
+      shotTypeManualRef.current = false;
       setHudShotType('normal');
       setShotTypeMenuOpen(false);
       swipeRef.current = null;
@@ -1877,6 +1882,37 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         const shortPx = Math.min(viewW, viewH);
         const desiredScale = (shortPx * 0.55) / Math.max(16, dist);
         zoomRef.current = Math.max(1.5, Math.min(3.2, desiredScale / baseScale));
+        // Auto-select Tap (50% roll) if it would reach the hole. Tap's
+        // full-power carry is 0.5 × club.v in world pixels; if the ball is
+        // that close, a normal putt would sail past the cup. Only applies
+        // when the player hasn't manually overridden the shot type for
+        // this shot.
+        if (!shotTypeManualRef.current) {
+          const tapReach = selectedClub.v * 0.5;
+          const want = dist <= tapReach ? 'tap' : 'normal';
+          if (sw.shotType !== want) {
+            sw.shotType = want;
+            if (hudShotType !== want) setHudShotType(want);
+          }
+        }
+      } else if (
+        cMode === 'aim'
+        && (sw.state === SW.IDLE || sw.state === SW.AIMING || sw.state === SW.SWIPING)
+      ) {
+        // Aim-mode auto-zoom: at default 1.0× the full carry of a driver
+        // (~200 world units) runs right off the screen, so the landing
+        // spot shows but the player doesn't. Pick a zoom that fits the
+        // ball→landing span into ~60% of the shorter viewport axis.
+        const clubCarryPx = (selectedClub.v || 100) * 0.9;
+        const landX = ball.x + Math.sin(sw.aimAngle) * clubCarryPx;
+        const landY = ball.y - Math.cos(sw.aimAngle) * clubCarryPx;
+        const dist = Math.hypot(landX - ball.x, landY - ball.y);
+        const shortPx = Math.min(viewW, viewH);
+        const desiredScale = (shortPx * 0.60) / Math.max(32, dist);
+        const fitZoom = desiredScale / baseScale;
+        // Only zoom OUT from the current user preference — never force a
+        // tighter zoom than the player chose manually for their shape.
+        zoomRef.current = Math.max(minZoomHere, Math.min(zoomRef.current, fitZoom));
       }
       const scale = baseScale * zoomRef.current;
       let followX, followY, anchorOffsetX = 0, anchorOffsetY = 0;
@@ -2083,6 +2119,19 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
   }
 
   const canSwing = hud.state === SW.AIMING && !shapeOverlay && !clubPicker;
+  // Hide the swing pad while the player is mid-swipe, the ball is in
+  // motion, the hole is done, or an overlay is open — otherwise the pad
+  // sits on top of the swipe feedback UI drawn on the canvas.
+  const showSwingPad =
+    !shapeOverlay &&
+    !clubPicker &&
+    hud.state !== SW.SWIPING &&
+    hud.state !== SW.FLYING &&
+    hud.state !== SW.ROLLING &&
+    hud.state !== SW.DROPPING &&
+    hud.state !== SW.HOLED &&
+    hud.state !== SW.HAZARD &&
+    hud.state !== SW.OB;
   const shapeDotLeft = 22 + hud.spinX * 18;
   const shapeDotTop = 22 + hud.spinY * 18;
 
@@ -2177,6 +2226,9 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
                 onPress={() => {
                   if (!eligible) return;
                   swingRef.current.shotType = t;
+                  // Manual pick wins — block the putter auto-Tap helper
+                  // from re-applying until the player strikes.
+                  shotTypeManualRef.current = true;
                   setHudShotType(t);
                   setShotTypeMenuOpen(false);
                 }}
@@ -2198,7 +2250,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         </View>
       ) : null}
 
-      {!shapeOverlay && !clubPicker ? (
+      {showSwingPad ? (
         <View
           style={[styles.swingBtn, !canSwing && styles.swingBtnDisabled]}
           onPointerDown={canSwing ? onSwingPointerDown : undefined}
@@ -2206,8 +2258,9 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
           onPointerUp={onSwingPointerUp}
           onPointerCancel={onSwingPointerUp}
         >
+          <View style={styles.swingBtnGlow} pointerEvents="none" />
           <Text style={styles.swingBtnLabel}>SWING</Text>
-          <Text style={styles.swingBtnHint}>pull back ↓</Text>
+          <Text style={styles.swingBtnHint}>pull ↓ swipe up</Text>
         </View>
       ) : null}
 
@@ -2486,20 +2539,47 @@ const styles = StyleSheet.create({
   shapeCrossV: { position: 'absolute', top: 4, bottom: 4, left: 22, width: 1, backgroundColor: '#4a5a4a' },
   shapeDot: { position: 'absolute', width: 5, height: 5, marginLeft: -2, marginTop: -2, backgroundColor: '#fbe043', borderRadius: 3 },
 
+  // Intergalactic-HUD swing pad: matches the dark tactical panels across
+  // the rest of the UI instead of the old bright-red sports graphic.
+  // Keeps the Pressable big (90×90+) and easy to thumb, adds a subtle
+  // mint-teal border that mirrors the `HUD_BORDER` accent used by zoom
+  // and club cards. A faint inner glow hints it's the primary action.
   swingBtn: {
     position: 'absolute', bottom: 24, right: 10,
-    backgroundColor: '#e33838', borderWidth: 3, borderColor: '#fff',
-    paddingVertical: 18, paddingHorizontal: 14, borderRadius: 36,
+    backgroundColor: 'rgba(7, 11, 9, 0.88)',
+    borderWidth: 2, borderColor: '#88F8BB',
+    paddingVertical: 18, paddingHorizontal: 18,
     alignItems: 'center', justifyContent: 'center',
-    minWidth: 94,
+    minWidth: 96, minHeight: 80,
+    // Small outer glow so the pad reads as the primary action without
+    // going Red Plastic Button.
+    shadowColor: '#88F8BB', shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
     touchAction: 'none',
   },
-  swingBtnDisabled: { backgroundColor: '#5a2a2a', borderColor: '#808080', opacity: 0.55 },
+  swingBtnGlow: {
+    position: 'absolute', left: 4, right: 4, top: 4, bottom: 4,
+    borderWidth: 1, borderColor: 'rgba(136, 248, 187, 0.35)',
+    backgroundColor: 'transparent',
+  },
+  swingBtnDisabled: {
+    backgroundColor: 'rgba(7, 11, 9, 0.55)',
+    borderColor: 'rgba(136, 248, 187, 0.3)',
+    shadowOpacity: 0,
+    opacity: 0.6,
+  },
   swingBtnLabel: {
-    color: '#fff', fontSize: 20, fontWeight: '900', letterSpacing: 2,
+    color: '#f5fbef', fontSize: 17, fontWeight: '900', letterSpacing: 3,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+    textShadowColor: 'rgba(136, 248, 187, 0.55)',
+    textShadowRadius: 6,
+    textShadowOffset: { width: 0, height: 0 },
+  },
+  swingBtnHint: {
+    color: 'rgba(136, 248, 187, 0.9)',
+    fontSize: 9, letterSpacing: 1, marginTop: 4,
     fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
   },
-  swingBtnHint: { color: '#fff6d8', fontSize: 10, marginTop: 4 },
 
   messageBox: {
     position: 'absolute', top: '40%', left: 16, right: 16,
