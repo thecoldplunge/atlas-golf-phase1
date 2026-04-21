@@ -2082,8 +2082,20 @@ function clubStatMultipliers(clubStats) {
   return { distanceFactor, clubCurveFactor };
 }
 
-export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, equipmentCatalog }) {
+export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, equipmentCatalog, allGolfers = [] }) {
   const [orientation, setOrientation] = useState(null);
+  // matchConfig === null  →  show match-setup picker before any play.
+  // Otherwise: { players: [{ id, name, isNPC, golfer }, ...] }
+  const [matchConfig, setMatchConfig] = useState(null);
+  // playersRef carries per-player ball/stroke/scores state once a match
+  // is active. Populated from matchConfig the first time loadHole runs.
+  const playersRef = useRef([]);
+  const currentPlayerIdxRef = useRef(0);
+  // When true the tick loop is expected to fire an NPC auto-swing on
+  // the next tick where sw.state === SW.AIMING. Cleared inside the
+  // NPC handler so we don't loop.
+  const npcPendingRef = useRef(false);
+  const npcCooldownRef = useRef(0);
   const golferFactorsRef = useRef(golferMultipliers(selectedGolfer));
   const bagStatsRef = useRef(buildBagClubStats(selectedBag, equipmentCatalog));
   useEffect(() => {
@@ -2101,6 +2113,13 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
   const [scorecardOpen, setScorecardOpen] = useState(false);
   // React mirror of scoresRef — drives the scorecard re-render.
   const [scoresHud, setScoresHud] = useState([]);
+  // React mirror of playersRef for the multi-player scorecard. Each
+  // entry is { name, isNPC, scores: [{hole,par,strokes}] } so the
+  // overlay can re-render whenever a hole finishes.
+  const [playersHud, setPlayersHud] = useState([]);
+  // Drives the "TURN: <name>" banner so the player knows whose shot
+  // is pending, especially during NPC auto-play.
+  const [turnHud, setTurnHud] = useState({ name: 'YOU', isNPC: false });
   // Signal from the scorecard overlay back into the tick loop — flips
   // to true when the player taps "Next Hole" and the loop calls
   // advanceHole on the following frame.
@@ -2320,6 +2339,219 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
     };
     setBallOnTee();
 
+    // ═══════════════ MATCH / TURN ENGINE ═══════════════
+    // Turn order for an individual hole:
+    //   1. Tee-off: players in slot order.
+    //   2. Subsequent shots: player farthest from the pin plays next.
+    //   3. When all players have holed out, show the scorecard.
+    //
+    // Each player carries their own ball position, this-hole stroke
+    // count, holed flag, and per-hole score history. The shared
+    // ballRef / swingRef always reflects the CURRENT player's state
+    // so existing physics / HUD / input work unchanged.
+
+    const initPlayersFromMatch = () => {
+      const list = (matchConfig?.players || []).map((slot, i) => ({
+        id: slot.id,
+        name: slot.name,
+        isNPC: slot.isNPC,
+        golfer: slot.golfer,
+        factors: golferMultipliers(slot.golfer),
+        // Ball position where the player currently lies. Reset to tee
+        // at the start of every hole.
+        ballX: TEE.x * TILE - 4,
+        ballY: TEE.y * TILE + 2,
+        strokeCountThisHole: 0,
+        holedOutThisHole: false,
+        teedOff: false,
+        scores: [],
+      }));
+      if (!list.length) {
+        list.push({
+          id: 'p1', name: 'YOU', isNPC: false,
+          golfer: selectedGolfer,
+          factors: golferMultipliers(selectedGolfer),
+          ballX: TEE.x * TILE - 4, ballY: TEE.y * TILE + 2,
+          strokeCountThisHole: 0, holedOutThisHole: false, teedOff: false,
+          scores: [],
+        });
+      }
+      playersRef.current = list;
+      currentPlayerIdxRef.current = 0;
+      setPlayersHud(list.map((p) => ({ name: p.name, isNPC: p.isNPC, scores: [] })));
+      setTurnHud({ name: list[0].name, isNPC: list[0].isNPC });
+    };
+
+    const resetPlayersForHole = () => {
+      for (const pl of playersRef.current) {
+        pl.ballX = TEE.x * TILE - 4;
+        pl.ballY = TEE.y * TILE + 2;
+        pl.strokeCountThisHole = 0;
+        pl.holedOutThisHole = false;
+        pl.teedOff = false;
+      }
+      currentPlayerIdxRef.current = 0;
+    };
+
+    const flushPlayersHud = () => {
+      setPlayersHud(playersRef.current.map((p) => ({
+        name: p.name,
+        isNPC: p.isNPC,
+        scores: p.scores.slice(),
+      })));
+    };
+
+    const saveActivePlayer = () => {
+      const idx = currentPlayerIdxRef.current;
+      const pl = playersRef.current[idx];
+      if (!pl) return;
+      const b = ballRef.current;
+      pl.ballX = b.x;
+      pl.ballY = b.y;
+      pl.strokeCountThisHole = swingRef.current.strokeCount;
+    };
+
+    const loadActivePlayer = (isTeeShot) => {
+      const idx = currentPlayerIdxRef.current;
+      const pl = playersRef.current[idx];
+      if (!pl) return;
+      const b = ballRef.current;
+      const p = posRef.current;
+      const sw = swingRef.current;
+      // Place ball at the player's lie and reset transient physics.
+      b.x = pl.ballX; b.y = pl.ballY;
+      b.z = 0; b.vx = 0; b.vy = 0; b.vz = 0;
+      b.state = 'rest';
+      b.lastGoodX = b.x; b.lastGoodY = b.y;
+      b.trail = [];
+      b.spinX = 0; b.spinY = 0;
+      b.dropT = 0;
+      sw.strokeCount = pl.strokeCountThisHole || (isTeeShot ? 1 : Math.max(1, pl.strokeCountThisHole));
+      if (sw.strokeCount < 1) sw.strokeCount = 1;
+      sw.spinX = 0; sw.spinY = 0; sw.shotType = 'normal';
+      sw.state = SW.AIMING;
+      golferFactorsRef.current = pl.factors;
+      aimAtFlag();
+      autoPickClubAndZoom();
+      const pose = addressPose(b, sw.aimAngle);
+      p.x = pose.px; p.y = pose.py; p.facing = pose.facing; p.moving = false;
+      setTurnHud({ name: pl.name, isNPC: pl.isNPC });
+      npcCooldownRef.current = pl.isNPC ? 0.55 : 0;
+      npcPendingRef.current = pl.isNPC;
+      flushHud();
+    };
+
+    const pickNextPlayerIdx = () => {
+      // Farthest-from-pin rule. Among players who haven't holed out
+      // this hole, the one with the greatest pin distance plays next.
+      const flagX = FLAG.x * TILE, flagY = FLAG.y * TILE;
+      let bestIdx = -1;
+      let bestDist = -Infinity;
+      for (let i = 0; i < playersRef.current.length; i++) {
+        const pl = playersRef.current[i];
+        if (pl.holedOutThisHole) continue;
+        const d = Math.hypot(pl.ballX - flagX, pl.ballY - flagY);
+        if (d > bestDist) { bestDist = d; bestIdx = i; }
+      }
+      return bestIdx;
+    };
+
+    const finishHoleForPlayer = (idx, holed) => {
+      const pl = playersRef.current[idx];
+      if (!pl) return;
+      if (holed) pl.holedOutThisHole = true;
+      // Record score only when holed — leaving one in the rough still
+      // keeps the hole "in progress" until they hole out.
+      if (holed) {
+        const holeNum = holeIdxRef.current + 1;
+        const existing = pl.scores.find((s) => s.hole === holeNum);
+        if (!existing) {
+          pl.scores = [...pl.scores, {
+            hole: holeNum, par: CURRENT_HOLE.par, strokes: swingRef.current.strokeCount,
+          }];
+        }
+        flushPlayersHud();
+      }
+    };
+
+    const runNPCSwing = () => {
+      const idx = currentPlayerIdxRef.current;
+      const pl = playersRef.current[idx];
+      if (!pl || !pl.isNPC) return;
+      const b = ballRef.current;
+      const sw = swingRef.current;
+      const flagX = FLAG.x * TILE, flagY = FLAG.y * TILE;
+      const dx = flagX - b.x, dy = flagY - b.y;
+      const distPx = Math.hypot(dx, dy);
+      const distYd = distPx / TILE * YARDS_PER_TILE;
+      const onGreen = surfaceAt(b.x, b.y) === T_GREEN;
+      const clubIdx = pickClubForDistance(distYd, onGreen);
+      sw.clubIdx = clubIdx;
+      const club = CLUBS[clubIdx];
+      const stats = pl.golfer?.stats || {};
+      const mental = pl.golfer?.mental || {};
+      const acc = stats.accuracy ?? 50;
+      const power = stats.power ?? 50;
+      const touch = stats.touch ?? 50;
+      const composure = mental.composure ?? 50;
+      // Base aim straight at the pin, then add noise inversely
+      // proportional to accuracy. A 90-accuracy golfer drifts ±~0.06
+      // rad; a 40-accuracy golfer drifts ±~0.18 rad.
+      const accNoise = (Math.random() - 0.5) * 2 * (0.20 - Math.min(0.18, acc / 600));
+      sw.aimAngle = Math.atan2(dx, -dy) + accNoise;
+      // Power scales so full carry ≈ distance with +/- power noise.
+      const carryPx = computeCarry(club, 1.0);
+      let powerPct = distPx / Math.max(1, carryPx);
+      // Short putts use touch to dial tempo more precisely.
+      if (onGreen) {
+        const tapReach = club.v * 0.5 / TILE * YARDS_PER_TILE;
+        if (distYd <= tapReach) {
+          sw.shotType = 'tap';
+          powerPct = distPx / Math.max(1, computeCarry(club, 1.0) * 0.5);
+        } else {
+          sw.shotType = 'normal';
+        }
+      }
+      powerPct = Math.max(0.15, Math.min(1.0, powerPct));
+      const powerNoise = (Math.random() - 0.5) * 2 * (0.22 - power / 600);
+      const clutchBump = (distYd < 80 ? (composure - 50) / 800 : 0);
+      powerPct = Math.max(0.1, Math.min(1.0, powerPct + powerNoise + clutchBump));
+      // Shape: small spin coming from touch.
+      sw.spinX = ((Math.random() - 0.5) * 2) * (1 - touch / 120) * 0.35;
+      sw.spinY = 0;
+      // Fire.
+      b.lastGoodX = b.x; b.lastGoodY = b.y;
+      const liePhys = surfacePropsAt(b.x, b.y);
+      const clubStats = bagStatsRef.current[club.key] || null;
+      lastShotRef.current = {
+        clubShort: club.short || club.key,
+        clubName: club.name || '',
+        shotType: sw.shotType || 'normal',
+        powerPct: Math.round(powerPct * 100),
+        accuracy: 0,
+        startX: b.x, startY: b.y,
+        startLie: liePhys?.label || '—',
+        carryYd: null, endLie: null, holed: false,
+      };
+      launchBall(b, sw.aimAngle, powerPct, 0, sw.spinX, sw.spinY, club, {
+        golferFactors: pl.factors,
+        clubStats,
+        liePhys,
+        shotType: sw.shotType || 'normal',
+      });
+      sw.state = SW.FLYING;
+      sw.strokeCount++;
+      sw.strikeT = Date.now();
+      sw.spinX = 0; sw.spinY = 0; sw.shotType = 'normal';
+      zoomUserOverrideRef.current = false;
+      flushHud();
+    };
+
+    initPlayersFromMatch();
+    // Place first player's ball and begin their tee shot.
+    loadActivePlayer(true);
+
+
     const flushHud = () => {
       const sw = swingRef.current;
       const ball = ballRef.current;
@@ -2364,9 +2596,11 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       const wrapping = (holeIdxRef.current + 1) >= HOLES.length;
       holeIdxRef.current = (holeIdxRef.current + 1) % HOLES.length;
       if (wrapping) {
-        // New round — clear the scorecard so the player starts fresh.
+        // New round — reset each player's scores.
+        for (const pl of playersRef.current) pl.scores = [];
         scoresRef.current = [];
         setScoresHud([]);
+        flushPlayersHud();
       }
       setScorecardOpen(false);
       loadHole(holeIdxRef.current, orientation);
@@ -2380,14 +2614,14 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         l.y = Math.random() * WORLD_H;
         leavesRef.current.push(l);
       }
-      setBallOnTee();
+      resetPlayersForHole();
+      loadActivePlayer(true);
       flushHud();
     };
 
     const settleBallTransitions = () => {
       const ball = ballRef.current;
       const sw = swingRef.current;
-      const p = posRef.current;
       if (ball.state === 'rolling') sw.state = SW.ROLLING;
       else if (ball.state === 'dropping') sw.state = SW.DROPPING;
       else if (ball.state === 'stopped' || ball.state === 'holed') {
@@ -2402,35 +2636,29 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
           ls.holed = ball.state === 'holed';
           setLastShotHud({ ...ls });
         }
-        if (ball.state === 'stopped') {
-          ball.state = 'rest';
-          ball.trail = [];
-          aimAtFlag();
-          autoPickClubAndZoom();
-          sw.state = SW.AIMING;
-          const pose = addressPose(ball, sw.aimAngle);
-          p.x = pose.px; p.y = pose.py; p.facing = pose.facing;
+        const holed = ball.state === 'holed';
+        const activeIdx = currentPlayerIdxRef.current;
+        const active = playersRef.current[activeIdx];
+        if (active) active.teedOff = true;
+        saveActivePlayer();
+        finishHoleForPlayer(activeIdx, holed);
+        const allHoled = playersRef.current.every((pl) => pl.holedOutThisHole);
+        if (allHoled) {
+          sw.state = SW.HOLED;
+          sw.messageTimer = 0;
+          setScorecardOpen(true);
           flushHud();
         } else {
-          // ball.state === 'holed' — transition the swing state, record
-          // the final stroke count for the round scorecard, and surface
-          // the scorecard overlay so the player can see their progress
-          // before tapping to the next hole.
-          sw.state = SW.HOLED;
-          // Scorecard overlay takes over from the auto-advance timer —
-          // the player taps "Next Hole" on the card to move on.
-          sw.messageTimer = 0;
-          const holeNum = holeIdxRef.current + 1;
-          const already = scoresRef.current.find((s) => s.hole === holeNum);
-          if (!already) {
-            scoresRef.current = [
-              ...scoresRef.current,
-              { hole: holeNum, par: CURRENT_HOLE.par, strokes: sw.strokeCount },
-            ];
-            setScoresHud(scoresRef.current);
+          const nextIdx = pickNextPlayerIdx();
+          if (nextIdx < 0) {
+            sw.state = SW.HOLED;
             setScorecardOpen(true);
+            flushHud();
+          } else {
+            currentPlayerIdxRef.current = nextIdx;
+            const isTee = !playersRef.current[nextIdx].teedOff;
+            loadActivePlayer(isTee);
           }
-          flushHud();
         }
       }
       else if (ball.state === 'hazard') { sw.state = SW.HAZARD; sw.messageTimer = 2.2; sw.strokeCount++; flushHud(); }
@@ -2859,6 +3087,16 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         pendingAdvanceRef.current = false;
         advanceHole();
       }
+      // NPC auto-swing: wait out a short cooldown for pacing, then
+      // fire runNPCSwing the next tick we're back in SW.AIMING.
+      if (npcPendingRef.current) {
+        if (npcCooldownRef.current > 0) {
+          npcCooldownRef.current -= dt;
+        } else if (swingRef.current.state === SW.AIMING) {
+          npcPendingRef.current = false;
+          runNPCSwing();
+        }
+      }
 
       hudAccum += dt;
       if (hudAccum > 0.25) {
@@ -3089,7 +3327,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       canvas.removeEventListener('pointercancel', pu);
       if (bodyStyle.parentNode) bodyStyle.parentNode.removeChild(bodyStyle);
     };
-  }, [orientation]);
+  }, [orientation, matchConfig]);
 
   const swingButtonCapture = useRef({});
   const zoomActions = useRef({});
@@ -3170,7 +3408,18 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
     );
   }
 
-  const canSwing = hud.state === SW.AIMING && !shapeOverlay && !clubPicker;
+  if (!matchConfig) {
+    return (
+      <MatchSetupOverlay
+        allGolfers={allGolfers}
+        defaultHuman={selectedGolfer}
+        onStart={(config) => setMatchConfig(config)}
+        onBack={() => setOrientation(null)}
+      />
+    );
+  }
+
+  const canSwing = hud.state === SW.AIMING && !shapeOverlay && !clubPicker && !turnHud.isNPC;
   // Hide the swing pad while the player is mid-swipe, the ball is in
   // motion, the hole is done, or an overlay is open — otherwise the pad
   // sits on top of the swipe feedback UI drawn on the canvas.
@@ -3208,6 +3457,11 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         <Text style={styles.hudValue}>{hud.holeName}</Text>
         <Text style={styles.hudSub}>PAR {hud.holePar}  ·  {hud.pinYd} yd</Text>
         <Text style={styles.hudSub}>Stroke {hud.strokes}  ·  {hud.lie}</Text>
+        {playersHud.length > 1 ? (
+          <Text style={[styles.hudSub, turnHud.isNPC ? styles.hudTurnCpu : styles.hudTurnYou]}>
+            TURN · {(turnHud.name || '').toUpperCase()}{turnHud.isNPC ? ' ·CPU' : ''}
+          </Text>
+        ) : null}
       </View>
 
       <View style={styles.hudTopRight} pointerEvents="none">
@@ -3383,21 +3637,96 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
 
       {scorecardOpen ? (
         <GSScorecardOverlay
-          scores={scoresHud}
+          players={playersHud.length ? playersHud : [{ name: 'YOU', scores: scoresHud }]}
           activeHoleIdx={holeIdxRef.current}
           holeCount={HOLES.length}
           finishedThisHole={hud.state === SW.HOLED}
           onClose={() => setScorecardOpen(false)}
           onNextHole={() => {
             setScorecardOpen(false);
-            // advanceHole closure isn't in this scope — flip the swing
-            // state to HOLED + zero the message timer so the tick loop
-            // picks it up. A tap on the canvas also advances in that
-            // state, so we simulate one via a ref flag.
             pendingAdvanceRef.current = true;
           }}
         />
       ) : null}
+    </View>
+  );
+}
+
+// Match setup screen — picks player count (1–4), assigns YOU and up
+// to 3 CPUs to golfer profiles from the roster. Pixel-styled to match
+// the rest of the GS HUD.
+function MatchSetupOverlay({ allGolfers, defaultHuman, onStart, onBack }) {
+  const [playerCount, setPlayerCount] = useState(2);
+  // slotGolferIdx[i] = index into allGolfers for player i.
+  const defaultIdx = Math.max(0, allGolfers.findIndex((g) => g.id === defaultHuman?.id));
+  const [slots, setSlots] = useState(() => {
+    const picks = [defaultIdx < 0 ? 0 : defaultIdx];
+    for (let i = 1; i < 4; i++) {
+      picks.push((picks[0] + i) % Math.max(1, allGolfers.length));
+    }
+    return picks;
+  });
+  const cycleSlot = (i, dir) => {
+    const next = (slots[i] + dir + allGolfers.length) % Math.max(1, allGolfers.length);
+    setSlots((arr) => arr.map((v, j) => (j === i ? next : v)));
+  };
+  const start = () => {
+    const players = [];
+    for (let i = 0; i < playerCount; i++) {
+      const g = allGolfers[slots[i]] || allGolfers[0];
+      players.push({
+        id: `p${i + 1}`,
+        name: i === 0 ? 'YOU' : (g?.name || `CPU ${i}`),
+        isNPC: i > 0,
+        golferIdx: slots[i],
+        golfer: g,
+      });
+    }
+    onStart({ players });
+  };
+  return (
+    <View style={styles.root}>
+      <View style={pickerStyles.wrap}>
+        <Text style={pickerStyles.title}>MATCH SETUP</Text>
+        <Text style={pickerStyles.sub}>Pick player count + opponents</Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
+          {[1, 2, 3, 4].map((n) => (
+            <Pressable
+              key={n}
+              style={[matchStyles.countBtn, playerCount === n ? matchStyles.countBtnActive : null]}
+              onPress={() => setPlayerCount(n)}
+            >
+              <Text style={matchStyles.countBtnText}>{n}P</Text>
+            </Pressable>
+          ))}
+        </View>
+        {Array.from({ length: playerCount }).map((_, i) => {
+          const g = allGolfers[slots[i]] || allGolfers[0];
+          return (
+            <View key={i} style={matchStyles.slotRow}>
+              <Text style={matchStyles.slotLabel}>{i === 0 ? 'YOU' : `CPU ${i}`}</Text>
+              <Pressable style={matchStyles.cycleBtn} onPress={() => cycleSlot(i, -1)}>
+                <Text style={matchStyles.cycleText}>◀</Text>
+              </Pressable>
+              <View style={matchStyles.slotName}>
+                <Text style={matchStyles.slotNameText}>{g?.name || '—'}</Text>
+                <Text style={matchStyles.slotStatsText}>
+                  PWR {g?.stats?.power ?? '—'}  ·  ACC {g?.stats?.accuracy ?? '—'}  ·  TCH {g?.stats?.touch ?? '—'}
+                </Text>
+              </View>
+              <Pressable style={matchStyles.cycleBtn} onPress={() => cycleSlot(i, +1)}>
+                <Text style={matchStyles.cycleText}>▶</Text>
+              </Pressable>
+            </View>
+          );
+        })}
+        <Pressable style={matchStyles.startBtn} onPress={start}>
+          <Text style={matchStyles.startBtnText}>START MATCH ▸</Text>
+        </Pressable>
+        <Pressable style={pickerStyles.back} onPress={onBack}>
+          <Text style={pickerStyles.backText}>← back</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -3449,30 +3778,65 @@ function ScoreBadge({ strokes, par }) {
   return <Text style={scStyles.cellText}>{strokes}</Text>;
 }
 
-function GSScorecardOverlay({ scores, activeHoleIdx, holeCount, finishedThisHole, onClose, onNextHole }) {
-  const rows = [];
+function playerTotals(playerScores) {
+  const played = playerScores.filter((r) => r.strokes !== null);
+  const totalStrokes = played.reduce((s, r) => s + r.strokes, 0);
+  const totalPar = played.reduce((s, r) => s + r.par, 0);
+  return {
+    totalStrokes,
+    totalPar,
+    played,
+  };
+}
+
+function GSScorecardOverlay({ players, activeHoleIdx, holeCount, finishedThisHole, onClose, onNextHole }) {
+  // Always render hole row + par row once, then per-player score rows.
+  const parRow = [];
   for (let i = 0; i < holeCount; i++) {
-    const existing = scores.find((s) => s.hole === i + 1);
-    rows.push(existing || { hole: i + 1, par: HOLES[i]?.par || 3, strokes: null });
+    parRow.push({ hole: i + 1, par: HOLES[i]?.par || 3 });
   }
-  const playedRows = rows.filter((r) => r.strokes !== null);
-  const totalStrokes = playedRows.reduce((s, r) => s + r.strokes, 0);
-  const totalParPlayed = playedRows.reduce((s, r) => s + r.par, 0);
-  const diff = totalStrokes - totalParPlayed;
-  const diffText = playedRows.length === 0
-    ? '—'
-    : diff === 0 ? 'E' : `${diff > 0 ? '+' : ''}${diff}`;
-  const roundDone = playedRows.length >= holeCount;
+  const totalPar = parRow.reduce((s, r) => s + r.par, 0);
+
+  const tallies = players.map((p) => {
+    const rows = [];
+    for (let i = 0; i < holeCount; i++) {
+      const existing = (p.scores || []).find((s) => s.hole === i + 1);
+      rows.push(existing || { hole: i + 1, par: HOLES[i]?.par || 3, strokes: null });
+    }
+    const t = playerTotals(rows);
+    return { player: p, rows, ...t };
+  });
+  const allDone = tallies.every((t) => t.played.length >= holeCount);
+  const anyFinishedThisHole = finishedThisHole;
+
+  // Leader determined by lowest totalStrokes; tie if ≥ 2 share lowest
+  // AND at least one hole has been played.
+  let leaderIdx = -1;
+  let leaderStrokes = Infinity;
+  let tie = false;
+  tallies.forEach((t, i) => {
+    if (t.played.length === 0) return;
+    if (t.totalStrokes < leaderStrokes) {
+      leaderStrokes = t.totalStrokes;
+      leaderIdx = i;
+      tie = false;
+    } else if (t.totalStrokes === leaderStrokes) {
+      tie = true;
+    }
+  });
+
+  const titleText = allDone
+    ? (tie ? 'MATCH TIED' : `${tallies[leaderIdx]?.player?.name || 'PLAYER'} WINS`)
+    : anyFinishedThisHole ? 'HOLE COMPLETE' : 'SCORECARD';
+
   return (
     <View style={scStyles.overlay}>
       <View style={scStyles.card}>
-        <Text style={scStyles.title}>
-          {roundDone ? 'ROUND COMPLETE' : finishedThisHole ? 'HOLE COMPLETE' : 'SCORECARD'}
-        </Text>
+        <Text style={scStyles.title}>{titleText}</Text>
         <View style={scStyles.table}>
           <View style={scStyles.row}>
             <View style={scStyles.labelCell}><Text style={scStyles.labelText}>HOLE</Text></View>
-            {rows.map((r) => (
+            {parRow.map((r) => (
               <View
                 key={`h-${r.hole}`}
                 style={[scStyles.cell, r.hole === activeHoleIdx + 1 ? scStyles.cellActive : null]}
@@ -3484,46 +3848,61 @@ function GSScorecardOverlay({ scores, activeHoleIdx, holeCount, finishedThisHole
           </View>
           <View style={scStyles.row}>
             <View style={scStyles.labelCell}><Text style={scStyles.labelText}>PAR</Text></View>
-            {rows.map((r) => (
+            {parRow.map((r) => (
               <View key={`p-${r.hole}`} style={scStyles.cell}><Text style={scStyles.cellText}>{r.par}</Text></View>
             ))}
-            <View style={scStyles.totalCell}>
-              <Text style={scStyles.totalCellText}>
-                {rows.reduce((s, r) => s + r.par, 0)}
-              </Text>
-            </View>
+            <View style={scStyles.totalCell}><Text style={scStyles.totalCellText}>{totalPar}</Text></View>
           </View>
-          <View style={scStyles.row}>
-            <View style={scStyles.labelCell}><Text style={scStyles.labelText}>SCORE</Text></View>
-            {rows.map((r) => (
-              <View
-                key={`s-${r.hole}`}
-                style={[scStyles.cell, r.hole === activeHoleIdx + 1 ? scStyles.cellActive : null]}
-              >
-                {r.strokes === null
-                  ? <Text style={scStyles.cellUnplayed}>—</Text>
-                  : <ScoreBadge strokes={r.strokes} par={r.par} />}
+          {tallies.map((t, i) => {
+            const diff = t.totalStrokes - t.totalPar;
+            const diffText = t.played.length === 0
+              ? '—'
+              : diff === 0 ? 'E' : `${diff > 0 ? '+' : ''}${diff}`;
+            const diffStyle = diff < 0 ? scStyles.diffUnder : diff > 0 ? scStyles.diffOver : scStyles.diffEven;
+            const isLeader = allDone && leaderIdx === i && !tie;
+            return (
+              <View key={`pl-${i}`}>
+                <View style={scStyles.row}>
+                  <View style={scStyles.labelCell}>
+                    <Text
+                      style={[
+                        scStyles.labelText,
+                        isLeader ? scStyles.leaderName : null,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {(t.player.name || 'P').slice(0, 6).toUpperCase()}
+                    </Text>
+                  </View>
+                  {t.rows.map((r) => (
+                    <View
+                      key={`s-${i}-${r.hole}`}
+                      style={[scStyles.cell, r.hole === activeHoleIdx + 1 ? scStyles.cellActive : null]}
+                    >
+                      {r.strokes === null
+                        ? <Text style={scStyles.cellUnplayed}>—</Text>
+                        : <ScoreBadge strokes={r.strokes} par={r.par} />}
+                    </View>
+                  ))}
+                  <View style={scStyles.totalCell}>
+                    <Text style={[scStyles.totalCellText, diffStyle]}>
+                      {t.totalStrokes || '—'}
+                    </Text>
+                  </View>
+                </View>
+                <View style={scStyles.playerDiffRow}>
+                  <Text style={[scStyles.summaryText, diffStyle]}>
+                    {diffText}
+                  </Text>
+                </View>
               </View>
-            ))}
-            <View style={scStyles.totalCell}>
-              <Text style={scStyles.totalCellText}>
-                {totalStrokes || '—'}
-              </Text>
-            </View>
-          </View>
-        </View>
-        <View style={scStyles.summaryRow}>
-          <Text style={scStyles.summaryText}>
-            {playedRows.length}/{holeCount} played
-          </Text>
-          <Text style={[scStyles.summaryText, scStyles.summaryDiff, diff < 0 ? scStyles.diffUnder : diff > 0 ? scStyles.diffOver : scStyles.diffEven]}>
-            {diffText}
-          </Text>
+            );
+          })}
         </View>
         <View style={scStyles.buttonRow}>
-          {finishedThisHole ? (
+          {anyFinishedThisHole ? (
             <Pressable style={scStyles.primaryBtn} onPress={onNextHole}>
-              <Text style={scStyles.primaryBtnText}>{roundDone ? 'NEW ROUND ▸' : 'NEXT HOLE ▸'}</Text>
+              <Text style={scStyles.primaryBtnText}>{allDone ? 'NEW MATCH ▸' : 'NEXT HOLE ▸'}</Text>
             </Pressable>
           ) : (
             <Pressable style={scStyles.primaryBtn} onPress={onClose}>
@@ -3625,6 +4004,57 @@ const shapePadStyles = StyleSheet.create({
   },
   axisLabel: {
     position: 'absolute', color: '#a9d4a9', fontSize: 10, letterSpacing: 1,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+});
+
+const matchStyles = StyleSheet.create({
+  countBtn: {
+    paddingHorizontal: 18, paddingVertical: 10,
+    backgroundColor: '#0e1a12',
+    borderWidth: 2, borderColor: '#f5f5ec',
+  },
+  countBtnActive: {
+    backgroundColor: 'rgba(136, 248, 187, 0.18)',
+    borderColor: '#88f8bb',
+  },
+  countBtnText: {
+    color: '#fff6d8', fontSize: 14, fontWeight: '900', letterSpacing: 2,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  slotRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginBottom: 10, width: 320,
+  },
+  slotLabel: {
+    width: 52, color: '#88f8bb', fontSize: 11, fontWeight: '900', letterSpacing: 1.5,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  cycleBtn: {
+    width: 30, height: 32, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#0e1a12', borderWidth: 2, borderColor: '#f5f5ec',
+  },
+  cycleText: { color: '#fff6d8', fontSize: 14, fontWeight: '900' },
+  slotName: {
+    flex: 1, alignItems: 'center',
+    backgroundColor: '#0e1a12', borderWidth: 2, borderColor: '#f5f5ec',
+    paddingVertical: 4,
+  },
+  slotNameText: {
+    color: '#fff6d8', fontSize: 13, fontWeight: '900', letterSpacing: 1,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  slotStatsText: {
+    color: '#a9d4a9', fontSize: 9, letterSpacing: 1,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  startBtn: {
+    marginTop: 14, paddingVertical: 12, paddingHorizontal: 28,
+    backgroundColor: 'rgba(136, 248, 187, 0.12)',
+    borderWidth: 3, borderColor: '#88f8bb',
+  },
+  startBtnText: {
+    color: '#f5fbef', fontSize: 15, fontWeight: '900', letterSpacing: 3,
     fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
   },
 });
@@ -3744,6 +4174,10 @@ const scStyles = StyleSheet.create({
   diffUnder: { color: '#fbe043' },
   diffEven: { color: '#c8dfc4' },
   diffOver: { color: '#ff6ad5' },
+  leaderName: { color: '#fbe043' },
+  playerDiffRow: {
+    alignSelf: 'flex-end', paddingRight: 4, marginTop: -2, marginBottom: 4,
+  },
   buttonRow: { flexDirection: 'row', justifyContent: 'center', gap: 10 },
   primaryBtn: {
     backgroundColor: 'rgba(136, 248, 187, 0.12)',
@@ -3792,6 +4226,8 @@ const styles = StyleSheet.create({
     color: '#bfc4b9', fontSize: 11,
     fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
   },
+  hudTurnYou: { color: '#88f8bb', fontWeight: '900', letterSpacing: 1 },
+  hudTurnCpu: { color: '#fbe043', fontWeight: '900', letterSpacing: 1 },
   windRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   windArrow: { color: '#fff6d8', fontSize: 22, marginRight: 4 },
 
