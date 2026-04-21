@@ -691,7 +691,79 @@ function drawFlag(ctx, px, py, time) {
   ctx.fillRect(flapX + 2, flapY + 2, 1, 1);
 }
 
-function drawGolfer(ctx, px, py, facing, phase) {
+// Map a club key to a silhouette category so drawClub can render the
+// right shaft length + head shape.
+function clubCategoryFor(clubKey) {
+  if (clubKey === 'PT') return 'putter';
+  if (clubKey === 'PW' || clubKey === 'SW' || clubKey === 'LW' || clubKey === 'GW') return 'wedge';
+  if (clubKey === 'DR' || clubKey === '3W' || clubKey === '5W' || clubKey === '7W') return 'wood';
+  return 'iron';
+}
+
+// Swing-arc angle in screen-degrees, where 0° = east (ball direction),
+// −90° = north (up the screen, behind golfer's head), 90° = south
+// (down-screen, follow-through side). Address sits slightly below east;
+// full backswing rotates up-and-back; forward swing sweeps back → impact
+// → follow-through finish.
+function swingAngleDeg(info) {
+  if (!info || info.phase === 'address') return 15;
+  if (info.phase === 'back') {
+    const p = Math.max(0, Math.min(1, info.power || 0));
+    return 15 - p * 115; // 15° → −100°
+  }
+  if (info.phase === 'forward') {
+    const t = Math.max(0, Math.min(1, info.forwardT || 0));
+    if (t < 0.45) return -100 + (t / 0.45) * 115; // back → impact (15°)
+    return 15 + ((t - 0.45) / 0.55) * 100;        // impact → finish (115°)
+  }
+  return 15;
+}
+
+// Draws the equipped club coming out of the golfer's right hand. Colors
+// match the rest of the GS palette so the club reads as part of the
+// sprite, not a dev overlay.
+function drawClub(ctx, hx, hy, angleDeg, category) {
+  const len = category === 'putter' ? 8 : category === 'wedge' ? 10 : category === 'iron' ? 11 : 13;
+  const rad = (angleDeg * Math.PI) / 180;
+  const ex = hx + Math.cos(rad) * len;
+  const ey = hy + Math.sin(rad) * len;
+  // Shaft
+  ctx.strokeStyle = '#cfd0d3';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(hx, hy);
+  ctx.lineTo(ex, ey);
+  ctx.stroke();
+  // Head
+  const perp = rad + Math.PI / 2;
+  if (category === 'putter') {
+    ctx.strokeStyle = '#9a9fa7';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ex + Math.cos(perp) * 2, ey + Math.sin(perp) * 2);
+    ctx.lineTo(ex - Math.cos(perp) * 2, ey - Math.sin(perp) * 2);
+    ctx.stroke();
+  } else if (category === 'wood') {
+    ctx.fillStyle = '#1b2025';
+    ctx.beginPath();
+    ctx.arc(ex, ey, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#4a5058';
+    ctx.lineWidth = 0.75;
+    ctx.stroke();
+  } else {
+    // Iron + wedge: thin angled blade, wedge a touch wider.
+    ctx.strokeStyle = category === 'wedge' ? '#8b9096' : '#6b7078';
+    ctx.lineWidth = 1.5;
+    const w = category === 'wedge' ? 3 : 2.2;
+    ctx.beginPath();
+    ctx.moveTo(ex + Math.cos(perp) * w, ey + Math.sin(perp) * w);
+    ctx.lineTo(ex - Math.cos(perp) * w, ey - Math.sin(perp) * w);
+    ctx.stroke();
+  }
+}
+
+function drawGolfer(ctx, px, py, facing, phase, swingInfo) {
   const x = Math.floor(px), y = Math.floor(py);
   const moving = phase !== null;
   const step = moving ? (Math.sin(phase) > 0 ? 1 : 0) : 0;
@@ -756,6 +828,12 @@ function drawGolfer(ctx, px, py, facing, phase) {
   } else if (facing === 'W') {
     ctx.fillStyle = COLORS.cup;
     ctx.fillRect(x - 2, y - 18, 1, 1);
+  }
+  // Club overlay — only when facing east (the address pose) so the club
+  // doesn't stick out through the body on other facings.
+  if (swingInfo && facing === 'E') {
+    const hx = x + 4, hy = y - 9;
+    drawClub(ctx, hx, hy, swingAngleDeg(swingInfo), swingInfo.clubCategory || 'iron');
   }
 }
 
@@ -1951,16 +2029,15 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         cMode === 'aim'
         && (sw.state === SW.IDLE || sw.state === SW.AIMING || sw.state === SW.SWIPING)
       ) {
-        // Aim-mode auto-zoom: at default 1.0× the full carry of a driver
-        // (~200 world units) runs right off the screen, so the landing
-        // spot shows but the player doesn't. Pick a zoom that fits the
-        // ball→landing span into ~60% of the shorter viewport axis.
-        const clubCarryPx = (selectedClub.v || 100) * 0.9;
-        const landX = ball.x + Math.sin(sw.aimAngle) * clubCarryPx;
-        const landY = ball.y - Math.cos(sw.aimAngle) * clubCarryPx;
-        const dist = Math.hypot(landX - ball.x, landY - ball.y);
+        // Aim-mode auto-zoom: at default 1.0× a 7-iron or driver carry
+        // runs right off the screen, so the landing spot ends up above
+        // the viewport. Use computeCarry (projectile formula) to get the
+        // ACTUAL carry distance — club.v is launch speed, not distance
+        // — and pick a zoom that fits the ball→landing span into ~60%
+        // of the shorter viewport axis.
+        const carryPx = computeCarry(selectedClub, 1.0);
         const shortPx = Math.min(viewW, viewH);
-        const desiredScale = (shortPx * 0.60) / Math.max(32, dist);
+        const desiredScale = (shortPx * 0.60) / Math.max(32, carryPx);
         const fitZoom = desiredScale / baseScale;
         // Only zoom OUT from the current user preference — never force a
         // tighter zoom than the player chose manually for their shape.
@@ -1985,7 +2062,8 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         // While the ball is flying/rolling/settling, follow the ball itself
         // with a small velocity lead so fast shots don't outrun the frame.
         const club = CLUBS[sw.clubIdx] || CLUBS[0];
-        const clubCarryPx = (club.v || 100) * 0.9;
+        // Real carry distance (projectile range), not club.v (launch speed).
+        const clubCarryPx = computeCarry(club, 1.0);
         const isSetupPhase =
           sw.state === SW.AIMING || sw.state === SW.SWIPING || sw.state === SW.IDLE;
         const isBallMoving =
