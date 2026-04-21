@@ -2433,85 +2433,71 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       sctx.clearRect(0, 0, WORLD_W, WORLD_H);
       const imgData = buildWorldImageData();
       sctx.putImageData(imgData, 0, 0);
-      // Slope visualisation:
-      //  • 2-px contour dashes perpendicular to the gradient, spaced
-      //    ~10 px along it, at a visible cream tone. Mag scales alpha.
-      //  • A chunky downhill arrow at the centroid pointing along the
-      //    gradient, length / thickness / color scaled by mag — the
-      //    arrow is the primary "this slope goes THAT way" cue.
+      // Slope visualisation: a repeating lattice of small downhill
+      // arrows rendered in two shades of green, as if the greenskeeper
+      // mowed them into the turf. Both fairway AND green surfaces get
+      // the pattern. Density scales subtly with slope magnitude — bigger
+      // grade → tighter spacing → more arrows visible per chunk.
       for (const surf of SURFACES) {
-        if (!surf.slope || !surf.slope.mag) continue;
+        // Greens without a per-region slope inherit the per-hole
+        // GREEN_SLOPE so every green shows mowed downhill arrows too.
+        const slope = surf.slope
+          || (surf.type === T_GREEN && GREEN_SLOPE && GREEN_SLOPE.mag
+              ? { angle: GREEN_SLOPE.angle, mag: GREEN_SLOPE.mag }
+              : null);
+        if (!slope || !slope.mag) continue;
         const bb = surf.shape._bbox;
         if (!bb) continue;
-        const gx = Math.sin(surf.slope.angle);   // downhill vector
-        const gy = -Math.cos(surf.slope.angle);
-        const step = 10;
-        const contourAlpha = Math.min(0.45, 0.14 + surf.slope.mag * 0.035);
-        sctx.fillStyle = `rgba(236,242,214,${contourAlpha.toFixed(3)})`;
-        const x0 = Math.max(0, Math.floor(bb[0]));
-        const y0 = Math.max(0, Math.floor(bb[1]));
-        const x1 = Math.min(WORLD_W, Math.ceil(bb[2]));
-        const y1 = Math.min(WORLD_H, Math.ceil(bb[3]));
-        for (let y = y0; y < y1; y++) {
-          for (let x = x0; x < x1; x++) {
-            const d = gx * x + gy * y;
-            const phase = ((d % step) + step) % step;
-            if (phase < 2 && pointInShape(x + 0.5, y + 0.5, surf.shape)) {
-              sctx.fillRect(x, y, 1, 1);
-            }
-          }
-        }
-        // Downhill arrow. Anchor at bbox centroid, drop back to an
-        // interior point if the centroid happens to fall outside the
-        // polygon (concave shapes).
-        let cx = (bb[0] + bb[2]) * 0.5;
-        let cy = (bb[1] + bb[3]) * 0.5;
-        if (!pointInShape(cx, cy, surf.shape)) {
-          // Scan the centroid row for the widest interior span.
-          let bestStart = -1, bestLen = 0, spanStart = -1;
-          for (let x = x0; x <= x1; x++) {
-            const inside = pointInShape(x + 0.5, cy + 0.5, surf.shape);
-            if (inside && spanStart < 0) spanStart = x;
-            if ((!inside || x === x1) && spanStart >= 0) {
-              const len = x - spanStart;
-              if (len > bestLen) { bestLen = len; bestStart = spanStart; }
-              spanStart = -1;
-            }
-          }
-          if (bestLen > 0) cx = bestStart + bestLen * 0.5;
-        }
-        const arrowLen = 12 + surf.slope.mag * 2.2;
-        const hue = surf.slope.mag >= 6 ? '#ff6ad5' : surf.slope.mag >= 4 ? '#fbe043' : '#88f8bb';
-        // Shaft — 2 px wide dashed segments along the gradient.
-        sctx.fillStyle = hue;
-        const steps = Math.floor(arrowLen);
-        for (let i = 0; i < steps; i++) {
-          const t = i;
-          const sx = Math.round(cx + gx * t);
-          const sy = Math.round(cy + gy * t);
-          sctx.fillRect(sx, sy, 2, 2);
-        }
-        // Arrowhead — two short diagonals.
-        const tipX = Math.round(cx + gx * arrowLen);
-        const tipY = Math.round(cy + gy * arrowLen);
+        const gx = Math.sin(slope.angle);
+        const gy = -Math.cos(slope.angle);
+        // Perpendicular (right-of-gradient) unit vector for row offset.
         const perpX = -gy;
         const perpY = gx;
-        for (let i = 0; i < 5; i++) {
-          // Left fin.
-          const lx = Math.round(tipX - gx * i + perpX * i * 0.6);
-          const ly = Math.round(tipY - gy * i + perpY * i * 0.6);
-          sctx.fillRect(lx, ly, 2, 2);
-          // Right fin.
-          const rx = Math.round(tipX - gx * i - perpX * i * 0.6);
-          const ry = Math.round(tipY - gy * i - perpY * i * 0.6);
-          sctx.fillRect(rx, ry, 2, 2);
-        }
-        // Shadow beneath the arrow for legibility on busy fairway.
-        sctx.fillStyle = 'rgba(0,0,0,0.35)';
-        for (let i = 0; i < steps; i += 2) {
-          const sx = Math.round(cx + gx * i);
-          const sy = Math.round(cy + gy * i) + 1;
-          sctx.fillRect(sx, sy, 2, 1);
+        // Spacing between arrows: ~16 px on gentle slopes, 12 px on steep.
+        const spacing = Math.max(11, 18 - slope.mag);
+        // Two greens mowed into the grass. Darker shade reads as the
+        // shadowed cut, lighter shade as the cross-grain stripe.
+        const darkGreen = '#183a1b';
+        const lightGreen = '#4a8042';
+        const bbW = bb[2] - bb[0];
+        const bbH = bb[3] - bb[1];
+        const diag = Math.sqrt(bbW * bbW + bbH * bbH);
+        const steps = Math.ceil(diag / spacing) + 2;
+        // Walk a rotated grid aligned with (perp, grad) so the arrow
+        // rows all point the same way and line up regardless of surface
+        // orientation. Origin at the bbox center.
+        const cx0 = (bb[0] + bb[2]) * 0.5;
+        const cy0 = (bb[1] + bb[3]) * 0.5;
+        for (let ri = -steps; ri <= steps; ri++) {
+          for (let ai = -steps; ai <= steps; ai++) {
+            // Stagger every other row by half-spacing so arrows
+            // interleave rather than forming a blocky square grid.
+            const stagger = (ri & 1) ? spacing * 0.5 : 0;
+            const tx = cx0 + perpX * ri * spacing + gx * (ai * spacing + stagger);
+            const ty = cy0 + perpY * ri * spacing + gy * (ai * spacing + stagger);
+            if (tx < bb[0] - 4 || tx > bb[2] + 4) continue;
+            if (ty < bb[1] - 4 || ty > bb[3] + 4) continue;
+            if (!pointInShape(tx, ty, surf.shape)) continue;
+            // Each row alternates the mowed shade.
+            sctx.fillStyle = (ri & 1) ? darkGreen : lightGreen;
+            // Shaft — 5 pixels along gradient, 1 px wide.
+            for (let s = -2; s <= 2; s++) {
+              const px = Math.round(tx + gx * s);
+              const py = Math.round(ty + gy * s);
+              sctx.fillRect(px, py, 1, 1);
+            }
+            // Arrowhead — two angled fins at the tip.
+            const hx = Math.round(tx + gx * 2.5);
+            const hy = Math.round(ty + gy * 2.5);
+            for (let f = 1; f <= 2; f++) {
+              const lx = Math.round(hx - gx * f + perpX * f);
+              const ly = Math.round(hy - gy * f + perpY * f);
+              sctx.fillRect(lx, ly, 1, 1);
+              const rx = Math.round(hx - gx * f - perpX * f);
+              const ry = Math.round(hy - gy * f - perpY * f);
+              sctx.fillRect(rx, ry, 1, 1);
+            }
+          }
         }
       }
       for (const p of PROPS) drawProp(sctx, p);
