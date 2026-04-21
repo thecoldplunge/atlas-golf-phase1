@@ -2187,6 +2187,14 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
   // NPC handler so we don't loop.
   const npcPendingRef = useRef(false);
   const npcCooldownRef = useRef(0);
+  // Exposed by the main effect; the TEE OFF button calls this to
+  // transition from walk-around (SW.IDLE) into the swing flow.
+  const teeOffRef = useRef(() => {});
+  // React-friendly "can tee off now" flag, updated by the tick loop
+  // when the player steps onto the tee during walking. The ref mirror
+  // avoids extra setState churn every frame.
+  const canTeeOffRef = useRef(false);
+  const [canTeeOff, setCanTeeOff] = useState(false);
   const golferFactorsRef = useRef(golferMultipliers(selectedGolfer));
   const bagStatsRef = useRef(buildBagClubStats(selectedBag, equipmentCatalog));
   useEffect(() => {
@@ -2572,12 +2580,25 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       sw.strokeCount = pl.strokeCountThisHole || (isTeeShot ? 1 : Math.max(1, pl.strokeCountThisHole));
       if (sw.strokeCount < 1) sw.strokeCount = 1;
       sw.spinX = 0; sw.spinY = 0; sw.shotType = 'normal';
-      sw.state = SW.AIMING;
       golferFactorsRef.current = pl.factors;
       aimAtFlag();
       autoPickClubAndZoom();
-      const pose = addressPose(b, sw.aimAngle);
-      p.x = pose.px; p.y = pose.py; p.facing = pose.facing; p.moving = false;
+      // Human tee shots start in walking mode — the player spawns at
+      // the clubhouse (south of the tee box) and has to walk over to
+      // the ball before a TEE OFF button lets them swing. NPCs and
+      // fairway shots go straight to AIMING.
+      if (!pl.isNPC && isTeeShot) {
+        sw.state = SW.IDLE;
+        p.x = b.x + 2;
+        p.y = b.y + 72;  // ~4.5 tiles south of the tee
+        p.facing = 'N';
+        p.moving = false;
+        p.walkPhase = 0;
+      } else {
+        sw.state = SW.AIMING;
+        const pose = addressPose(b, sw.aimAngle);
+        p.x = pose.px; p.y = pose.py; p.facing = pose.facing; p.moving = false;
+      }
       setTurnHud({ name: pl.name, isNPC: pl.isNPC });
       npcCooldownRef.current = pl.isNPC ? 0.55 : 0;
       npcPendingRef.current = pl.isNPC;
@@ -2687,6 +2708,24 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       sw.strikeT = Date.now();
       sw.spinX = 0; sw.spinY = 0; sw.shotType = 'normal';
       zoomUserOverrideRef.current = false;
+      flushHud();
+    };
+
+    // Expose the tee-off transition so the TEE OFF button can call it.
+    // Swaps SW.IDLE → SW.AIMING, aims at the flag, and snaps the
+    // golfer into an address pose next to the ball.
+    teeOffRef.current = () => {
+      const b = ballRef.current;
+      const p = posRef.current;
+      const sw = swingRef.current;
+      if (sw.state !== SW.IDLE) return;
+      sw.state = SW.AIMING;
+      aimAtFlag();
+      autoPickClubAndZoom();
+      const pose = addressPose(b, sw.aimAngle);
+      p.x = pose.px; p.y = pose.py; p.facing = pose.facing; p.moving = false;
+      canTeeOffRef.current = false;
+      setCanTeeOff(false);
       flushHud();
     };
 
@@ -2825,10 +2864,16 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
 
     const joystickCenter = () => {
       const dpr = window.devicePixelRatio || 1;
-      return { cx: 80 * dpr, cy: canvas.height - 80 * dpr, radius: 80 * dpr };
+      // During walking mode the stick sits where the SWING button
+      // normally lives so the right thumb can steer. The swing button
+      // is hidden in SW.IDLE so there's no overlap.
+      return { cx: canvas.width - 80 * dpr, cy: canvas.height - 80 * dpr, radius: 70 * dpr };
     };
 
     const isInJoystick = (canvasX, canvasY) => {
+      // Only claim the zone while the player is walking. Otherwise
+      // taps in the bottom-right routinely land on the SWING button.
+      if (swingRef.current.state !== SW.IDLE) return false;
       const j = joystickCenter();
       return Math.hypot(canvasX - j.cx, canvasY - j.cy) < j.radius;
     };
@@ -3185,18 +3230,13 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         p.x = Math.max(8, Math.min(WORLD_W - 8, p.x + vx * speed * dt));
         p.y = Math.max(8, Math.min(WORLD_H - 8, p.y + vy * speed * dt));
         if (p.moving) p.walkPhase += dt * 8; else p.walkPhase = 0;
-        if (Math.hypot(p.x - ball.x, p.y - ball.y) < 18) {
-          // Snap the player into a proper address pose oriented to the
-          // target line — not a stale cardinal — so the stance works
-          // whether the hole plays north (portrait) or east (landscape).
-          sw.state = SW.AIMING;
-          aimAtFlag();
-          autoPickClubAndZoom();
-          {
-            const pose = addressPose(ball, sw.aimAngle);
-            p.x = pose.px; p.y = pose.py; p.facing = pose.facing; p.moving = false;
-          }
-          flushHud();
+        // Surface the TEE OFF button when the golfer walks into the
+        // tee box proximity. Auto-proximity aim was removed — tap
+        // the button to commit.
+        const near = Math.hypot(p.x - ball.x, p.y - ball.y) < 22;
+        if (near !== canTeeOffRef.current) {
+          canTeeOffRef.current = near;
+          setCanTeeOff(near);
         }
       } else if (sw.state === SW.AIMING || sw.state === SW.SWIPING) {
         p.moving = false;
@@ -3328,7 +3368,16 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         // Real carry distance (projectile range), not club.v (launch speed).
         const clubCarryPx = computeCarry(club, 1.0);
         const isSetupPhase =
-          sw.state === SW.AIMING || sw.state === SW.SWIPING || sw.state === SW.IDLE;
+          sw.state === SW.AIMING || sw.state === SW.SWIPING;
+        const isWalking = sw.state === SW.IDLE;
+        if (isWalking) {
+          // Walking — camera follows the PLAYER (they're out walking
+          // the course), not the projected landing spot.
+          followX = p.x;
+          followY = p.y;
+          anchorOffsetX = 0;
+          anchorOffsetY = 0;
+        } else
         const isBallMoving =
           sw.state === SW.FLYING || sw.state === SW.ROLLING || sw.state === SW.DROPPING;
         if (isSetupPhase) {
@@ -3589,6 +3638,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
   const showSwingPad =
     !shapeOverlay &&
     !clubPicker &&
+    hud.state !== SW.IDLE &&
     hud.state !== SW.SWIPING &&
     hud.state !== SW.FLYING &&
     hud.state !== SW.ROLLING &&
@@ -3596,6 +3646,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
     hud.state !== SW.HOLED &&
     hud.state !== SW.HAZARD &&
     hud.state !== SW.OB;
+  const showWalkPrompt = hud.state === SW.IDLE && !turnHud.isNPC;
   const shapeDotLeft = 22 + hud.spinX * 18;
   const shapeDotTop = 22 + hud.spinY * 18;
 
@@ -3724,6 +3775,22 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
           <View style={styles.swingBtnGlow} pointerEvents="none" />
           <Text style={styles.swingBtnLabel}>SWING</Text>
           <Text style={styles.swingBtnHint}>pull ↓ then swipe ↑</Text>
+        </View>
+      ) : null}
+
+      {showWalkPrompt ? (
+        <View style={styles.walkHint} pointerEvents="none">
+          <Text style={styles.walkHintText}>
+            {canTeeOff ? 'ON THE TEE' : 'WALK TO THE TEE'}
+          </Text>
+        </View>
+      ) : null}
+
+      {showWalkPrompt && canTeeOff ? (
+        <View pointerEvents="box-none" style={styles.teeOffWrap}>
+          <Pressable style={styles.teeOffBtn} onPress={() => teeOffRef.current && teeOffRef.current()}>
+            <Text style={styles.teeOffLabel}>TEE OFF ▸</Text>
+          </Pressable>
         </View>
       ) : null}
 
@@ -4391,6 +4458,35 @@ const styles = StyleSheet.create({
   },
   hudTurnYou: { color: '#88f8bb', fontWeight: '900', letterSpacing: 1 },
   hudTurnCpu: { color: '#fbe043', fontWeight: '900', letterSpacing: 1 },
+  walkHint: {
+    position: 'absolute',
+    left: 0, right: 0,
+    top: '40%',
+    alignItems: 'center',
+    pointerEvents: 'none',
+  },
+  walkHintText: {
+    color: '#fff6d8',
+    fontSize: 14, fontWeight: '900', letterSpacing: 3,
+    backgroundColor: 'rgba(14,26,18,0.8)',
+    borderWidth: 2, borderColor: '#f5f5ec',
+    paddingHorizontal: 12, paddingVertical: 6,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  teeOffWrap: {
+    position: 'absolute',
+    bottom: 200, left: 0, right: 0,
+    alignItems: 'center',
+  },
+  teeOffBtn: {
+    backgroundColor: 'rgba(136,248,187,0.14)',
+    borderWidth: 3, borderColor: '#88f8bb',
+    paddingHorizontal: 22, paddingVertical: 12,
+  },
+  teeOffLabel: {
+    color: '#f5fbef', fontSize: 15, fontWeight: '900', letterSpacing: 3,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
   windRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   windArrow: { color: '#fff6d8', fontSize: 22, marginRight: 4 },
 
