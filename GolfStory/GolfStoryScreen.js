@@ -3370,6 +3370,8 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         const isSetupPhase =
           sw.state === SW.AIMING || sw.state === SW.SWIPING;
         const isWalking = sw.state === SW.IDLE;
+        const isBallMoving =
+          sw.state === SW.FLYING || sw.state === SW.ROLLING || sw.state === SW.DROPPING;
         if (isWalking) {
           // Walking — camera follows the PLAYER (they're out walking
           // the course), not the projected landing spot.
@@ -3377,10 +3379,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
           followY = p.y;
           anchorOffsetX = 0;
           anchorOffsetY = 0;
-        } else
-        const isBallMoving =
-          sw.state === SW.FLYING || sw.state === SW.ROLLING || sw.state === SW.DROPPING;
-        if (isSetupPhase) {
+        } else if (isSetupPhase) {
           // VIEW=AIM framing: centre on the projected landing spot so
           // the player sees where the shot will come down, then push
           // that point toward the TOP of the frame so the ball / golfer
