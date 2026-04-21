@@ -10,7 +10,7 @@ const L = {
   clubCard:   { left:   8, width: 64, bottom: 24, height: 72 },
   shapeCard:  { left:  76, width: 64, bottom: 24, height: 72 },
   typeCard:   { left: 144, width: 64, bottom: 24, height: 72 },
-  swingBtn:   { right: 10, minWidth: 94, bottom: 24, height: 80 },
+  swingBtn:   { right: 10, minWidth: 94, bottom: 116, height: 72 },
   // Right-side column (y anchored at top:78, extends down roughly 3x44 + view 44)
   zoomCol:    { right: 16, width: 44, top: 78, height: 220 },
   // Top corners

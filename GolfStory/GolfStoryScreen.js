@@ -1573,7 +1573,7 @@ function drawSwipeFeedback(ctx, swipe, dpr) {
   // of the screen. Line, label, and head-dot ALL clamp to this radius —
   // pulling past it only holds the 100% reading, nothing grows past the
   // ring.
-  const maxRadius = 110 * dpr;
+  const maxRadius = 80 * dpr;
   const ratio = mag > 0 ? Math.min(1, maxRadius / mag) : 1;
   const ex = sx + (cx - sx) * ratio;
   const ey = sy + (cy - sy) * ratio;
@@ -2006,7 +2006,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       // 100% power at 110 css px of pull — keeps the full swing reachable
       // even when the player starts pulling from the SWING pad (which
       // sits at bottom-right with ~80 px of clearance below it).
-      const power = Math.max(0.1, Math.min(1, s.maxMag / (110 * dpr)));
+      const power = Math.max(0.1, Math.min(1, s.maxMag / (80 * dpr)));
       const accuracy = Math.max(-1, Math.min(1, s.maxDx / (55 * dpr)));
       if (s.maxMag < 20 * dpr) {
         sw.state = SW.AIMING;
@@ -2040,6 +2040,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       });
       sw.state = SW.FLYING;
       sw.strokeCount++;
+      sw.strikeT = Date.now();
       // Auto-reset shaping + shot type after every swing — each new shot
       // starts neutral so a deliberate choice is required each time.
       sw.spinX = 0;
@@ -2268,6 +2269,10 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         p.y = Math.max(8, Math.min(WORLD_H - 8, p.y + vy * speed * dt));
         if (p.moving) p.walkPhase += dt * 8; else p.walkPhase = 0;
         if (Math.hypot(p.x - ball.x, p.y - ball.y) < 18) {
+          // Snap the player into the proper address pose: LEFT of ball,
+          // facing east. Without this the walked-in facing sticks and
+          // the golfer ends up pointing whatever way they last walked.
+          p.x = ball.x - 7; p.y = ball.y + 1; p.facing = 'E'; p.moving = false;
           sw.state = SW.AIMING;
           aimAtFlag();
           autoPickClubAndZoom();
@@ -2499,7 +2504,28 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       // only focal point.
       const showGolfer = sw.state !== SW.HOLED;
       if (showGolfer) {
-        drawables.push({ kind: 'golfer', x: p.x, y: p.y, facing: p.facing, phase: p.moving ? p.walkPhase : null });
+        // Compute live swing info so drawGolfer can animate the club:
+        //   back   while swiping (power = current swipe magnitude / max)
+        //   forward for ~0.22s after release
+        //   address otherwise
+        let swingInfo = null;
+        const selectedClubForAnim = CLUBS[sw.clubIdx] || CLUBS[0];
+        const clubCatForAnim = clubCategoryFor(selectedClubForAnim.key);
+        if (sw.state === SW.SWIPING && swipeRef.current) {
+          const s = swipeRef.current;
+          const dprLocal = window.devicePixelRatio || 1;
+          const mag = Math.hypot(s.currentX - s.startX, s.currentY - s.startY);
+          const power = Math.min(1, mag / (80 * dprLocal));
+          swingInfo = { phase: 'back', power, clubCategory: clubCatForAnim };
+        } else if (sw.state === SW.FLYING || sw.state === SW.ROLLING || sw.state === SW.DROPPING) {
+          const elapsed = sw.strikeT ? (Date.now() - sw.strikeT) / 1000 : 999;
+          if (elapsed < 0.22) {
+            swingInfo = { phase: 'forward', forwardT: elapsed / 0.22, clubCategory: clubCatForAnim };
+          }
+        } else {
+          swingInfo = { phase: 'address', clubCategory: clubCatForAnim };
+        }
+        drawables.push({ kind: 'golfer', x: p.x, y: p.y, facing: p.facing, phase: p.moving ? p.walkPhase : null, swingInfo });
       }
       drawables.sort((a, b2) => a.y - b2.y);
       for (const d of drawables) {
@@ -2508,7 +2534,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         else if (d.kind === 'flag') drawFlag(ctx, d.x, d.y, now, { showPole: d.showPole !== false });
         else if (d.kind === 'ball') drawBall(ctx, d.x, d.y, d.z || 0);
         else if (d.kind === 'balldrop') drawBallDropping(ctx, d.x, d.y, d.t);
-        else if (d.kind === 'golfer') drawGolfer(ctx, d.x, d.y, d.facing, d.phase);
+        else if (d.kind === 'golfer') drawGolfer(ctx, d.x, d.y, d.facing, d.phase, d.swingInfo);
       }
 
       for (const leaf of leavesRef.current) drawLeaf(ctx, leaf, now);
@@ -3106,7 +3132,7 @@ const styles = StyleSheet.create({
   // mint-teal border that mirrors the `HUD_BORDER` accent used by zoom
   // and club cards. A faint inner glow hints it's the primary action.
   swingBtn: {
-    position: 'absolute', bottom: 24, right: 10,
+    position: 'absolute', bottom: 116, right: 10,
     backgroundColor: 'rgba(7, 11, 9, 0.88)',
     borderWidth: 2, borderColor: '#88F8BB',
     paddingVertical: 18, paddingHorizontal: 18,
