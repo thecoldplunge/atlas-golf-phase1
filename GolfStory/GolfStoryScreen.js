@@ -15,6 +15,16 @@ const TREE_CANOPY_Z_LO = 12;
 const TREE_CANOPY_Z_HI = 42;
 const TREE_TRUNK_R = 5;
 const TREE_TRUNK_Z_HI = 14;
+// Flagstick collider — radius in world px, and the max altitude at
+// which the pole still registers contact (drawn to y-17 in sprite px).
+const FLAG_STICK_R = 1.8;
+const FLAG_STICK_Z_HI = 18;
+// Shared shake state for the flagstick — set when the ball pings the
+// pole so drawFlag can render a brief wobble. { t: seconds since hit }
+const pinShake = { t: 999, intensity: 0 };
+// Shared burst leaves queue — pushed by tree collisions so drawLeaves
+// can paint a flurry at the impact point.
+const burstLeaves = [];
 const YARDS_PER_TILE = 10;
 const MAX_LEAVES = 14;
 
@@ -1180,25 +1190,41 @@ function drawFlag(ctx, px, py, time, { showPole = true } = {}) {
   const x = Math.floor(px), y = Math.floor(py);
   drawCup(ctx, x, y);
   if (!showPole) return;
+  // When the ball has just pinged the pin, bend the top of the pole
+  // back and forth on a decaying sine for ~0.6 s. sx varies with
+  // height (base fixed at 0, tip offset by ±2 px at peak).
+  const shakeT = pinShake.t;
+  const shakeAmp = shakeT < 0.6
+    ? Math.sin(shakeT * 42) * Math.max(0, 1 - shakeT / 0.6) * pinShake.intensity
+    : 0;
+  const tipDx = Math.round(shakeAmp * 2);
   // Pole: 2-column flagstick with a light/dark shade for round feel,
-  // plus a gold finial at the very top.
-  ctx.fillStyle = COLORS.poleDark;
-  ctx.fillRect(x + 1, y - 17, 1, 17);
-  ctx.fillStyle = COLORS.pole;
-  ctx.fillRect(x, y - 17, 1, 17);
-  // Bright highlight on the sun side of the pole.
+  // plus a gold finial at the very top. Each row is offset by shake
+  // fraction of tipDx so the pole curves from the base.
+  for (let row = 0; row < 17; row++) {
+    const rowDx = Math.round(tipDx * ((17 - row) / 17));
+    ctx.fillStyle = COLORS.poleDark;
+    ctx.fillRect(x + 1 + rowDx, y - 17 + row, 1, 1);
+    ctx.fillStyle = COLORS.pole;
+    ctx.fillRect(x + rowDx, y - 17 + row, 1, 1);
+  }
+  // Bright highlight on the sun side of the pole — shifted along the
+  // same curve so the shake reads cleanly.
   ctx.fillStyle = 'rgba(255,246,216,0.55)';
-  ctx.fillRect(x, y - 14, 1, 10);
-  // Gold finial (ball) at the very top.
+  for (let row = 0; row < 10; row++) {
+    const rowDx = Math.round(tipDx * ((14 - row) / 17));
+    ctx.fillRect(x + rowDx, y - 14 + row, 1, 1);
+  }
+  // Gold finial (ball) at the very top — sits at the shaken tip.
   ctx.fillStyle = COLORS.flagYellow;
-  ctx.beginPath(); ctx.arc(x + 0.5, y - 17.5, 1, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 0.5 + tipDx, y - 17.5, 1, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = 'rgba(0,0,0,0.4)';
-  ctx.fillRect(x + 1, y - 17, 1, 1);
+  ctx.fillRect(x + 1 + tipDx, y - 17, 1, 1);
   // Flag cloth — triangular with a gentle wave, two colour bands + a
-  // darker lower stripe for depth.
+  // darker lower stripe for depth. Anchored to the shaken tip.
   const wave = Math.sin(time * 0.004);
   const wave2 = Math.sin(time * 0.004 + 0.6);
-  const flapX = x + 2;
+  const flapX = x + 2 + tipDx;
   const flapY = y - 17;
   // Main flag body.
   ctx.fillStyle = COLORS.flagRed;
@@ -1808,6 +1834,7 @@ function stepBall(b, dt, windX, windY, flagX, flagY) {
           // Push the ball outside the trunk so it doesn't re-trigger.
           b.x = tx + nx * (TREE_TRUNK_R + 0.6);
           b.y = ty + ny * (TREE_TRUNK_R + 0.6);
+          triggerLeafBurst(tx, ty - 24, 10);
           break;
         }
         // Canopy drag — soft "eaten by leaves" deceleration while the
@@ -1819,8 +1846,31 @@ function stepBall(b, dt, windX, windY, flagX, flagY) {
           b.vx *= f;
           b.vy *= f;
           b.vz -= 90 * dt;
+          triggerLeafBurst(b.x, b.y - b.z, 4);
           break;
         }
+      }
+    }
+    // Flagstick collision — the pin behaves like a very thin trunk when
+    // the ball is at pin-height. Triggers the pinShake wobble + keeps a
+    // small chance to drop in if the ball also hits the cup band.
+    {
+      const fdx = b.x - flagX;
+      const fdy = b.y - flagY;
+      const fd2 = fdx * fdx + fdy * fdy;
+      if (b.z <= FLAG_STICK_Z_HI && fd2 < FLAG_STICK_R * FLAG_STICK_R && fd2 > 0.01) {
+        const fd = Math.sqrt(fd2);
+        const nx = fdx / fd, ny = fdy / fd;
+        const vdotn = b.vx * nx + b.vy * ny;
+        if (vdotn < 0) {
+          b.vx = (b.vx - 2 * vdotn * nx) * 0.35;
+          b.vy = (b.vy - 2 * vdotn * ny) * 0.35;
+          b.vz = Math.min(b.vz, 0) * 0.4;
+        }
+        b.x = flagX + nx * (FLAG_STICK_R + 0.4);
+        b.y = flagY + ny * (FLAG_STICK_R + 0.4);
+        pinShake.t = 0;
+        pinShake.intensity = Math.min(1.6, 0.6 + Math.hypot(b.vx, b.vy) / 120);
       }
     }
     if (b.z < 5) {
@@ -1881,8 +1931,29 @@ function stepBall(b, dt, windX, windY, flagX, flagY) {
           b.y = ty + (dy / d) * (TREE_TRUNK_R + 0.6);
           b.vx = 0; b.vy = 0;
           b.state = 'stopped';
+          triggerLeafBurst(tx, ty - 24, 6);
           return;
         }
+      }
+    }
+    // Flagstick thud while rolling — reflect, keep 35% of speed,
+    // wobble the pin. Skips the cup drop so the ball doesn't
+    // teleport into the hole from a stick hit.
+    {
+      const fdx = b.x - flagX, fdy = b.y - flagY;
+      const fd2 = fdx * fdx + fdy * fdy;
+      if (fd2 < FLAG_STICK_R * FLAG_STICK_R && fd2 > 0.01) {
+        const fd = Math.sqrt(fd2);
+        const nx = fdx / fd, ny = fdy / fd;
+        const vdotn = b.vx * nx + b.vy * ny;
+        if (vdotn < 0) {
+          b.vx = (b.vx - 2 * vdotn * nx) * 0.35;
+          b.vy = (b.vy - 2 * vdotn * ny) * 0.35;
+        }
+        b.x = flagX + nx * (FLAG_STICK_R + 0.4);
+        b.y = flagY + ny * (FLAG_STICK_R + 0.4);
+        pinShake.t = 0;
+        pinShake.intensity = Math.min(1.4, 0.5 + Math.hypot(b.vx, b.vy) / 140);
       }
     }
     const dcx = b.x - flagX, dcy = b.y - flagY;
@@ -1903,6 +1974,26 @@ const SW = {
   DROPPING: 'dropping',
   HAZARD: 'hazard', OB: 'ob', HOLED: 'holed',
 };
+
+function triggerLeafBurst(cx, cy, count) {
+  // Pushes short-lived falling leaves into the shared burstLeaves
+  // array. The main tick loop advances and culls them; renderer
+  // draws them alongside the ambient leaf cloud.
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const spd = 10 + Math.random() * 20;
+    burstLeaves.push({
+      x: cx + (Math.random() - 0.5) * 6,
+      y: cy + (Math.random() - 0.5) * 6,
+      vx: Math.cos(a) * spd,
+      vy: Math.sin(a) * spd - 4,
+      age: 0,
+      maxAge: 1.6 + Math.random() * 1.2,
+      color: LEAF_COLORS[Math.floor(Math.random() * LEAF_COLORS.length)],
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+}
 
 function spawnLeaf(windX, windY) {
   const side = Math.random();
@@ -2219,19 +2310,21 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       sctx.clearRect(0, 0, WORLD_W, WORLD_H);
       const imgData = buildWorldImageData();
       sctx.putImageData(imgData, 0, 0);
-      // Contour lines on sloped surfaces — thin 1-px dashes running
-      // perpendicular to the gradient, spaced ~6 px along it. Darker on
-      // steeper grades (mag scales alpha). Rendered before props so a
-      // tree / bush can still overdraw them if they sit on the slope.
+      // Slope visualisation:
+      //  • 2-px contour dashes perpendicular to the gradient, spaced
+      //    ~10 px along it, at a visible cream tone. Mag scales alpha.
+      //  • A chunky downhill arrow at the centroid pointing along the
+      //    gradient, length / thickness / color scaled by mag — the
+      //    arrow is the primary "this slope goes THAT way" cue.
       for (const surf of SURFACES) {
         if (!surf.slope || !surf.slope.mag) continue;
         const bb = surf.shape._bbox;
         if (!bb) continue;
-        const gx = Math.sin(surf.slope.angle);
+        const gx = Math.sin(surf.slope.angle);   // downhill vector
         const gy = -Math.cos(surf.slope.angle);
-        const step = 6;
-        const alpha = Math.min(0.35, 0.08 + surf.slope.mag * 0.03);
-        sctx.fillStyle = `rgba(236,242,214,${alpha.toFixed(3)})`;
+        const step = 10;
+        const contourAlpha = Math.min(0.45, 0.14 + surf.slope.mag * 0.035);
+        sctx.fillStyle = `rgba(236,242,214,${contourAlpha.toFixed(3)})`;
         const x0 = Math.max(0, Math.floor(bb[0]));
         const y0 = Math.max(0, Math.floor(bb[1]));
         const x1 = Math.min(WORLD_W, Math.ceil(bb[2]));
@@ -2240,12 +2333,62 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
           for (let x = x0; x < x1; x++) {
             const d = gx * x + gy * y;
             const phase = ((d % step) + step) % step;
-            if (phase < 1) {
-              if (pointInShape(x + 0.5, y + 0.5, surf.shape)) {
-                sctx.fillRect(x, y, 1, 1);
-              }
+            if (phase < 2 && pointInShape(x + 0.5, y + 0.5, surf.shape)) {
+              sctx.fillRect(x, y, 1, 1);
             }
           }
+        }
+        // Downhill arrow. Anchor at bbox centroid, drop back to an
+        // interior point if the centroid happens to fall outside the
+        // polygon (concave shapes).
+        let cx = (bb[0] + bb[2]) * 0.5;
+        let cy = (bb[1] + bb[3]) * 0.5;
+        if (!pointInShape(cx, cy, surf.shape)) {
+          // Scan the centroid row for the widest interior span.
+          let bestStart = -1, bestLen = 0, spanStart = -1;
+          for (let x = x0; x <= x1; x++) {
+            const inside = pointInShape(x + 0.5, cy + 0.5, surf.shape);
+            if (inside && spanStart < 0) spanStart = x;
+            if ((!inside || x === x1) && spanStart >= 0) {
+              const len = x - spanStart;
+              if (len > bestLen) { bestLen = len; bestStart = spanStart; }
+              spanStart = -1;
+            }
+          }
+          if (bestLen > 0) cx = bestStart + bestLen * 0.5;
+        }
+        const arrowLen = 12 + surf.slope.mag * 2.2;
+        const hue = surf.slope.mag >= 6 ? '#ff6ad5' : surf.slope.mag >= 4 ? '#fbe043' : '#88f8bb';
+        // Shaft — 2 px wide dashed segments along the gradient.
+        sctx.fillStyle = hue;
+        const steps = Math.floor(arrowLen);
+        for (let i = 0; i < steps; i++) {
+          const t = i;
+          const sx = Math.round(cx + gx * t);
+          const sy = Math.round(cy + gy * t);
+          sctx.fillRect(sx, sy, 2, 2);
+        }
+        // Arrowhead — two short diagonals.
+        const tipX = Math.round(cx + gx * arrowLen);
+        const tipY = Math.round(cy + gy * arrowLen);
+        const perpX = -gy;
+        const perpY = gx;
+        for (let i = 0; i < 5; i++) {
+          // Left fin.
+          const lx = Math.round(tipX - gx * i + perpX * i * 0.6);
+          const ly = Math.round(tipY - gy * i + perpY * i * 0.6);
+          sctx.fillRect(lx, ly, 2, 2);
+          // Right fin.
+          const rx = Math.round(tipX - gx * i - perpX * i * 0.6);
+          const ry = Math.round(tipY - gy * i - perpY * i * 0.6);
+          sctx.fillRect(rx, ry, 2, 2);
+        }
+        // Shadow beneath the arrow for legibility on busy fairway.
+        sctx.fillStyle = 'rgba(0,0,0,0.35)';
+        for (let i = 0; i < steps; i += 2) {
+          const sx = Math.round(cx + gx * i);
+          const sy = Math.round(cy + gy * i) + 1;
+          sctx.fillRect(sx, sy, 2, 1);
         }
       }
       for (const p of PROPS) drawProp(sctx, p);
@@ -2607,6 +2750,9 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       rebuildStatic();
       randomizeWind();
       leavesRef.current = [];
+      burstLeaves.length = 0;
+      pinShake.t = 999;
+      pinShake.intensity = 0;
       for (let i = 0; i < MAX_LEAVES; i++) {
         const l = spawnLeaf(windRef.current.x, windRef.current.y);
         l.age = Math.random() * l.maxAge;
@@ -3000,6 +3146,22 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
           Object.assign(leaf, spawnLeaf(w.x, w.y));
         }
       }
+      // Burst leaves — spawned by tree-hit physics. Drift + fall + cull.
+      if (burstLeaves.length) {
+        for (let i = burstLeaves.length - 1; i >= 0; i--) {
+          const bl = burstLeaves[i];
+          bl.vx += w.x * 0.2 * dt + (Math.random() - 0.5) * 6 * dt;
+          bl.vy += (w.y * 0.2 + 18) * dt + (Math.random() - 0.5) * 4 * dt;
+          bl.vx *= 1 - 1.2 * dt;
+          bl.vy *= 1 - 1.2 * dt;
+          bl.x += bl.vx * dt;
+          bl.y += bl.vy * dt;
+          bl.age += dt;
+          if (bl.age > bl.maxAge) burstLeaves.splice(i, 1);
+        }
+      }
+      // Advance the pin-shake timer so drawFlag can decay the wobble.
+      if (pinShake.t < 10) pinShake.t += dt;
 
       if (sw.state === SW.IDLE) {
         const j = joystickRef.current;
@@ -3301,6 +3463,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       }
 
       for (const leaf of leavesRef.current) drawLeaf(ctx, leaf, now);
+      for (const leaf of burstLeaves) drawLeaf(ctx, leaf, now);
 
       ctx.restore();
 
