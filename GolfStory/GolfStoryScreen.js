@@ -1205,26 +1205,11 @@ function drawGolfer(ctx, px, py, facing, phase, swingInfo) {
   // Hat brim highlight (always) — bright edge along the front of the hat.
   ctx.fillStyle = 'rgba(255,246,216,0.35)';
   ctx.fillRect(x - 3, y - 19, 6, 1);
-  // Club overlay — rotated toward the club-head direction derived from
-  // the golfer's facing. This way the address/backswing/follow-through
-  // animate in the correct plane regardless of hole orientation.
-  if (swingInfo) {
-    // Hand position offset FROM the golfer, perpendicular to their body
-    // on the club-side. For right-handed address pose, the hand sits
-    // slightly in front (toward the target) on the golfer's right.
-    const facingRad =
-      facing === 'E' ? 0 :
-      facing === 'S' ? Math.PI / 2 :
-      facing === 'W' ? Math.PI :
-      -Math.PI / 2;
-    const hOff = 4;
-    const hx = x + Math.cos(facingRad) * hOff;
-    const hy = y - 9 + Math.sin(facingRad) * hOff;
-    // Swing angle is defined relative to the facing direction (0° = toward
-    // target = facingRad). Convert to screen-space angle.
-    const swingRelDeg = swingAngleDeg(swingInfo);
-    const screenDeg = (facingRad * 180) / Math.PI + swingRelDeg;
-    drawClub(ctx, hx, hy, screenDeg, swingInfo.clubCategory || 'iron');
+  // Club overlay — only when facing east (the address pose) so the club
+  // doesn't stick out through the body on other facings.
+  if (swingInfo && facing === 'E') {
+    const hx = x + 4, hy = y - 9;
+    drawClub(ctx, hx, hy, swingAngleDeg(swingInfo), swingInfo.clubCategory || 'iron');
   }
 }
 
@@ -2122,24 +2107,11 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       const ball = ballRef.current;
       const club = CLUBS[sw.clubIdx];
       const dpr = window.devicePixelRatio || 1;
-      // 100% power at 110 css px of pull — keeps the full swing reachable
-      // even when the player starts pulling from the SWING pad (which
-      // sits at bottom-right with ~80 px of clearance below it).
-      // Two-phase power: backswing peak sets the CEILING, follow-through
-      // from peak back toward start is the multiplier.
-      //   backPct    = how far out the finger went    (maxMag / 80·dpr)
-      //   followPct  = how far back from peak it came (0..1 of backPct)
-      //   power      = backPct × followPct
-      // Pull to 50% + full follow = 50% carry. Pull to 100% + half follow
-      // = 50% carry. Pull to 100% + full follow = 100% carry.
-      const backPct = Math.min(1, s.maxMag / (80 * dpr));
-      const followDx = s.currentX - s.peakX;
-      const followDy = s.currentY - s.peakY;
-      const followDist = Math.hypot(followDx, followDy);
-      const followPct = s.maxMag > 0 ? Math.min(1, followDist / s.maxMag) : 0;
-      const power = Math.max(0.08, backPct * followPct);
-      // Accuracy still reads off peak X-offset — that's the shot shape
-      // the player committed to at the top of the swing.
+      // Single-phase power: how far the finger pulled out before release.
+      // 100% power at 80 css px of pull (scaled by dpr). Simpler than the
+      // two-phase model and avoids the "zero follow-through → 0 power"
+      // trap where a pull-and-lift shot would barely move the ball.
+      const power = Math.max(0.1, Math.min(1, s.maxMag / (80 * dpr)));
       const accuracy = Math.max(-1, Math.min(1, s.maxDx / (55 * dpr)));
       if (s.maxMag < 20 * dpr) {
         sw.state = SW.AIMING;
@@ -2968,7 +2940,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         >
           <View style={styles.swingBtnGlow} pointerEvents="none" />
           <Text style={styles.swingBtnLabel}>SWING</Text>
-          <Text style={styles.swingBtnHint}>pull ↓ swipe up</Text>
+          <Text style={styles.swingBtnHint}>pull to swing</Text>
         </View>
       ) : null}
 
