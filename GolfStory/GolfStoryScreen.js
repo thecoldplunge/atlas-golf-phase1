@@ -714,14 +714,17 @@ const shotTypeEligibleGS = (type, club, lieLabel) => {
 // lies widen the miss cone. Bounce/roll numbers are main's rebalanced
 // low-bounce set.
 const SURFACE_PROPS = {
-  [T_GREEN]:   { bounceKeep: 0.20, rollDecel: 0.85, label: 'Green',   slopeAng: 0, slopeMag: 0, powerPenalty: [1.0, 1.0],   swingSensitivity: 1.0 },
-  [T_FAIRWAY]: { bounceKeep: 0.28, rollDecel: 0.78, label: 'Fairway',                           powerPenalty: [0.95, 0.98], swingSensitivity: 1.0 },
-  [T_ROUGH]:   { bounceKeep: 0.15, rollDecel: 2.9,  label: 'Rough',                             powerPenalty: [0.835, 0.925], swingSensitivity: 1.25 },
-  [T_FRINGE]:  { bounceKeep: 0.22, rollDecel: 1.05, label: 'Fringe',                            powerPenalty: [0.93, 0.97], swingSensitivity: 1.05 },
-  [T_TEE]:     { bounceKeep: 0.26, rollDecel: 0.82, label: 'Tee Box',                           powerPenalty: [1.0, 1.0],   swingSensitivity: 1.0 },
-  [T_SAND]:    { bounceKeep: 0.05, rollDecel: 5.5,  label: 'Bunker',                            powerPenalty: [0.55, 0.7],  swingSensitivity: 1.6 },
-  [T_SHORE]:   { bounceKeep: 0.12, rollDecel: 3.8,  label: 'Dirt',                              powerPenalty: [0.7, 0.82],  swingSensitivity: 1.35 },
-  [T_WATER]:   { bounceKeep: 0, rollDecel: 0,       label: 'Water',  hazard: true,              powerPenalty: [1.0, 1.0],   swingSensitivity: 1.0 },
+  // powerPenalty halved vs. GS ≤ v0.33 — each endpoint moved halfway
+  // to 1.0 (e.g. Rough 0.835 → 0.9175, Bunker 0.55 → 0.775) so lie
+  // distance loss is roughly half of what it was before.
+  [T_GREEN]:   { bounceKeep: 0.20, rollDecel: 0.85, label: 'Green',   slopeAng: 0, slopeMag: 0, powerPenalty: [1.0, 1.0],    swingSensitivity: 1.0 },
+  [T_FAIRWAY]: { bounceKeep: 0.28, rollDecel: 0.78, label: 'Fairway',                           powerPenalty: [0.975, 0.99],  swingSensitivity: 1.0 },
+  [T_ROUGH]:   { bounceKeep: 0.15, rollDecel: 2.9,  label: 'Rough',                             powerPenalty: [0.9175, 0.9625], swingSensitivity: 1.25 },
+  [T_FRINGE]:  { bounceKeep: 0.22, rollDecel: 1.05, label: 'Fringe',                            powerPenalty: [0.965, 0.985], swingSensitivity: 1.05 },
+  [T_TEE]:     { bounceKeep: 0.26, rollDecel: 0.82, label: 'Tee Box',                           powerPenalty: [1.0, 1.0],    swingSensitivity: 1.0 },
+  [T_SAND]:    { bounceKeep: 0.05, rollDecel: 5.5,  label: 'Bunker',                            powerPenalty: [0.775, 0.85], swingSensitivity: 1.6 },
+  [T_SHORE]:   { bounceKeep: 0.12, rollDecel: 3.8,  label: 'Dirt',                              powerPenalty: [0.85, 0.91],  swingSensitivity: 1.35 },
+  [T_WATER]:   { bounceKeep: 0, rollDecel: 0,       label: 'Water',  hazard: true,              powerPenalty: [1.0, 1.0],    swingSensitivity: 1.0 },
 };
 
 function surfacePropsAt(wx, wy) {
@@ -1213,13 +1216,20 @@ function drawGolfer(ctx, px, py, facing, phase, swingInfo) {
 function drawBall(ctx, px, py, z) {
   const lift = Math.max(0, z | 0);
   const x = Math.floor(px), y = Math.floor(py);
-  ctx.fillStyle = COLORS.shadow;
-  const inset = Math.min(1, lift / 20);
-  ctx.fillRect(x - 1 + inset, y, 3 - inset * 2, 1);
+  // Ground shadow — 6×2 centered on the ball, darker than the global
+  // shadow rgba so the ball visibly lifts off the turf. Shrinks with
+  // altitude (inset scales both width and height toward the footprint).
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  const inset = Math.min(2, lift / 10);
+  const shW = Math.max(2, 6 - inset * 2);
+  const shH = Math.max(1, 2 - Math.floor(inset));
+  ctx.fillRect(x - shW / 2, y, shW, shH);
+  // Ball body — 3×3 (50% larger than the previous 2×2 sprite).
   ctx.fillStyle = COLORS.ballShadow;
-  ctx.fillRect(x - 1, y - 2 - lift, 2, 2);
+  ctx.fillRect(x - 1, y - 3 - lift, 3, 3);
   ctx.fillStyle = COLORS.ballWhite;
-  ctx.fillRect(x - 1, y - 2 - lift, 1, 1);
+  ctx.fillRect(x - 1, y - 3 - lift, 2, 1);
+  ctx.fillRect(x - 1, y - 3 - lift, 1, 2);
 }
 
 function drawBallDropping(ctx, px, py, t) {
