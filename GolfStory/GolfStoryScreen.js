@@ -1216,16 +1216,15 @@ function drawGolfer(ctx, px, py, facing, phase, swingInfo) {
 function drawBall(ctx, px, py, z) {
   const lift = Math.max(0, z | 0);
   const x = Math.floor(px), y = Math.floor(py);
-  // Drop shadow — only while airborne. Real shadows grow and SOFTEN
-  // as the caster rises off the ground (penumbra widens, occluded
-  // light area shrinks), so here the ellipse gets larger and more
-  // transparent with lift. Anchored at the ground point directly
-  // under the ball (y), not under the lifted sprite.
+  // Drop shadow — only while airborne. Near the ground the shadow is
+  // roughly the same size as the 3×3 ball sprite; it grows to 1.7×
+  // that at max altitude while fading. Slightly flatter than round
+  // so it reads as a ground projection, not a second ball.
   if (lift > 0) {
     const t = Math.min(1, lift / 35);
-    const rx = 5 + t * 7;         // 5 → 12 radius (10 → 24 wide)
-    const ry = 1.8 + t * 1.6;     // 1.8 → 3.4 radius (tall ~3.6 → 6.8)
-    const alpha = 0.6 - t * 0.38; // 0.6 (just off ground) → 0.22 (high)
+    const rx = 1.5 + t * 1.05;    // 1.5 → 2.55 radius (3 → 5.1 wide)
+    const ry = 1.3 + t * 0.9;     // 1.3 → 2.2  radius (2.6 → 4.4 tall)
+    const alpha = 0.55 - t * 0.3; // 0.55 (just off ground) → 0.25 (high)
     ctx.fillStyle = `rgba(0,0,0,${alpha.toFixed(3)})`;
     ctx.beginPath();
     ctx.ellipse(x, y + 0.5, rx, ry, 0, 0, Math.PI * 2);
