@@ -4,6 +4,14 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 const TILE = 16;
 const GRAVITY = 70;
 const HOLE_RADIUS = 4;
+// Tree collision tuning (world px). Canopy is a horizontal-circle drag
+// zone active only in the canopy altitude band. Trunk is a tight
+// hard-impact core near the ground; trunks also stop rolling balls.
+const TREE_CANOPY_R = 19;
+const TREE_CANOPY_Z_LO = 6;
+const TREE_CANOPY_Z_HI = 22;
+const TREE_TRUNK_R = 4;
+const TREE_TRUNK_Z_HI = 8;
 const YARDS_PER_TILE = 10;
 const MAX_LEAVES = 14;
 
@@ -815,7 +823,13 @@ function loadHole(idx, orientation) {
   const padDy = Math.floor((MAP_H - h.height) / 2);
   CURRENT_HOLE = { ...h, idxBase: baseIdx, padDx, padDy };
   SURFACES = h.surfaces.map((surf) => addBbox({ type: surf.type, shape: shiftShape(surf.shape, padDx, padDy) }));
-  TREES = (h.trees || []).map((t) => ({ ...t, x: t.x + padDx, y: t.y + padDy }));
+  TREES = (h.trees || []).map((t) => {
+    // Deterministic 5-bucket variant hash — 20% palm, 20% pine, 60% leafy.
+    const hash = ((t.x * 73.3 + t.y * 31.7) | 0);
+    const mod = ((hash % 5) + 5) % 5;
+    const variant = mod === 0 ? 'palm' : mod === 1 ? 'pine' : 'leafy';
+    return { ...t, x: t.x + padDx, y: t.y + padDy, variant };
+  });
   FLAG = { ...h.flag, x: h.flag.x + padDx, y: h.flag.y + padDy };
   TEE = { ...h.tee, x: h.tee.x + padDx, y: h.tee.y + padDy };
   GREEN_SLOPE = h.greenSlope;
@@ -887,41 +901,126 @@ function drawBush(ctx, px, py, variant, time, windStrength) {
   }
 }
 
-function drawTree(ctx, px, py, time, windStrength) {
+// Pixel-art trees come in three silhouettes (leafy / palm / pine)
+// selected per tree via a position hash at load time. All three share
+// the same trunk style and ground shadow so the canopy/frond shape is
+// the only thing that reads as distinct.
+function drawLeafyCanopy(ctx, x, y, sF) {
+  // Stacked rectangular cloud — blockier than the old ellipse tree,
+  // reads as pixel art at 2×+ zoom.
+  const cx = x + sF;
+  // Back layer — darkest.
+  ctx.fillStyle = COLORS.tree0;
+  ctx.fillRect(cx - 6, y - 11, 12, 2);
+  ctx.fillRect(cx - 7, y - 13, 14, 2);
+  ctx.fillRect(cx - 6, y - 15, 12, 2);
+  ctx.fillRect(cx - 4, y - 17, 8, 2);
+  ctx.fillRect(cx - 2, y - 18, 4, 1);
+  // Mid tone — left/up shift.
+  ctx.fillStyle = COLORS.tree2;
+  ctx.fillRect(cx - 5, y - 14, 5, 2);
+  ctx.fillRect(cx - 3, y - 16, 4, 1);
+  ctx.fillRect(cx - 1, y - 17, 2, 1);
+  // Highlight dots.
+  ctx.fillStyle = COLORS.tree4;
+  ctx.fillRect(cx - 4, y - 13, 1, 1);
+  ctx.fillRect(cx - 2, y - 15, 1, 1);
+  ctx.fillRect(cx,     y - 17, 1, 1);
+  // Shadow dots on the far side.
+  ctx.fillStyle = COLORS.tree1;
+  ctx.fillRect(cx + 4, y - 12, 1, 1);
+  ctx.fillRect(cx + 5, y - 14, 1, 1);
+  ctx.fillRect(cx + 3, y - 16, 1, 1);
+}
+
+function drawPalmCanopy(ctx, x, y, sF) {
+  // Slender curving trunk already drawn; this just adds fronds.
+  const fx = x + sF;
+  // Dark backing fronds — two swept sides + two droopers.
+  ctx.fillStyle = COLORS.tree1;
+  ctx.fillRect(fx - 7, y - 14, 6, 1);
+  ctx.fillRect(fx - 6, y - 15, 4, 1);
+  ctx.fillRect(fx - 5, y - 16, 3, 1);
+  ctx.fillRect(fx + 1, y - 14, 6, 1);
+  ctx.fillRect(fx + 2, y - 15, 4, 1);
+  ctx.fillRect(fx + 3, y - 16, 3, 1);
+  ctx.fillRect(fx - 5, y - 12, 3, 1);
+  ctx.fillRect(fx - 4, y - 11, 2, 1);
+  ctx.fillRect(fx + 2, y - 12, 3, 1);
+  ctx.fillRect(fx + 2, y - 11, 2, 1);
+  // Lighter frond tips.
+  ctx.fillStyle = COLORS.tree3;
+  ctx.fillRect(fx - 7, y - 15, 2, 1);
+  ctx.fillRect(fx + 5, y - 15, 2, 1);
+  ctx.fillRect(fx - 2, y - 17, 5, 1);
+  // Coconut cluster centered on the trunk head.
+  ctx.fillStyle = COLORS.trunkDark;
+  ctx.fillRect(fx,     y - 14, 1, 1);
+  ctx.fillRect(fx + 1, y - 14, 1, 1);
+  ctx.fillStyle = COLORS.trunkHi;
+  ctx.fillRect(fx,     y - 14, 1, 1);
+}
+
+function drawPineCanopy(ctx, x, y, sF) {
+  const cx = x + sF;
+  // Stacked conifer triangles — narrower than leafy, pointier.
+  ctx.fillStyle = COLORS.tree1;
+  ctx.fillRect(cx - 6, y - 8,  12, 2);
+  ctx.fillRect(cx - 5, y - 10, 10, 2);
+  ctx.fillRect(cx - 4, y - 12, 8,  2);
+  ctx.fillRect(cx - 3, y - 14, 6,  2);
+  ctx.fillRect(cx - 2, y - 16, 4,  2);
+  ctx.fillRect(cx - 1, y - 18, 2,  2);
+  ctx.fillRect(cx,     y - 19, 1,  1);
+  // Left-edge highlights.
+  ctx.fillStyle = COLORS.tree3;
+  ctx.fillRect(cx - 6, y - 8,  1, 1);
+  ctx.fillRect(cx - 5, y - 10, 1, 1);
+  ctx.fillRect(cx - 4, y - 12, 1, 1);
+  ctx.fillRect(cx - 3, y - 14, 1, 1);
+  ctx.fillRect(cx - 2, y - 16, 1, 1);
+  // Inner dark accents (far side).
+  ctx.fillStyle = COLORS.tree0;
+  ctx.fillRect(cx + 3, y - 9,  2, 1);
+  ctx.fillRect(cx + 2, y - 11, 2, 1);
+  ctx.fillRect(cx + 1, y - 13, 2, 1);
+  ctx.fillRect(cx,     y - 15, 2, 1);
+}
+
+function drawTree(ctx, px, py, time, windStrength, variant) {
   const x = Math.floor(px), y = Math.floor(py);
   const seed = (x * 0.29 + y * 0.71);
   const sway = Math.sin(time * 0.0018 + seed) * windStrength * 1.4;
   const sF = Math.floor(sway);
+  // Ground shadow — ellipse-soft so it reads as contact, not pixel.
   ctx.fillStyle = COLORS.shadow;
   ctx.beginPath();
   ctx.ellipse(x + 1, y + 2, 13, 4, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = COLORS.trunkDark;
-  ctx.fillRect(x - 2, y - 7, 4, 7);
-  ctx.fillStyle = COLORS.trunk;
-  ctx.fillRect(x - 2, y - 7, 3, 7);
-  ctx.fillStyle = COLORS.trunkHi;
-  ctx.fillRect(x - 2, y - 6, 1, 5);
-  ctx.fillStyle = COLORS.tree0;
-  ctx.beginPath(); ctx.ellipse(x + 2 + sF, y - 12, 12, 9, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = COLORS.tree1;
-  ctx.beginPath(); ctx.ellipse(x + 1 + sF, y - 13, 11, 8, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = COLORS.tree2;
-  ctx.beginPath(); ctx.ellipse(x + sF, y - 14, 9, 7, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = COLORS.tree3;
-  ctx.beginPath(); ctx.ellipse(x - 2 + sF, y - 15, 7, 5, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = COLORS.tree4;
-  ctx.beginPath(); ctx.ellipse(x - 3 + sF, y - 16, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = COLORS.tree5;
-  ctx.fillRect(x - 4 + sF, y - 17, 2, 1);
-  ctx.fillRect(x - 3 + sF, y - 17, 1, 1);
-  ctx.fillStyle = COLORS.tree0;
-  ctx.fillRect(x + 5 + sF, y - 10, 1, 1);
-  ctx.fillRect(x + 6 + sF, y - 13, 1, 1);
-  ctx.fillRect(x - 7 + sF, y - 12, 1, 1);
-  ctx.fillStyle = COLORS.tree4;
-  ctx.fillRect(x + 4 + sF, y - 15, 1, 1);
-  ctx.fillRect(x - 6 + sF, y - 14, 1, 1);
+  // Trunk — palm uses a tall slender trunk with bands, others a stocky
+  // two-tone block.
+  if (variant === 'palm') {
+    ctx.fillStyle = COLORS.trunkDark;
+    ctx.fillRect(x - 1, y - 14, 3, 14);
+    ctx.fillStyle = COLORS.trunk;
+    ctx.fillRect(x - 1, y - 14, 2, 14);
+    ctx.fillStyle = COLORS.trunkHi;
+    ctx.fillRect(x - 1, y - 13, 1, 11);
+    ctx.fillStyle = COLORS.trunkDark;
+    ctx.fillRect(x - 1, y - 4,  3, 1);
+    ctx.fillRect(x - 1, y - 8,  3, 1);
+    ctx.fillRect(x - 1, y - 12, 3, 1);
+  } else {
+    ctx.fillStyle = COLORS.trunkDark;
+    ctx.fillRect(x - 2, y - 7, 4, 7);
+    ctx.fillStyle = COLORS.trunk;
+    ctx.fillRect(x - 2, y - 7, 3, 7);
+    ctx.fillStyle = COLORS.trunkHi;
+    ctx.fillRect(x - 2, y - 6, 1, 5);
+  }
+  if (variant === 'palm') drawPalmCanopy(ctx, x, y, sF);
+  else if (variant === 'pine') drawPineCanopy(ctx, x, y, sF);
+  else drawLeafyCanopy(ctx, x, y, sF);
 }
 
 // 3D-ish cup: ground shadow, dark pit with a subtle elliptical taper,
@@ -1555,6 +1654,43 @@ function stepBall(b, dt, windX, windY, flagX, flagY) {
     b.y += b.vy * dt;
     b.z += b.vz * dt;
     if (b.x < 0 || b.x > WORLD_W || b.y < 0 || b.y > WORLD_H) { b.state = 'ob'; return; }
+    // Tree collisions (flying): canopy drag bleeds horizontal velocity
+    // and drops the ball out of the leaves; trunk hits deflect low
+    // shots sharply and dump most of the ball's energy.
+    if (TREES && TREES.length) {
+      for (const t of TREES) {
+        const tx = t.x * TILE, ty = t.y * TILE;
+        const dx = b.x - tx, dy = b.y - ty;
+        const d2 = dx * dx + dy * dy;
+        // Trunk impact — only when the ball is low enough to hit the stem.
+        if (b.z <= TREE_TRUNK_Z_HI && d2 < TREE_TRUNK_R * TREE_TRUNK_R) {
+          const d = Math.sqrt(d2) || 0.01;
+          const nx = dx / d, ny = dy / d;
+          const vdotn = b.vx * nx + b.vy * ny;
+          if (vdotn < 0) {
+            // Reflect across the trunk normal and keep ~25% of the speed.
+            b.vx = (b.vx - 2 * vdotn * nx) * 0.25;
+            b.vy = (b.vy - 2 * vdotn * ny) * 0.25;
+            b.vz = Math.min(b.vz, 0) * 0.3;
+          }
+          // Push the ball outside the trunk so it doesn't re-trigger.
+          b.x = tx + nx * (TREE_TRUNK_R + 0.6);
+          b.y = ty + ny * (TREE_TRUNK_R + 0.6);
+          break;
+        }
+        // Canopy drag — soft "eaten by leaves" deceleration while the
+        // ball is inside the canopy altitude band.
+        if (b.z >= TREE_CANOPY_Z_LO && b.z <= TREE_CANOPY_Z_HI
+            && d2 < TREE_CANOPY_R * TREE_CANOPY_R) {
+          const drag = 4.5 * dt;
+          const f = Math.max(0, 1 - drag);
+          b.vx *= f;
+          b.vy *= f;
+          b.vz -= 90 * dt;
+          break;
+        }
+      }
+    }
     if (b.z < 5) {
       const dcx = b.x - flagX, dcy = b.y - flagY;
       if (Math.hypot(dcx, dcy) < HOLE_RADIUS && Math.hypot(b.vx, b.vy) < 90) {
@@ -1601,6 +1737,22 @@ function stepBall(b, dt, windX, windY, flagX, flagY) {
     b.x += b.vx * dt;
     b.y += b.vy * dt;
     if (b.x < 0 || b.x > WORLD_W || b.y < 0 || b.y > WORLD_H) { b.state = 'ob'; return; }
+    // Tree trunk thud while rolling — stop, back the ball off the trunk.
+    if (TREES && TREES.length) {
+      for (const t of TREES) {
+        const tx = t.x * TILE, ty = t.y * TILE;
+        const dx = b.x - tx, dy = b.y - ty;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < TREE_TRUNK_R * TREE_TRUNK_R) {
+          const d = Math.sqrt(d2) || 0.01;
+          b.x = tx + (dx / d) * (TREE_TRUNK_R + 0.6);
+          b.y = ty + (dy / d) * (TREE_TRUNK_R + 0.6);
+          b.vx = 0; b.vy = 0;
+          b.state = 'stopped';
+          return;
+        }
+      }
+    }
     const dcx = b.x - flagX, dcy = b.y - flagY;
     if (Math.hypot(dcx, dcy) < HOLE_RADIUS && speed < 60) {
       b.x = flagX; b.y = flagY;
@@ -2676,7 +2828,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       const windStrength = Math.min(1, w.speed / 16);
 
       const drawables = [];
-      for (const t of TREES) drawables.push({ kind: 'tree', x: t.x * TILE, y: t.y * TILE });
+      for (const t of TREES) drawables.push({ kind: 'tree', x: t.x * TILE, y: t.y * TILE, variant: t.variant });
       for (const b of BUSHES) drawables.push({ kind: 'bush', x: b.x * TILE, y: b.y * TILE, variant: b.variant });
       // Pull the flag pole whenever the putter is equipped — the tall
       // red pin is what a caddie would remove for a real putt. Applies
@@ -2730,7 +2882,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       }
       drawables.sort((a, b2) => a.y - b2.y);
       for (const d of drawables) {
-        if (d.kind === 'tree') drawTree(ctx, d.x, d.y, now, windStrength);
+        if (d.kind === 'tree') drawTree(ctx, d.x, d.y, now, windStrength, d.variant);
         else if (d.kind === 'bush') drawBush(ctx, d.x, d.y, d.variant, now, windStrength);
         else if (d.kind === 'flag') drawFlag(ctx, d.x, d.y, now, { showPole: d.showPole !== false });
         else if (d.kind === 'ball') drawBall(ctx, d.x, d.y, d.z || 0);
