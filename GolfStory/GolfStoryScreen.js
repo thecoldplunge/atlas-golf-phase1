@@ -69,11 +69,18 @@ const HOLE_RADIUS = 4;
 // Scaled with the v0.40 sprite upscale so collisions match the visible
 // silhouette — canopy ~30 px radius (crown is ~32 px wide), z band
 // extends higher since the new canopy reaches y-40.
-const TREE_CANOPY_R = 28;
+// Tree collision radii — trimmed ~20% in v0.53 vs the earlier tuning
+// (they felt too grabby; balls clipped trees they clearly cleared).
+const TREE_CANOPY_R = 22;
 const TREE_CANOPY_Z_LO = 12;
 const TREE_CANOPY_Z_HI = 42;
-const TREE_TRUNK_R = 5;
+const TREE_TRUNK_R = 4;
 const TREE_TRUNK_Z_HI = 14;
+// When the ball starts under a tree, we suppress that tree's collision
+// until the shot has physically cleared it — either by rising above
+// the canopy or exiting its horizontal radius. `escapeTree` is a
+// { x, y } tuple in world px and `escapeUntilExit` gates the skip.
+const escapeTree = { x: null, y: null };
 // Flagstick collider — radius in world px, and the max altitude at
 // which the pole still registers contact (drawn to y-17 in sprite px).
 const FLAG_STICK_R = 1.8;
@@ -657,7 +664,9 @@ const COLORS = {
   pebble: '#7e7966', pebbleHi: '#a9a38d',
   roughC: '#24571c', roughD: '#52a640',
 };
-const LEAF_COLORS = ['#d88a2e', '#e8a840', '#c66a22', '#88a028', '#a88a44', '#d4b048'];
+// Leaves pull from the tree canopy palette so the flurry reads as
+// foliage matching the trees they fell from.
+const LEAF_COLORS = ['#224a22', '#2e6b2e', '#3f8c3f', '#5db35d', '#8ed88e', '#6a8f3a'];
 
 const SURFACE_BASE = {
   [T_ROUGH]:   { r: 60,  g: 126, b: 47,  amp: 38, warmth: -3 },
@@ -1794,6 +1803,22 @@ function pickClubForDistance(distYd, onGreen) {
 // (powerPenalty + swingSensitivity). When no opts are provided the function
 // behaves exactly like the pre-character-stats version.
 function launchBall(b, aimAngle, power, accuracyOffset, spinX, spinY, club, opts = {}) {
+  // Free-escape bookkeeping: if the ball starts inside a tree canopy,
+  // remember that tree so stepBall skips its collision until the shot
+  // has physically cleared.
+  escapeTree.x = null;
+  escapeTree.y = null;
+  if (typeof TREES !== 'undefined' && TREES && TREES.length) {
+    for (const t of TREES) {
+      const tx = t.x * TILE, ty = t.y * TILE;
+      const dx = b.x - tx, dy = b.y - ty;
+      if (dx * dx + dy * dy < TREE_CANOPY_R * TREE_CANOPY_R) {
+        escapeTree.x = tx;
+        escapeTree.y = ty;
+        break;
+      }
+    }
+  }
   const {
     golferFactors = { powerFactor: 1, touchFactor: 1, forgivenessFactor: 1, recoveryFactor: 1, windResist: 1 },
     clubStats = {},
@@ -1877,6 +1902,21 @@ function stepBall(b, dt, windX, windY, flagX, flagY) {
     if (TREES && TREES.length) {
       for (const t of TREES) {
         const tx = t.x * TILE, ty = t.y * TILE;
+        // Free escape: if the ball started inside this tree, skip
+        // collisions until it has physically cleared the canopy or
+        // risen above it. Otherwise a ball resting under a tree can't
+        // be hit out without clipping the same tree it's sitting in.
+        if (escapeTree.x === tx && escapeTree.y === ty) {
+          const ex = b.x - tx, ey = b.y - ty;
+          const clearedHoriz = (ex * ex + ey * ey) > (TREE_CANOPY_R * TREE_CANOPY_R) * 1.21;
+          const clearedVert = b.z > TREE_CANOPY_Z_HI + 4;
+          if (clearedHoriz || clearedVert) {
+            escapeTree.x = null;
+            escapeTree.y = null;
+          } else {
+            continue;
+          }
+        }
         const dx = b.x - tx, dy = b.y - ty;
         const d2 = dx * dx + dy * dy;
         // Trunk impact — only when the ball is low enough to hit the stem.
