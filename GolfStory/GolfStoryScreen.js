@@ -4097,76 +4097,147 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
 // golfers from the roster. The human player always uses the golfer
 // already selected on the IGT main menu, so we never ask for that
 // twice. Pixel-styled to match the rest of the GS HUD.
-// Mini stat bar used on the golfer picker cards.
-function StatMeter({ label, value }) {
+// Mini stat bar for the picker hero card. Matches the SELECT GOLFER
+// screen in App.js (yellow/green/red threshold bars) so the whole
+// app reads as one visual system.
+function PickerStatRow({ label, value }) {
   const v = Math.max(0, Math.min(100, Number(value) || 0));
-  const tone = v >= 85 ? '#88f8bb' : v >= 70 ? '#a7e87d' : v >= 55 ? '#fbe043' : v >= 40 ? '#c8dfc4' : '#ff6ad5';
+  const tone = v >= 70 ? '#4ade80' : v >= 40 ? '#fbbf24' : '#ef4444';
   return (
-    <View style={pickerCardStyles.meterRow}>
-      <Text style={pickerCardStyles.meterLabel}>{label}</Text>
-      <View style={pickerCardStyles.meterTrack}>
-        <View style={[pickerCardStyles.meterFill, { width: `${v}%`, backgroundColor: tone }]} />
+    <View style={pickerCardStyles.statRow}>
+      <Text style={pickerCardStyles.statName}>{label}</Text>
+      <View style={pickerCardStyles.statBarBg}>
+        <View style={[pickerCardStyles.statBarFill, { width: `${v}%`, backgroundColor: tone }]} />
       </View>
-      <Text style={[pickerCardStyles.meterValue, { color: tone }]}>{v}</Text>
+      <Text style={pickerCardStyles.statValue}>{v}</Text>
     </View>
   );
 }
 
-// Small pixel avatar block — stacked skin/shirt/pants palette from
-// the golfer's avatar. Renders as a sharp tile, not a ball-chart.
-function GolferAvatar({ golfer, size = 56 }) {
+// Large pixel avatar block (for the hero card). Four stacked colour
+// bands pulled from the golfer's avatar palette.
+function GolferAvatar({ golfer, size = 56, bands = 4 }) {
   const av = golfer?.avatar || {};
   const hat = av.hat || '#263246';
   const skin = av.skin || '#f0c08c';
   const shirt = av.shirt || '#3f76c1';
   const pants = av.pants || '#2e563c';
-  const bandH = Math.round(size / 5);
   return (
     <View style={[pickerCardStyles.avatarFrame, { width: size, height: size }]}>
-      <View style={{ backgroundColor: hat,   height: bandH }} />
-      <View style={{ backgroundColor: skin,  height: bandH }} />
-      <View style={{ backgroundColor: shirt, height: bandH }} />
-      <View style={{ backgroundColor: pants, flex: 1 }} />
+      <View style={{ backgroundColor: hat,   flex: 1 }} />
+      <View style={{ backgroundColor: skin,  flex: 1 }} />
+      <View style={{ backgroundColor: shirt, flex: 1 }} />
+      {bands >= 4 ? <View style={{ backgroundColor: pants, flex: 1 }} /> : null}
     </View>
   );
 }
 
-// Card-style golfer picker: sticky header with the step title, then
-// a scrollable list of golfers with avatar + name + species + three
-// mini stat bars. Tap a card to commit the pick.
+// Card-style golfer picker modeled on the IGT main-menu SELECT GOLFER
+// screen: horizontal scroll of small tiles up top, a big hero card
+// with name / species / bio, then SKILLS + MENTAL stat rows, and
+// finally a BACK / SELECT row. Tracks its own preview selection so
+// the player can browse stats before committing.
+const SKILL_KEYS = [
+  ['power', 'Power'],
+  ['accuracy', 'Accuracy'],
+  ['touch', 'Touch'],
+  ['spinControl', 'Spin Ctrl'],
+  ['putting', 'Putting'],
+  ['recovery', 'Recovery'],
+];
+const MENTAL_KEYS = [
+  ['focus', 'Focus'],
+  ['composure', 'Composure'],
+  ['courseManagement', 'Course IQ'],
+];
+
 function GsGolferPicker({ title, subtitle, allGolfers, onPick, onBack, excludeIds = [] }) {
   const roster = (Array.isArray(allGolfers) ? allGolfers : []).filter(
     (g) => g && !excludeIds.includes(g.id),
   );
+  const [previewIdx, setPreviewIdx] = useState(0);
+  const preview = roster[Math.min(previewIdx, Math.max(0, roster.length - 1))] || null;
   return (
     <View style={pickerCardStyles.root}>
-      <View style={pickerCardStyles.topBar}>
-        <Text style={pickerCardStyles.title}>{title}</Text>
-        {subtitle ? <Text style={pickerCardStyles.subtitle}>{subtitle}</Text> : null}
-      </View>
       <ScrollView
-        style={pickerCardStyles.scroll}
-        contentContainerStyle={pickerCardStyles.scrollInner}
+        style={pickerCardStyles.pageScroll}
+        contentContainerStyle={pickerCardStyles.pageInner}
         showsVerticalScrollIndicator={false}
       >
-        {roster.map((g) => (
-          <Pressable key={g.id} style={pickerCardStyles.card} onPress={() => onPick(g)}>
-            <GolferAvatar golfer={g} />
-            <View style={pickerCardStyles.cardRight}>
-              <View style={pickerCardStyles.nameRow}>
-                <Text style={pickerCardStyles.name} numberOfLines={1}>{g.name}</Text>
-                <Text style={pickerCardStyles.species} numberOfLines={1}>{g.species || '—'}</Text>
+        <Text style={pickerCardStyles.title}>{title}</Text>
+        {subtitle ? <Text style={pickerCardStyles.subtitle}>{subtitle}</Text> : null}
+
+        <ScrollView
+          horizontal
+          style={pickerCardStyles.rosterScroll}
+          contentContainerStyle={pickerCardStyles.rosterInner}
+          showsHorizontalScrollIndicator={false}
+        >
+          {roster.map((g, i) => {
+            const isSelected = i === previewIdx;
+            return (
+              <Pressable
+                key={g.id}
+                style={[pickerCardStyles.rosterCard, isSelected ? pickerCardStyles.rosterCardSelected : null]}
+                onPress={() => setPreviewIdx(i)}
+              >
+                <GolferAvatar golfer={g} size={44} bands={3} />
+                <Text
+                  style={[pickerCardStyles.rosterName, isSelected ? pickerCardStyles.rosterNameSelected : null]}
+                  numberOfLines={1}
+                >
+                  {g.name}
+                </Text>
+                <Text style={pickerCardStyles.rosterSpecies} numberOfLines={1}>{g.species}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        {preview ? (
+          <>
+            <View style={pickerCardStyles.heroCard}>
+              <GolferAvatar golfer={preview} size={76} bands={4} />
+              <View style={pickerCardStyles.heroInfo}>
+                <Text style={pickerCardStyles.heroName}>{preview.name}</Text>
+                <Text style={pickerCardStyles.heroSpecies}>
+                  {preview.species} • {preview.origin || '—'}
+                </Text>
+                {preview.bio ? (
+                  <Text style={pickerCardStyles.heroBio}>{preview.bio}</Text>
+                ) : null}
               </View>
-              <StatMeter label="PWR" value={g?.stats?.power} />
-              <StatMeter label="ACC" value={g?.stats?.accuracy} />
-              <StatMeter label="TCH" value={g?.stats?.touch} />
             </View>
+
+            <View style={pickerCardStyles.statsSection}>
+              <Text style={pickerCardStyles.statsTitle}>SKILLS</Text>
+              {SKILL_KEYS.map(([k, label]) => (
+                <PickerStatRow key={k} label={label} value={preview?.stats?.[k]} />
+              ))}
+            </View>
+
+            <View style={pickerCardStyles.statsSection}>
+              <Text style={pickerCardStyles.statsTitle}>MENTAL</Text>
+              {MENTAL_KEYS.map(([k, label]) => (
+                <PickerStatRow key={k} label={label} value={preview?.mental?.[k]} />
+              ))}
+            </View>
+          </>
+        ) : null}
+
+        <View style={pickerCardStyles.navRow}>
+          <Pressable style={pickerCardStyles.secondaryBtn} onPress={onBack}>
+            <Text style={pickerCardStyles.secondaryBtnText}>← BACK</Text>
           </Pressable>
-        ))}
+          <Pressable
+            style={[pickerCardStyles.primaryBtn, !preview ? pickerCardStyles.primaryBtnDisabled : null]}
+            onPress={() => preview && onPick(preview)}
+            disabled={!preview}
+          >
+            <Text style={pickerCardStyles.primaryBtnText}>SELECT →</Text>
+          </Pressable>
+        </View>
       </ScrollView>
-      <Pressable style={pickerCardStyles.backBtn} onPress={onBack}>
-        <Text style={pickerCardStyles.backText}>← back</Text>
-      </Pressable>
     </View>
   );
 }
@@ -4189,7 +4260,7 @@ function MatchCountPicker({ initial = 2, onConfirm, onBack }) {
               onPress={() => setPlayerCount(n)}
             >
               <Text style={[pickerCardStyles.countBtnText, playerCount === n ? pickerCardStyles.countBtnTextActive : null]}>{n}</Text>
-              <Text style={pickerCardStyles.countBtnSub}>{n === 1 ? 'solo' : 'players'}</Text>
+              <Text style={pickerCardStyles.countBtnSub}>{n === 1 ? 'SOLO' : 'PLAYERS'}</Text>
             </Pressable>
           ))}
         </View>
@@ -4198,7 +4269,7 @@ function MatchCountPicker({ initial = 2, onConfirm, onBack }) {
         </Pressable>
       </View>
       <Pressable style={pickerCardStyles.backBtn} onPress={onBack}>
-        <Text style={pickerCardStyles.backText}>← back</Text>
+        <Text style={pickerCardStyles.backText}>← BACK</Text>
       </Pressable>
     </View>
   );
@@ -4622,12 +4693,31 @@ const matchStyles = StyleSheet.create({
   },
 });
 
+// ═══════════════ SHARED DESIGN TOKENS ═══════════════
+// One bg / font / palette for every GS menu screen so the GS flow
+// reads as the same app as the IGT main menu.
+const UI_BG = '#05070A';          // matches spaceMenuScreen
+const UI_SURFACE = '#0f1420';     // panels
+const UI_SURFACE_LO = '#0a0e17';  // lower-contrast panels / track fills
+const UI_BORDER = 'rgba(255,255,255,0.12)';
+const UI_MINT = '#88f8bb';
+const UI_MINT_DIM = 'rgba(136,248,187,0.28)';
+const UI_MINT_TINT = 'rgba(136,248,187,0.12)';
+const UI_TEXT = '#f4fcef';
+const UI_TEXT_DIM = '#a9d4a9';
+const UI_TEXT_MUTED = '#6b7a72';
+const UI_FONT = Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' });
+
 const pickerCardStyles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#060d17',
-    paddingHorizontal: 12,
-    paddingTop: Platform.OS === 'web' ? 30 : 48,
+    backgroundColor: UI_BG,
+  },
+  pageScroll: { flex: 1 },
+  pageInner: {
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'web' ? 24 : 48,
+    paddingBottom: 28,
   },
   topBar: {
     alignItems: 'center',
@@ -4635,133 +4725,193 @@ const pickerCardStyles = StyleSheet.create({
     paddingVertical: 10,
   },
   title: {
-    color: '#fff6d8',
-    fontSize: 18, fontWeight: '900', letterSpacing: 3,
+    color: UI_TEXT,
+    fontSize: 22, fontWeight: '900', letterSpacing: 4,
     textAlign: 'center',
-    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+    textTransform: 'uppercase',
+    fontFamily: UI_FONT,
   },
   subtitle: {
-    color: '#88f8bb', fontSize: 11, letterSpacing: 1.5,
-    marginTop: 6,
-    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+    color: UI_MINT, fontSize: 11, letterSpacing: 2,
+    marginTop: 6, marginBottom: 14,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    fontFamily: UI_FONT,
   },
-  scroll: { flex: 1 },
-  scrollInner: { paddingBottom: 80, gap: 10 },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: 'rgba(16, 32, 26, 0.88)',
+  // --- horizontal roster carousel ---
+  rosterScroll: { marginBottom: 18 },
+  rosterInner: { gap: 10, paddingVertical: 4, paddingRight: 16 },
+  rosterCard: {
+    width: 112, paddingVertical: 12, paddingHorizontal: 8,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(136, 248, 187, 0.22)',
+    borderColor: UI_BORDER,
+    backgroundColor: UI_SURFACE,
+    alignItems: 'center',
+    gap: 8,
+  },
+  rosterCardSelected: {
+    borderColor: UI_MINT,
+    backgroundColor: UI_MINT_TINT,
+  },
+  rosterName: {
+    color: UI_TEXT, fontSize: 13, fontWeight: '800',
+    textAlign: 'center',
+    fontFamily: UI_FONT,
+  },
+  rosterNameSelected: { color: UI_MINT },
+  rosterSpecies: {
+    color: UI_TEXT_DIM, fontSize: 10, letterSpacing: 1,
+    textAlign: 'center',
+    fontFamily: UI_FONT,
   },
   avatarFrame: {
-    borderRadius: 8,
+    borderRadius: 10,
     overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: 'rgba(245, 245, 236, 0.35)',
-    backgroundColor: '#0b1a10',
+    backgroundColor: UI_SURFACE_LO,
   },
-  cardRight: { flex: 1, gap: 4 },
-  nameRow: {
+  // --- hero card ---
+  heroCard: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    gap: 8,
-    marginBottom: 4,
+    gap: 14,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: UI_SURFACE,
+    borderWidth: 1, borderColor: UI_BORDER,
+    marginBottom: 16,
   },
-  name: {
-    color: '#fff6d8',
-    fontSize: 15, fontWeight: '800', letterSpacing: 0.5,
-    flex: 1,
-    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  heroInfo: { flex: 1, gap: 6 },
+  heroName: {
+    color: UI_TEXT, fontSize: 22, fontWeight: '900', letterSpacing: 0.5,
+    fontFamily: UI_FONT,
   },
-  species: {
-    color: '#a9d4a9', fontSize: 10, letterSpacing: 1,
+  heroSpecies: {
+    color: UI_MINT, fontSize: 12, letterSpacing: 1,
     textTransform: 'uppercase',
-    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+    fontFamily: UI_FONT,
   },
-  meterRow: {
+  heroBio: {
+    color: UI_TEXT_DIM, fontSize: 13, lineHeight: 18, marginTop: 4,
+    fontFamily: UI_FONT,
+  },
+  // --- stat sections ---
+  statsSection: {
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: UI_SURFACE,
+    borderWidth: 1, borderColor: UI_BORDER,
+    marginBottom: 12,
+    gap: 8,
+  },
+  statsTitle: {
+    color: UI_MINT, fontSize: 13, fontWeight: '900', letterSpacing: 3,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    marginBottom: 4,
+    fontFamily: UI_FONT,
+  },
+  statRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  statName: {
+    width: 90, color: UI_TEXT_DIM, fontSize: 12,
+    fontFamily: UI_FONT,
+  },
+  statBarBg: {
+    flex: 1, height: 10, borderRadius: 5,
+    backgroundColor: UI_SURFACE_LO,
+    overflow: 'hidden',
+  },
+  statBarFill: { height: '100%', borderRadius: 5 },
+  statValue: {
+    width: 34, textAlign: 'right',
+    color: UI_TEXT, fontSize: 13, fontWeight: '900',
+    fontFamily: UI_FONT,
+  },
+  // --- bottom nav row ---
+  navRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 2,
+    gap: 12,
+    marginTop: 8,
   },
-  meterLabel: {
-    color: '#c8dfc4', fontSize: 10, fontWeight: '800', letterSpacing: 1,
-    width: 30,
-    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  secondaryBtn: {
+    paddingVertical: 14, paddingHorizontal: 22,
+    borderRadius: 12,
+    backgroundColor: UI_SURFACE,
+    borderWidth: 1, borderColor: UI_BORDER,
   },
-  meterTrack: {
+  secondaryBtnText: {
+    color: UI_TEXT_DIM, fontSize: 13, fontWeight: '800', letterSpacing: 2,
+    textTransform: 'uppercase',
+    fontFamily: UI_FONT,
+  },
+  primaryBtn: {
     flex: 1,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    overflow: 'hidden',
+    paddingVertical: 14, paddingHorizontal: 22,
+    borderRadius: 12,
+    backgroundColor: UI_MINT,
+    alignItems: 'center',
   },
-  meterFill: { height: '100%', borderRadius: 3 },
-  meterValue: {
-    width: 24, textAlign: 'right',
-    fontSize: 11, fontWeight: '900',
-    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  primaryBtnDisabled: { opacity: 0.35 },
+  primaryBtnText: {
+    color: '#04180c', fontSize: 14, fontWeight: '900', letterSpacing: 3,
+    fontFamily: UI_FONT,
   },
+  // --- count-picker specific ---
   countBody: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 24,
     gap: 32,
   },
   countRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 12,
     flexWrap: 'wrap',
     justifyContent: 'center',
   },
   countBtn: {
-    width: 72, height: 84,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: 'rgba(136, 248, 187, 0.28)',
-    backgroundColor: 'rgba(16, 32, 26, 0.88)',
+    width: 78, height: 96,
+    borderRadius: 16,
+    borderWidth: 1, borderColor: UI_BORDER,
+    backgroundColor: UI_SURFACE,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 6,
   },
   countBtnActive: {
-    borderColor: '#88f8bb',
-    backgroundColor: 'rgba(136, 248, 187, 0.16)',
+    borderColor: UI_MINT,
+    backgroundColor: UI_MINT_TINT,
   },
   countBtnText: {
-    color: '#fff6d8', fontSize: 30, fontWeight: '900',
-    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+    color: UI_TEXT, fontSize: 32, fontWeight: '900',
+    fontFamily: UI_FONT,
   },
-  countBtnTextActive: { color: '#88f8bb' },
+  countBtnTextActive: { color: UI_MINT },
   countBtnSub: {
-    color: '#a9d4a9', fontSize: 10, letterSpacing: 1.5,
+    color: UI_TEXT_DIM, fontSize: 10, letterSpacing: 2,
     textTransform: 'uppercase',
-    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+    fontFamily: UI_FONT,
   },
   nextBtn: {
     paddingVertical: 14, paddingHorizontal: 38,
     borderRadius: 12,
-    backgroundColor: 'rgba(136,248,187,0.14)',
-    borderWidth: 2, borderColor: '#88f8bb',
+    backgroundColor: UI_MINT,
   },
   nextBtnText: {
-    color: '#f5fbef', fontSize: 16, fontWeight: '900', letterSpacing: 3,
-    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+    color: '#04180c', fontSize: 15, fontWeight: '900', letterSpacing: 3,
+    fontFamily: UI_FONT,
   },
   backBtn: {
     alignSelf: 'center',
-    paddingVertical: 10, paddingHorizontal: 16,
-    marginTop: 6, marginBottom: 10,
+    paddingVertical: 14, paddingHorizontal: 18,
+    marginBottom: 10,
   },
   backText: {
-    color: '#a9d4a9', fontSize: 12, letterSpacing: 2,
+    color: UI_TEXT_MUTED, fontSize: 12, letterSpacing: 3,
     textTransform: 'uppercase',
-    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+    fontFamily: UI_FONT,
   },
 });
 
