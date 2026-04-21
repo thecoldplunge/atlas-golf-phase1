@@ -2107,24 +2107,11 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       const ball = ballRef.current;
       const club = CLUBS[sw.clubIdx];
       const dpr = window.devicePixelRatio || 1;
-      // 100% power at 110 css px of pull — keeps the full swing reachable
-      // even when the player starts pulling from the SWING pad (which
-      // sits at bottom-right with ~80 px of clearance below it).
-      // Two-phase power: backswing peak sets the CEILING, follow-through
-      // from peak back toward start is the multiplier.
-      //   backPct    = how far out the finger went    (maxMag / 80·dpr)
-      //   followPct  = how far back from peak it came (0..1 of backPct)
-      //   power      = backPct × followPct
-      // Pull to 50% + full follow = 50% carry. Pull to 100% + half follow
-      // = 50% carry. Pull to 100% + full follow = 100% carry.
-      const backPct = Math.min(1, s.maxMag / (80 * dpr));
-      const followDx = s.currentX - s.peakX;
-      const followDy = s.currentY - s.peakY;
-      const followDist = Math.hypot(followDx, followDy);
-      const followPct = s.maxMag > 0 ? Math.min(1, followDist / s.maxMag) : 0;
-      const power = Math.max(0.08, backPct * followPct);
-      // Accuracy still reads off peak X-offset — that's the shot shape
-      // the player committed to at the top of the swing.
+      // Single-phase power: how far the finger pulled out before release.
+      // 100% power at 80 css px of pull (scaled by dpr). Simpler than the
+      // two-phase model and avoids the "zero follow-through → 0 power"
+      // trap where a pull-and-lift shot would barely move the ball.
+      const power = Math.max(0.1, Math.min(1, s.maxMag / (80 * dpr)));
       const accuracy = Math.max(-1, Math.min(1, s.maxDx / (55 * dpr)));
       if (s.maxMag < 20 * dpr) {
         sw.state = SW.AIMING;
@@ -2953,7 +2940,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         >
           <View style={styles.swingBtnGlow} pointerEvents="none" />
           <Text style={styles.swingBtnLabel}>SWING</Text>
-          <Text style={styles.swingBtnHint}>pull ↓ swipe up</Text>
+          <Text style={styles.swingBtnHint}>pull to swing</Text>
         </View>
       ) : null}
 
