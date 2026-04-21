@@ -298,8 +298,8 @@ const HOLES = [
     greenSlope: { angle: Math.PI * 0.35, mag: 6 },
     surfaces: [
       { type: T_FAIRWAY, shape: { kind: 'polygon', points: [
-        [4, 29], [7.5, 29], [8.5, 24], [9, 20], [9.5, 15], [10.5, 11], [12, 8.5],
-        [14, 7.5], [15, 8], [13.5, 10], [12, 13], [11, 17], [10.5, 21], [10, 25], [9, 28]
+        [3, 29.5], [9, 29.5], [7.5, 24], [8, 20], [8.5, 15], [9.5, 11], [11, 8.5],
+        [14, 7.5], [15, 8], [14.5, 10], [13, 13], [12, 17], [11.5, 21], [11, 25], [11, 28]
       ]}},
       { type: T_SHORE, shape: { kind: 'polygon', points: [
         [12, 10], [14.5, 9.5], [17, 9.8], [19, 10.8], [20.5, 13], [20.8, 16], [20.5, 20],
@@ -331,12 +331,12 @@ const HOLES = [
     // hidden behind a sand spine; playing to the correct lobe matters.
     name: 'Hole 8', par: 3, width: 20, height: 28,
     tee: { x: 10, y: 24 },
-    flag: { x: 12.5, y: 6 },
+    flag: { x: 14.5, y: 6.5 },
     greenSlope: { angle: Math.PI * 0.9, mag: 4 },
     surfaces: [
       { type: T_FAIRWAY, shape: { kind: 'polygon', points: [
-        [8.5, 25], [11.5, 25], [12, 22], [11.5, 18], [11, 15], [10.5, 12],
-        [9.5, 12], [8.5, 15], [8, 18], [8, 22]
+        [7.5, 26], [12.5, 26], [13, 22], [12.5, 18], [12, 15], [11.5, 11.5],
+        [8.5, 11.5], [8, 15], [7.5, 18], [7.5, 22]
       ]}},
       // Peanut green — two lobes joined by a narrow waist.
       { type: T_FRINGE, shape: { kind: 'polygon', points: [
@@ -1216,15 +1216,19 @@ function drawGolfer(ctx, px, py, facing, phase, swingInfo) {
 function drawBall(ctx, px, py, z) {
   const lift = Math.max(0, z | 0);
   const x = Math.floor(px), y = Math.floor(py);
-  // Drop shadow — only while airborne. Near the ground the shadow is
-  // roughly the same size as the 3×3 ball sprite; it grows to 1.7×
-  // that at max altitude while fading. Slightly flatter than round
-  // so it reads as a ground projection, not a second ball.
-  if (lift > 0) {
+  // Drop shadow — small subtle puck when the ball is grounded, then
+  // grows up to ~1.7× the ball sprite and fades as altitude rises
+  // (real penumbra widens and softens with caster height).
+  if (lift === 0) {
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(x, y + 0.5, 1.0, 0.55, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
     const t = Math.min(1, lift / 35);
     const rx = 1.5 + t * 1.05;    // 1.5 → 2.55 radius (3 → 5.1 wide)
     const ry = 1.3 + t * 0.9;     // 1.3 → 2.2  radius (2.6 → 4.4 tall)
-    const alpha = 0.55 - t * 0.3; // 0.55 (just off ground) → 0.25 (high)
+    const alpha = 0.55 - t * 0.3; // 0.55 → 0.25
     ctx.fillStyle = `rgba(0,0,0,${alpha.toFixed(3)})`;
     ctx.beginPath();
     ctx.ellipse(x, y + 0.5, rx, ry, 0, 0, Math.PI * 2);
@@ -1449,18 +1453,22 @@ function computeCarry(club, power) {
   return Math.max(0, (v * v * Math.sin(2 * angleRad)) / GRAVITY);
 }
 
+// Pick the smallest non-putter club whose full-power carry either
+// reaches the pin or lands no more than 20 yd short. If nothing
+// reaches that threshold, fall back to the longest-carrying club.
 function pickClubForDistance(distYd, onGreen) {
   if (onGreen) return CLUBS.length - 1;
-  let bestIdx = 0;
-  let bestDiff = Infinity;
+  const minAcceptable = distYd - 20;
+  const carries = [];
   for (let i = 0; i < CLUBS.length - 1; i++) {
-    const c = CLUBS[i];
-    const carryPx = computeCarry(c, 1.0);
-    const carryYd = carryPx / TILE * YARDS_PER_TILE;
-    const diff = Math.abs(carryYd - distYd * 1.02);
-    if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+    const carryPx = computeCarry(CLUBS[i], 1.0);
+    carries.push({ idx: i, carryYd: (carryPx / TILE) * YARDS_PER_TILE });
   }
-  return bestIdx;
+  carries.sort((a, b) => a.carryYd - b.carryYd);
+  for (const c of carries) {
+    if (c.carryYd >= minAcceptable) return c.idx;
+  }
+  return carries[carries.length - 1].idx;
 }
 
 // Character + club + lie-aware launch. opts carries in the selected golfer's
