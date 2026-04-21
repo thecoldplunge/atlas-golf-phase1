@@ -2835,7 +2835,19 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       }
       const scale = baseScale * zoomRef.current;
       let followX, followY, anchorOffsetX = 0, anchorOffsetY = 0;
-      if (isPutting && (sw.state === SW.IDLE || sw.state === SW.AIMING || sw.state === SW.SWIPING || sw.state === SW.STOPPED)) {
+      // Ball-in-motion always wins over the VIEW toggle — once the
+      // player has swung, the camera leads the ball so the shot is
+      // actually visible. Applies equally to aim mode, golfer mode,
+      // and putting.
+      const ballMoving =
+        sw.state === SW.FLYING || sw.state === SW.ROLLING || sw.state === SW.DROPPING;
+      if (ballMoving) {
+        const lead = sw.state === SW.FLYING ? 0.6 : 0.3;
+        followX = ball.x + (ball.vx || 0) * lead;
+        followY = ball.y + (ball.vy || 0) * lead;
+        anchorOffsetX = isTabletGS ? (viewW * 0.20) / scale : 0;
+        anchorOffsetY = isTabletGS ? 0 : -(viewH * 0.22) / scale;
+      } else if (isPutting && (sw.state === SW.IDLE || sw.state === SW.AIMING || sw.state === SW.SWIPING || sw.state === SW.STOPPED)) {
         const flagX = FLAG.x * TILE;
         const flagY = FLAG.y * TILE;
         followX = (ball.x + flagX) / 2;
