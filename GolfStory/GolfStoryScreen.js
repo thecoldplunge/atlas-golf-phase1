@@ -2081,35 +2081,36 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         <Pressable style={styles.zoomBtn} onPress={() => zoomActions.current.zoomOut && zoomActions.current.zoomOut()}>
           <Text style={styles.zoomText}>－</Text>
         </Pressable>
+        {/* View toggle lives here (under the zoom stack) so it doesn't
+            fight the bottom row for horizontal space. */}
+        <Pressable style={styles.viewToggleBtn} onPress={() => setCameraMode(cameraMode === 'aim' ? 'golfer' : 'aim')}>
+          <Text style={styles.zoomLabel}>VIEW</Text>
+          <Text style={{ color: '#fff6d8', fontSize: 13, fontWeight: '800', letterSpacing: 1 }}>{cameraMode === 'aim' ? 'AIM' : 'ME'}</Text>
+        </Pressable>
       </View>
 
+      {/* Bottom-row HUD cards: CLUB · SHAPE · TYPE. Each is 78–84 wide so
+          all three fit left of the SWING button on a 390+ viewport. VIEW
+          now lives in the right-side zoom column (above). */}
       <Pressable style={styles.clubCard} onPress={() => setClubPicker(true)}>
-        <Text style={styles.hudLabel}>CLUB · tap to change</Text>
-        <Text style={styles.hudClubShort}>{hud.clubShort}</Text>
-        <Text style={styles.hudValue}>{hud.club}</Text>
-        <Text style={styles.hudSub}>{hud.clubCarryYd} yd max</Text>
+        <Text style={styles.hudLabel}>CLUB</Text>
+        <Text style={[styles.hudClubShort, { fontSize: 22 }]}>{hud.clubShort}</Text>
+        <Text style={[styles.hudSub, { marginTop: 2 }]}>{hud.clubCarryYd} yd</Text>
       </Pressable>
 
       <Pressable style={styles.shapeCard} onPress={() => setShapeOverlay(true)}>
-        <Text style={styles.hudLabel}>SHAPE · tap</Text>
+        <Text style={styles.hudLabel}>SHAPE</Text>
         <View style={styles.shapeBall}>
           <View style={styles.shapeCrossH} />
           <View style={styles.shapeCrossV} />
           <View style={[styles.shapeDot, { left: shapeDotLeft, top: shapeDotTop }]} />
         </View>
-        <Text style={[styles.hudValue, { textAlign: 'center', marginTop: 2 }]}>{hud.shape}</Text>
+        <Text style={[styles.hudValue, { textAlign: 'center', marginTop: 2, fontSize: 11 }]}>{hud.shape}</Text>
       </Pressable>
 
-      {/* Shot type picker — Normal / Chip / Flop / Stinger / Bump & Run. */}
       <Pressable style={styles.typeCard} onPress={() => setShotTypeMenuOpen((v) => !v)}>
-        <Text style={styles.hudLabel}>TYPE · tap</Text>
-        <Text style={[styles.hudValue, { textAlign: 'center', marginTop: 4 }]}>{(SHOT_TYPE_PROFILES[hudShotType] || SHOT_TYPE_PROFILES.normal).label}</Text>
-      </Pressable>
-
-      {/* Camera focus toggle — Aim ↔ Me. */}
-      <Pressable style={styles.viewToggleBtn} onPress={() => setCameraMode(cameraMode === 'aim' ? 'golfer' : 'aim')}>
-        <Text style={styles.hudLabel}>VIEW</Text>
-        <Text style={[styles.hudValue, { textAlign: 'center', marginTop: 4 }]}>{cameraMode === 'aim' ? 'AIM' : 'ME'}</Text>
+        <Text style={styles.hudLabel}>TYPE</Text>
+        <Text style={[styles.hudValue, { textAlign: 'center', marginTop: 10, fontSize: 12 }]}>{(SHOT_TYPE_PROFILES[hudShotType] || SHOT_TYPE_PROFILES.normal).label}</Text>
       </Pressable>
 
       {shotTypeMenuOpen ? (
@@ -2381,29 +2382,32 @@ const styles = StyleSheet.create({
   zoomLabel: { color: '#a9d4a9', fontSize: 10, marginVertical: 2 },
 
   clubCard: {
-    position: 'absolute', bottom: 24, left: 16,
+    position: 'absolute', bottom: 24, left: 8,
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
-    paddingHorizontal: 12, paddingVertical: 10, width: 160,
+    paddingHorizontal: 2, paddingVertical: 6, width: 64, alignItems: 'center',
   },
   shapeCard: {
-    position: 'absolute', bottom: 24, left: 192,
+    position: 'absolute', bottom: 24, left: 76,
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
-    paddingHorizontal: 8, paddingVertical: 6, width: 96, alignItems: 'center',
+    paddingHorizontal: 2, paddingVertical: 6, width: 64, alignItems: 'center',
   },
   typeCard: {
-    position: 'absolute', bottom: 24, left: 296,
+    position: 'absolute', bottom: 24, left: 144,
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
-    paddingHorizontal: 8, paddingVertical: 6, width: 96, alignItems: 'center',
+    paddingHorizontal: 2, paddingVertical: 6, width: 64, alignItems: 'center',
   },
+  // VIEW toggle moved up to the right-side zoom column so the bottom HUD
+  // row stays narrow enough for the SWING button. Rendered as a small
+  // stacked button just under the zoom −/+/label group (see JSX).
   viewToggleBtn: {
-    position: 'absolute', bottom: 24, left: 400,
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
-    paddingHorizontal: 8, paddingVertical: 6, width: 70, alignItems: 'center',
+    width: 44, paddingVertical: 6, alignItems: 'center', marginTop: 8,
   },
+  // Shot-type picker popup, aligned directly above the TYPE card.
   shotTypeOverlay: {
-    position: 'absolute', bottom: 96, left: 192,
+    position: 'absolute', bottom: 96, left: 12,
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
-    padding: 8, gap: 4, minWidth: 260, zIndex: 80,
+    padding: 8, gap: 4, width: 260, zIndex: 80,
   },
   shotTypeOpt: {
     paddingVertical: 8, paddingHorizontal: 10,
@@ -2436,11 +2440,11 @@ const styles = StyleSheet.create({
   shapeDot: { position: 'absolute', width: 5, height: 5, marginLeft: -2, marginTop: -2, backgroundColor: '#fbe043', borderRadius: 3 },
 
   swingBtn: {
-    position: 'absolute', bottom: 24, right: 16,
+    position: 'absolute', bottom: 24, right: 10,
     backgroundColor: '#e33838', borderWidth: 3, borderColor: '#fff',
-    paddingVertical: 24, paddingHorizontal: 26, borderRadius: 44,
+    paddingVertical: 18, paddingHorizontal: 14, borderRadius: 36,
     alignItems: 'center', justifyContent: 'center',
-    minWidth: 130,
+    minWidth: 94,
     touchAction: 'none',
   },
   swingBtnDisabled: { backgroundColor: '#5a2a2a', borderColor: '#808080', opacity: 0.55 },
