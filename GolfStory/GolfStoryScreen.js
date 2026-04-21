@@ -2299,7 +2299,13 @@ export default function GolfStoryScreen(props) {
 }
 
 function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCatalog, allGolfers = [] }) {
-  const [orientation, setOrientation] = useState(null);
+  // Orientation is auto-picked from the viewport so we never make the
+  // player tap an extra device-picker screen — match setup is the
+  // first thing they see when entering Golf Story.
+  const [orientation, setOrientation] = useState(() => {
+    if (typeof window === 'undefined') return 'portrait';
+    return window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
+  });
   // matchConfig === null  →  show match-setup picker before any play.
   // Otherwise: { players: [{ id, name, isNPC, golfer }, ...] }
   const [matchConfig, setMatchConfig] = useState(null);
@@ -3824,37 +3830,13 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
     );
   }
 
-  if (!orientation) {
-    return (
-      <View style={styles.root}>
-        <View style={pickerStyles.wrap}>
-          <Text style={pickerStyles.title}>CHOOSE YOUR DEVICE</Text>
-          <Text style={pickerStyles.sub}>Affects screen layout + course view orientation</Text>
-          <Pressable style={pickerStyles.card} onPress={() => setOrientation('portrait')}>
-            <Text style={pickerStyles.cardIcon}>▯</Text>
-            <Text style={pickerStyles.cardTitle}>iPHONE / PHONE</Text>
-            <Text style={pickerStyles.cardBody}>Portrait.  Hole plays bottom → top.</Text>
-          </Pressable>
-          <Pressable style={pickerStyles.card} onPress={() => setOrientation('landscape')}>
-            <Text style={pickerStyles.cardIcon}>▭</Text>
-            <Text style={pickerStyles.cardTitle}>iPAD / TABLET</Text>
-            <Text style={pickerStyles.cardBody}>Landscape.  Hole plays left → right.</Text>
-          </Pressable>
-          <Pressable style={pickerStyles.back} onPress={onExit}>
-            <Text style={pickerStyles.backText}>← back to menu</Text>
-          </Pressable>
-        </View>
-      </View>
-    );
-  }
-
   if (!matchConfig) {
     return (
       <MatchSetupOverlay
         allGolfers={allGolfers}
         defaultHuman={selectedGolfer}
         onStart={(config) => setMatchConfig(config)}
-        onBack={() => setOrientation(null)}
+        onBack={onExit}
       />
     );
   }
