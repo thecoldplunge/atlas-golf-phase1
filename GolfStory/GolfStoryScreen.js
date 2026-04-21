@@ -2212,8 +2212,18 @@ function drawSwipeFeedback(ctx, swipe, dpr) {
   // straight upward swipe holds the dashed line vertical and tinted
   // green; drifting left / right hooks the line sideways and warms it.
   if (swipe.locked) {
-    const cx = swipe.currentX, cy = swipe.currentY;
-    const devPx = cx - swipe.peakX;
+    // Clamp the indicator endpoint so the dashed forward-swing line
+    // can't visually extend past the start ring — a long pull-through
+    // otherwise reads as "more than 100%" even though the backswing
+    // peak (power) was long since locked.
+    const rawDx = swipe.currentX - px;
+    const rawDy = swipe.currentY - py;
+    const rawLen = Math.hypot(rawDx, rawDy);
+    const maxLen = maxRadius * 1.05;
+    const scale = rawLen > maxLen ? maxLen / rawLen : 1;
+    const cx = px + rawDx * scale;
+    const cy = py + rawDy * scale;
+    const devPx = swipe.currentX - swipe.peakX;
     const devNorm = Math.max(-1, Math.min(1, devPx / (45 * dpr)));
     const devHue = 120 - Math.abs(devNorm) * 110;
     ctx.strokeStyle = `hsla(${devHue}, 80%, 60%, 0.9)`;
@@ -3053,12 +3063,16 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       const s = swipeRef.current;
       if (!s) return;
       const dpr = window.devicePixelRatio || 1;
+      const maxPull = 80 * dpr;
       s.currentX = canvasX; s.currentY = canvasY;
       const dy = canvasY - s.startY;
       if (!s.locked) {
         if (dy > s.peakDy) {
-          // Still pulling down — charge power.
-          s.peakDy = dy;
+          // Still pulling down — charge power. Clamp at the 100% cap
+          // so we can't accumulate "past 100%" internally. Keeps the
+          // visual feedback, the internal power, and the committed
+          // shot all locked to the same ceiling.
+          s.peakDy = Math.min(dy, maxPull);
           s.peakX = canvasX;
           s.peakY = canvasY;
         } else if (s.peakDy > 20 * dpr && (s.peakY - canvasY) > 8 * dpr) {
