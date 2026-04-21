@@ -5,11 +5,11 @@
 
 const TILE = 16;
 const GRAVITY = 70;
-const TREE_CANOPY_R = 19;
-const TREE_CANOPY_Z_LO = 6;
-const TREE_CANOPY_Z_HI = 22;
-const TREE_TRUNK_R = 4;
-const TREE_TRUNK_Z_HI = 8;
+const TREE_CANOPY_R = 28;
+const TREE_CANOPY_Z_LO = 12;
+const TREE_CANOPY_Z_HI = 42;
+const TREE_TRUNK_R = 5;
+const TREE_TRUNK_Z_HI = 14;
 
 function step(b, dt, trees) {
   if (b.state === 'flying') {
@@ -86,26 +86,27 @@ console.log('Tree collision QA\n');
 {
   const tree = { x: 10, y: 10 };
   const b = simulate(
-    { x: tree.x * TILE - 40, y: tree.y * TILE, vx: 90, vy: 0, vz: 120 },
+    { x: tree.x * TILE - 40, y: tree.y * TILE, vx: 90, vy: 0, vz: 350 },
     [tree],
-    { maxSteps: 20 },
+    { maxSteps: 40 },
   );
-  // During this 20-step window, ball should still be flying and have cleared
-  // the canopy altitude band (z > TREE_CANOPY_Z_HI) by the time it reaches
-  // the tree column.
+  // With vz=350 the ball is above the TREE_CANOPY_Z_HI (42) band
+  // before vx=90 carries it close enough to the tree to trigger the
+  // collision circle.
   assert(b.lastHit !== 'canopy' && b.lastHit !== 'trunk',
     'high-apex shot passes through untouched', b.lastHit || 'none');
 }
 
-// 2. Low stinger at z ~ 14 (inside canopy band) bleeds speed in the leaves.
+// 2. Mid-altitude shot (z ~ 25 — inside canopy band, above trunk) bleeds
+//    speed in the leaves without triggering the trunk.
 {
   const tree = { x: 10, y: 10 };
   const b = simulate(
-    { x: tree.x * TILE - 20, y: tree.y * TILE, vx: 120, vy: 0, vz: 0, z: 14 },
+    { x: tree.x * TILE - 20, y: tree.y * TILE, vx: 120, vy: 0, vz: 0, z: 25 },
     [tree],
-    { maxSteps: 15 },
+    { maxSteps: 12 },
   );
-  assert(b.lastHit === 'canopy', 'low stinger catches canopy drag', b.lastHit);
+  assert(b.lastHit === 'canopy', 'mid-altitude catches canopy drag (not trunk)', b.lastHit);
   assert(Math.abs(b.vx) < 120, '  horizontal velocity bled', b.vx.toFixed(1));
 }
 
