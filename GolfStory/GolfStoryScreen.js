@@ -7,11 +7,14 @@ const HOLE_RADIUS = 4;
 // Tree collision tuning (world px). Canopy is a horizontal-circle drag
 // zone active only in the canopy altitude band. Trunk is a tight
 // hard-impact core near the ground; trunks also stop rolling balls.
-const TREE_CANOPY_R = 19;
-const TREE_CANOPY_Z_LO = 6;
-const TREE_CANOPY_Z_HI = 22;
-const TREE_TRUNK_R = 4;
-const TREE_TRUNK_Z_HI = 8;
+// Scaled with the v0.40 sprite upscale so collisions match the visible
+// silhouette — canopy ~30 px radius (crown is ~32 px wide), z band
+// extends higher since the new canopy reaches y-40.
+const TREE_CANOPY_R = 28;
+const TREE_CANOPY_Z_LO = 12;
+const TREE_CANOPY_Z_HI = 42;
+const TREE_TRUNK_R = 5;
+const TREE_TRUNK_Z_HI = 14;
 const YARDS_PER_TILE = 10;
 const MAX_LEAVES = 14;
 
@@ -901,90 +904,183 @@ function drawBush(ctx, px, py, variant, time, windStrength) {
   }
 }
 
-// Pixel-art trees come in three silhouettes (leafy / palm / pine)
-// selected per tree via a position hash at load time. All three share
-// the same trunk style and ground shadow so the canopy/frond shape is
-// the only thing that reads as distinct.
+// Pixel-art trees — three silhouettes dispatched by tree.variant.
+// Scaled ~2.1× vs. the pre-v0.40 sprite so they read as distinct
+// props at 1.0× game zoom. Canopy base overlaps the trunk top so
+// there's no visible gap between crown and stem.
+function drawTreeShadow(ctx, x, y) {
+  // Chunky stepped ellipse — 28×8 footprint, anchored just below
+  // the trunk base. Pixel-style (no smooth curves) matches the rest
+  // of the sprite art.
+  ctx.fillStyle = COLORS.shadow;
+  ctx.fillRect(x - 5, y + 1, 11, 1);
+  ctx.fillRect(x - 9, y + 2, 19, 1);
+  ctx.fillRect(x - 12, y + 3, 25, 2);
+  ctx.fillRect(x - 9, y + 5, 19, 1);
+  ctx.fillRect(x - 5, y + 6, 11, 1);
+}
+
 function drawLeafyCanopy(ctx, x, y, sF) {
-  // Stacked rectangular cloud — blockier than the old ellipse tree,
-  // reads as pixel art at 2×+ zoom.
   const cx = x + sF;
-  // Back layer — darkest.
+  // Darkest base layer — spans the full silhouette. Canopy bottom
+  // overlaps the trunk top (trunk ends at y-14; canopy bottom at y-13).
   ctx.fillStyle = COLORS.tree0;
-  ctx.fillRect(cx - 6, y - 11, 12, 2);
-  ctx.fillRect(cx - 7, y - 13, 14, 2);
-  ctx.fillRect(cx - 6, y - 15, 12, 2);
-  ctx.fillRect(cx - 4, y - 17, 8, 2);
-  ctx.fillRect(cx - 2, y - 18, 4, 1);
-  // Mid tone — left/up shift.
-  ctx.fillStyle = COLORS.tree2;
-  ctx.fillRect(cx - 5, y - 14, 5, 2);
-  ctx.fillRect(cx - 3, y - 16, 4, 1);
-  ctx.fillRect(cx - 1, y - 17, 2, 1);
-  // Highlight dots.
-  ctx.fillStyle = COLORS.tree4;
-  ctx.fillRect(cx - 4, y - 13, 1, 1);
-  ctx.fillRect(cx - 2, y - 15, 1, 1);
-  ctx.fillRect(cx,     y - 17, 1, 1);
-  // Shadow dots on the far side.
+  ctx.fillRect(cx - 13, y - 19, 26, 6);
+  ctx.fillRect(cx - 15, y - 25, 30, 6);
+  ctx.fillRect(cx - 13, y - 31, 26, 6);
+  ctx.fillRect(cx - 10, y - 35, 20, 4);
+  ctx.fillRect(cx - 6,  y - 38, 12, 3);
+  ctx.fillRect(cx - 3,  y - 40, 6,  2);
+  // Mid green — main body.
   ctx.fillStyle = COLORS.tree1;
-  ctx.fillRect(cx + 4, y - 12, 1, 1);
-  ctx.fillRect(cx + 5, y - 14, 1, 1);
-  ctx.fillRect(cx + 3, y - 16, 1, 1);
+  ctx.fillRect(cx - 11, y - 19, 22, 4);
+  ctx.fillRect(cx - 13, y - 23, 23, 6);
+  ctx.fillRect(cx - 11, y - 29, 20, 4);
+  ctx.fillRect(cx - 8,  y - 33, 14, 3);
+  ctx.fillRect(cx - 4,  y - 37, 8,  2);
+  // Light layer (upper-left lit side).
+  ctx.fillStyle = COLORS.tree2;
+  ctx.fillRect(cx - 10, y - 20, 6, 2);
+  ctx.fillRect(cx - 12, y - 24, 6, 3);
+  ctx.fillRect(cx - 10, y - 29, 4, 2);
+  ctx.fillRect(cx - 7,  y - 32, 3, 2);
+  ctx.fillRect(cx - 4,  y - 36, 2, 1);
+  // Brighter highlights.
+  ctx.fillStyle = COLORS.tree3;
+  ctx.fillRect(cx - 9, y - 22, 4, 1);
+  ctx.fillRect(cx - 11, y - 26, 3, 2);
+  ctx.fillRect(cx - 9, y - 30, 2, 1);
+  ctx.fillRect(cx - 5, y - 34, 3, 1);
+  ctx.fillRect(cx - 2, y - 37, 2, 1);
+  // Brightest pixel dots — rim light on the crown.
+  ctx.fillStyle = COLORS.tree4;
+  ctx.fillRect(cx - 9, y - 27, 1, 1);
+  ctx.fillRect(cx - 7, y - 32, 1, 1);
+  ctx.fillRect(cx - 3, y - 36, 1, 1);
+  ctx.fillRect(cx,     y - 39, 1, 1);
+  ctx.fillStyle = COLORS.tree5;
+  ctx.fillRect(cx - 1, y - 40, 2, 1);
+  // Dark dots on the shaded (far) side for foliage texture.
+  ctx.fillStyle = COLORS.tree0;
+  ctx.fillRect(cx + 7,  y - 21, 2, 1);
+  ctx.fillRect(cx + 10, y - 24, 2, 1);
+  ctx.fillRect(cx + 9,  y - 28, 1, 1);
+  ctx.fillRect(cx + 7,  y - 32, 2, 1);
+  ctx.fillRect(cx + 4,  y - 36, 1, 1);
+  // Individual leaf clumps — tiny 1×1 mid-green dots scattered across
+  // the crown to break up big fills.
+  ctx.fillStyle = COLORS.tree2;
+  ctx.fillRect(cx - 13, y - 22, 1, 1);
+  ctx.fillRect(cx + 11, y - 22, 1, 1);
+  ctx.fillRect(cx - 14, y - 26, 1, 1);
+  ctx.fillRect(cx + 12, y - 27, 1, 1);
+  ctx.fillRect(cx - 11, y - 33, 1, 1);
+  ctx.fillRect(cx + 9,  y - 34, 1, 1);
 }
 
 function drawPalmCanopy(ctx, x, y, sF) {
-  // Slender curving trunk already drawn; this just adds fronds.
+  // Palm has a taller trunk (drawn separately in drawTree) so the
+  // fronds sit higher up. Eight splayed fronds in dark + light
+  // tones with a small coconut cluster at the crown.
   const fx = x + sF;
-  // Dark backing fronds — two swept sides + two droopers.
+  const cy = y - 28; // crown centre
+  // Dark base fronds — wide sweep.
   ctx.fillStyle = COLORS.tree1;
-  ctx.fillRect(fx - 7, y - 14, 6, 1);
-  ctx.fillRect(fx - 6, y - 15, 4, 1);
-  ctx.fillRect(fx - 5, y - 16, 3, 1);
-  ctx.fillRect(fx + 1, y - 14, 6, 1);
-  ctx.fillRect(fx + 2, y - 15, 4, 1);
-  ctx.fillRect(fx + 3, y - 16, 3, 1);
-  ctx.fillRect(fx - 5, y - 12, 3, 1);
-  ctx.fillRect(fx - 4, y - 11, 2, 1);
-  ctx.fillRect(fx + 2, y - 12, 3, 1);
-  ctx.fillRect(fx + 2, y - 11, 2, 1);
-  // Lighter frond tips.
+  // Left swept frond.
+  ctx.fillRect(fx - 13, cy + 3, 4, 1);
+  ctx.fillRect(fx - 11, cy + 2, 6, 1);
+  ctx.fillRect(fx - 9,  cy + 1, 6, 1);
+  ctx.fillRect(fx - 7,  cy,     5, 1);
+  // Right swept frond.
+  ctx.fillRect(fx + 9,  cy + 3, 4, 1);
+  ctx.fillRect(fx + 5,  cy + 2, 6, 1);
+  ctx.fillRect(fx + 3,  cy + 1, 6, 1);
+  ctx.fillRect(fx + 2,  cy,     5, 1);
+  // Upper-left frond.
+  ctx.fillRect(fx - 10, cy - 4, 3, 1);
+  ctx.fillRect(fx - 8,  cy - 3, 5, 1);
+  ctx.fillRect(fx - 6,  cy - 2, 5, 1);
+  ctx.fillRect(fx - 4,  cy - 1, 4, 1);
+  // Upper-right frond.
+  ctx.fillRect(fx + 7,  cy - 4, 3, 1);
+  ctx.fillRect(fx + 3,  cy - 3, 5, 1);
+  ctx.fillRect(fx + 1,  cy - 2, 5, 1);
+  ctx.fillRect(fx,      cy - 1, 4, 1);
+  // Central vertical fronds (up).
+  ctx.fillRect(fx - 2, cy - 7, 4, 2);
+  ctx.fillRect(fx - 1, cy - 9, 2, 2);
+  // Drooping side fronds (down-left / down-right).
+  ctx.fillRect(fx - 9, cy + 5, 4, 1);
+  ctx.fillRect(fx - 7, cy + 6, 3, 1);
+  ctx.fillRect(fx + 5, cy + 5, 4, 1);
+  ctx.fillRect(fx + 4, cy + 6, 3, 1);
+  // Mid green on the upper sides — adds dimension.
+  ctx.fillStyle = COLORS.tree2;
+  ctx.fillRect(fx - 9,  cy - 2, 3, 1);
+  ctx.fillRect(fx + 6,  cy - 2, 3, 1);
+  ctx.fillRect(fx - 11, cy + 1, 2, 1);
+  ctx.fillRect(fx + 9,  cy + 1, 2, 1);
+  ctx.fillRect(fx - 1,  cy - 6, 2, 1);
+  // Highlights along frond tops.
   ctx.fillStyle = COLORS.tree3;
-  ctx.fillRect(fx - 7, y - 15, 2, 1);
-  ctx.fillRect(fx + 5, y - 15, 2, 1);
-  ctx.fillRect(fx - 2, y - 17, 5, 1);
-  // Coconut cluster centered on the trunk head.
+  ctx.fillRect(fx - 13, cy + 2, 2, 1);
+  ctx.fillRect(fx + 11, cy + 2, 2, 1);
+  ctx.fillRect(fx - 10, cy - 3, 2, 1);
+  ctx.fillRect(fx + 8,  cy - 3, 2, 1);
+  ctx.fillRect(fx - 1,  cy - 10, 2, 1);
+  // Coconut cluster — three dark balls under the crown.
   ctx.fillStyle = COLORS.trunkDark;
-  ctx.fillRect(fx,     y - 14, 1, 1);
-  ctx.fillRect(fx + 1, y - 14, 1, 1);
+  ctx.fillRect(fx - 2, cy + 2, 2, 2);
+  ctx.fillRect(fx + 1, cy + 2, 2, 2);
   ctx.fillStyle = COLORS.trunkHi;
-  ctx.fillRect(fx,     y - 14, 1, 1);
+  ctx.fillRect(fx - 2, cy + 2, 1, 1);
+  ctx.fillRect(fx + 1, cy + 2, 1, 1);
 }
 
 function drawPineCanopy(ctx, x, y, sF) {
   const cx = x + sF;
-  // Stacked conifer triangles — narrower than leafy, pointier.
-  ctx.fillStyle = COLORS.tree1;
-  ctx.fillRect(cx - 6, y - 8,  12, 2);
-  ctx.fillRect(cx - 5, y - 10, 10, 2);
-  ctx.fillRect(cx - 4, y - 12, 8,  2);
-  ctx.fillRect(cx - 3, y - 14, 6,  2);
-  ctx.fillRect(cx - 2, y - 16, 4,  2);
-  ctx.fillRect(cx - 1, y - 18, 2,  2);
-  ctx.fillRect(cx,     y - 19, 1,  1);
-  // Left-edge highlights.
-  ctx.fillStyle = COLORS.tree3;
-  ctx.fillRect(cx - 6, y - 8,  1, 1);
-  ctx.fillRect(cx - 5, y - 10, 1, 1);
-  ctx.fillRect(cx - 4, y - 12, 1, 1);
-  ctx.fillRect(cx - 3, y - 14, 1, 1);
-  ctx.fillRect(cx - 2, y - 16, 1, 1);
-  // Inner dark accents (far side).
+  // Stacked triangles — overlaps the trunk top at y-14.
   ctx.fillStyle = COLORS.tree0;
-  ctx.fillRect(cx + 3, y - 9,  2, 1);
-  ctx.fillRect(cx + 2, y - 11, 2, 1);
-  ctx.fillRect(cx + 1, y - 13, 2, 1);
-  ctx.fillRect(cx,     y - 15, 2, 1);
+  ctx.fillRect(cx - 11, y - 17, 22, 5);
+  ctx.fillRect(cx - 9,  y - 22, 18, 5);
+  ctx.fillRect(cx - 7,  y - 27, 14, 5);
+  ctx.fillRect(cx - 5,  y - 32, 10, 5);
+  ctx.fillRect(cx - 3,  y - 37, 6,  5);
+  ctx.fillRect(cx - 1,  y - 40, 2,  3);
+  // Mid green — main body of needles.
+  ctx.fillStyle = COLORS.tree1;
+  ctx.fillRect(cx - 9, y - 17, 17, 3);
+  ctx.fillRect(cx - 7, y - 21, 14, 4);
+  ctx.fillRect(cx - 5, y - 26, 10, 3);
+  ctx.fillRect(cx - 3, y - 31, 6,  3);
+  ctx.fillRect(cx - 1, y - 36, 3,  2);
+  // Bright highlights on the lit (west) side — catch the light.
+  ctx.fillStyle = COLORS.tree3;
+  ctx.fillRect(cx - 11, y - 17, 1, 1);
+  ctx.fillRect(cx - 10, y - 19, 1, 1);
+  ctx.fillRect(cx - 9,  y - 22, 1, 1);
+  ctx.fillRect(cx - 8,  y - 24, 1, 1);
+  ctx.fillRect(cx - 7,  y - 27, 1, 1);
+  ctx.fillRect(cx - 6,  y - 29, 1, 1);
+  ctx.fillRect(cx - 5,  y - 32, 1, 1);
+  ctx.fillRect(cx - 4,  y - 34, 1, 1);
+  ctx.fillRect(cx - 3,  y - 37, 1, 1);
+  ctx.fillRect(cx - 2,  y - 39, 1, 1);
+  ctx.fillRect(cx - 1,  y - 41, 1, 1);
+  // Edge shadow on the far side.
+  ctx.fillStyle = COLORS.tree0;
+  ctx.fillRect(cx + 7,  y - 17, 3, 1);
+  ctx.fillRect(cx + 6,  y - 22, 2, 1);
+  ctx.fillRect(cx + 4,  y - 27, 2, 1);
+  ctx.fillRect(cx + 3,  y - 32, 1, 1);
+  // Needle texture dots across the body.
+  ctx.fillStyle = COLORS.tree2;
+  ctx.fillRect(cx - 6, y - 18, 1, 1);
+  ctx.fillRect(cx + 3, y - 19, 1, 1);
+  ctx.fillRect(cx - 4, y - 23, 1, 1);
+  ctx.fillRect(cx + 2, y - 24, 1, 1);
+  ctx.fillRect(cx - 2, y - 28, 1, 1);
+  ctx.fillRect(cx + 1, y - 33, 1, 1);
 }
 
 function drawTree(ctx, px, py, time, windStrength, variant) {
@@ -992,31 +1088,35 @@ function drawTree(ctx, px, py, time, windStrength, variant) {
   const seed = (x * 0.29 + y * 0.71);
   const sway = Math.sin(time * 0.0018 + seed) * windStrength * 1.4;
   const sF = Math.floor(sway);
-  // Ground shadow — ellipse-soft so it reads as contact, not pixel.
-  ctx.fillStyle = COLORS.shadow;
-  ctx.beginPath();
-  ctx.ellipse(x + 1, y + 2, 13, 4, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Trunk — palm uses a tall slender trunk with bands, others a stocky
-  // two-tone block.
+  // Pixel shadow — size held at ~28×8 footprint.
+  drawTreeShadow(ctx, x + 1, y - 1);
+  // Trunk — palms get a tall slender banded trunk; leafy and pine
+  // share a stocky two-tone trunk with a simple bark highlight.
   if (variant === 'palm') {
+    // 22 px tall slender trunk.
     ctx.fillStyle = COLORS.trunkDark;
-    ctx.fillRect(x - 1, y - 14, 3, 14);
+    ctx.fillRect(x - 2, y - 22, 5, 22);
     ctx.fillStyle = COLORS.trunk;
-    ctx.fillRect(x - 1, y - 14, 2, 14);
+    ctx.fillRect(x - 2, y - 22, 4, 22);
     ctx.fillStyle = COLORS.trunkHi;
-    ctx.fillRect(x - 1, y - 13, 1, 11);
+    ctx.fillRect(x - 2, y - 21, 1, 19);
+    // Bark bands.
     ctx.fillStyle = COLORS.trunkDark;
-    ctx.fillRect(x - 1, y - 4,  3, 1);
-    ctx.fillRect(x - 1, y - 8,  3, 1);
-    ctx.fillRect(x - 1, y - 12, 3, 1);
+    for (let i = 3; i < 22; i += 4) ctx.fillRect(x - 2, y - i, 5, 1);
   } else {
+    // 14 px stocky trunk.
     ctx.fillStyle = COLORS.trunkDark;
-    ctx.fillRect(x - 2, y - 7, 4, 7);
+    ctx.fillRect(x - 3, y - 14, 7, 14);
     ctx.fillStyle = COLORS.trunk;
-    ctx.fillRect(x - 2, y - 7, 3, 7);
+    ctx.fillRect(x - 3, y - 14, 5, 14);
     ctx.fillStyle = COLORS.trunkHi;
-    ctx.fillRect(x - 2, y - 6, 1, 5);
+    ctx.fillRect(x - 3, y - 13, 1, 12);
+    // Bark ridges — small dark flecks for texture.
+    ctx.fillStyle = COLORS.trunkDark;
+    ctx.fillRect(x - 2, y - 11, 1, 1);
+    ctx.fillRect(x,     y - 9,  1, 1);
+    ctx.fillRect(x - 1, y - 6,  1, 1);
+    ctx.fillRect(x + 1, y - 4,  1, 1);
   }
   if (variant === 'palm') drawPalmCanopy(ctx, x, y, sF);
   else if (variant === 'pine') drawPineCanopy(ctx, x, y, sF);
@@ -2678,67 +2778,27 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       const baseScale = 2 * dpr;
       const minScale = Math.max(viewW / WORLD_W, viewH / WORLD_H);
       const minZoomHere = Math.max(0.5, minScale / baseScale);
-      if (zoomRef.current < minZoomHere) zoomRef.current = minZoomHere;
       const cMode = cameraModeRef.current;
       const isTabletGS = (viewW / dpr) >= 700;
       const selectedClub = CLUBS[sw.clubIdx] || CLUBS[0];
       const isPutting = selectedClub.key === 'PT';
-      // Putting framing beats the normal aim/golfer toggle: always center
-      // between ball and flag, and dial the zoom so the entire putt sits
-      // comfortably in the frame. Runs BEFORE `scale` is finalised so
-      // anchor-offset math uses the putting scale this same frame.
-      if (isPutting && !zoomUserOverrideRef.current && (sw.state === SW.IDLE || sw.state === SW.AIMING || sw.state === SW.SWIPING || sw.state === SW.STOPPED)) {
+      // Zoom is fixed — 1.0× normally, 1.5× when putting. No +/- manual
+      // override, no auto-fit fiddling. The minZoom floor still applies
+      // so tiny viewports don't clip the world.
+      zoomRef.current = Math.max(minZoomHere, isPutting ? 1.5 : 1.0);
+      // Putter auto-shot-type: pick Tap (50% roll) when the ball is
+      // close enough that a normal putt would sail past the cup.
+      if (isPutting && (sw.state === SW.IDLE || sw.state === SW.AIMING || sw.state === SW.SWIPING || sw.state === SW.STOPPED)
+          && !shotTypeManualRef.current) {
         const flagX = FLAG.x * TILE;
         const flagY = FLAG.y * TILE;
         const dist = Math.hypot(flagX - ball.x, flagY - ball.y);
-        const shortPx = Math.min(viewW, viewH);
-        const desiredScale = (shortPx * 0.55) / Math.max(16, dist);
-        zoomRef.current = Math.max(1.5, Math.min(2.0, desiredScale / baseScale));
-        // Auto-select Tap (50% roll) if it would reach the hole. Tap's
-        // full-power carry is 0.5 × club.v in world pixels; if the ball is
-        // that close, a normal putt would sail past the cup. Only applies
-        // when the player hasn't manually overridden the shot type for
-        // this shot.
-        if (!shotTypeManualRef.current) {
-          const tapReach = selectedClub.v * 0.5;
-          const want = dist <= tapReach ? 'tap' : 'normal';
-          if (sw.shotType !== want) {
-            sw.shotType = want;
-            if (hudShotType !== want) setHudShotType(want);
-          }
+        const tapReach = selectedClub.v * 0.5;
+        const want = dist <= tapReach ? 'tap' : 'normal';
+        if (sw.shotType !== want) {
+          sw.shotType = want;
+          if (hudShotType !== want) setHudShotType(want);
         }
-      } else if (
-        cMode === 'aim'
-        && !zoomUserOverrideRef.current
-        && (sw.state === SW.IDLE || sw.state === SW.AIMING || sw.state === SW.SWIPING)
-      ) {
-        // Aim-mode auto-zoom: at default 1.0× a 7-iron or driver carry
-        // runs right off the screen, so the landing spot ends up above
-        // the viewport. Use computeCarry (projectile formula) to get the
-        // ACTUAL carry distance — club.v is launch speed, not distance
-        // — and pick a zoom that fits the ball→landing span into ~60%
-        // of the shorter viewport axis.
-        const carryPx = computeCarry(selectedClub, 1.0);
-        const shortPx = Math.min(viewW, viewH);
-        const desiredScale = (shortPx * 0.60) / Math.max(32, carryPx);
-        const fitZoom = desiredScale / baseScale;
-        // Only zoom OUT from the current user preference — never force a
-        // tighter zoom than the player chose manually for their shape.
-        zoomRef.current = Math.max(minZoomHere, Math.min(zoomRef.current, fitZoom));
-      } else if (
-        cMode === 'aim'
-        && !zoomUserOverrideRef.current
-        && (sw.state === SW.FLYING || sw.state === SW.ROLLING)
-        && !isPutting
-      ) {
-        // Flight-mode zoom: widen to fit the arc + a little extra head
-        // room above for the apex visualisation. ~72% of the shorter
-        // axis covers carry plus typical apex (~30% of carry).
-        const carryPx = computeCarry(selectedClub, 1.0);
-        const shortPx = Math.min(viewW, viewH);
-        const desiredScale = (shortPx * 0.72) / Math.max(32, carryPx);
-        const fitZoom = desiredScale / baseScale;
-        zoomRef.current = Math.max(minZoomHere, Math.min(zoomRef.current, fitZoom));
       }
       const scale = baseScale * zoomRef.current;
       let followX, followY, anchorOffsetX = 0, anchorOffsetY = 0;
@@ -3047,15 +3107,8 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       </View>
 
       <View style={styles.zoomColumn}>
-        <Pressable style={styles.zoomBtn} onPress={() => zoomActions.current.zoomIn && zoomActions.current.zoomIn()}>
-          <Text style={styles.zoomText}>＋</Text>
-        </Pressable>
-        <Text style={styles.zoomLabel}>{(hud.zoom || 1).toFixed(1)}x</Text>
-        <Pressable style={styles.zoomBtn} onPress={() => zoomActions.current.zoomOut && zoomActions.current.zoomOut()}>
-          <Text style={styles.zoomText}>－</Text>
-        </Pressable>
-        {/* View toggle lives here (under the zoom stack) so it doesn't
-            fight the bottom row for horizontal space. */}
+        {/* Zoom is locked (1.0× / 1.5× putting) — just the VIEW toggle
+            sits here now. */}
         <Pressable style={styles.viewToggleBtn} onPress={() => setCameraMode(cameraMode === 'aim' ? 'golfer' : 'aim')}>
           <Text style={styles.zoomLabel}>VIEW</Text>
           <Text style={{ color: '#fff6d8', fontSize: 13, fontWeight: '800', letterSpacing: 1 }}>{cameraMode === 'aim' ? 'AIM' : 'ME'}</Text>
