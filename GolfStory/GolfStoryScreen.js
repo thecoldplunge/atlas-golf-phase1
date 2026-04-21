@@ -2071,8 +2071,16 @@ const SW = {
   IDLE: 'idle', AIMING: 'aiming', SWIPING: 'swiping',
   FLYING: 'flying', ROLLING: 'rolling', STOPPED: 'stopped',
   DROPPING: 'dropping',
+  SPLASHING: 'splashing',
   HAZARD: 'hazard', OB: 'ob', HOLED: 'holed',
 };
+
+// Water splash playback state — set by settleBallTransitions when
+// the ball enters a hazard, read by the renderer. Module-level so
+// the physics code can poke it without threading a ref through.
+const splashFx = { x: 0, y: 0, t: 0, active: false, droplets: [] };
+const SPLASH_DURATION = 0.5;
+const SPLASH_PAUSE = 0.02;
 
 function triggerLeafBurst(cx, cy, count) {
   // Pushes short-lived falling leaves into the shared burstLeaves
@@ -2972,7 +2980,27 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
           }
         }
       }
-      else if (ball.state === 'hazard') { sw.state = SW.HAZARD; sw.messageTimer = 2.2; sw.strokeCount++; flushHud(); }
+      else if (ball.state === 'hazard') {
+        // Play the splash first, wait 20 ms, THEN show the hazard card.
+        sw.state = SW.SPLASHING;
+        sw.messageTimer = SPLASH_DURATION + SPLASH_PAUSE;
+        sw.strokeCount++;
+        splashFx.x = ball.x;
+        splashFx.y = ball.y;
+        splashFx.t = 0;
+        splashFx.active = true;
+        splashFx.droplets.length = 0;
+        for (let i = 0; i < 9; i++) {
+          const a = Math.PI + (Math.random() * Math.PI);   // upward arcs
+          const s = 45 + Math.random() * 40;
+          splashFx.droplets.push({
+            x: 0, y: 0,
+            vx: Math.cos(a) * s * 0.6,
+            vy: Math.sin(a) * s,
+          });
+        }
+        flushHud();
+      }
       else if (ball.state === 'ob') { sw.state = SW.OB; sw.messageTimer = 2.2; sw.strokeCount++; flushHud(); }
     };
 
@@ -3397,6 +3425,22 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
           if (ball.trail.length > 40) ball.trail.shift();
         }
         settleBallTransitions();
+      } else if (sw.state === SW.SPLASHING) {
+        sw.messageTimer -= dt;
+        splashFx.t += dt;
+        // Tick droplets — gravity-ish arc and fade.
+        for (const d of splashFx.droplets) {
+          d.vy += 220 * dt;
+          d.x += d.vx * dt;
+          d.y += d.vy * dt;
+        }
+        if (sw.messageTimer <= 0) {
+          splashFx.active = false;
+          splashFx.droplets.length = 0;
+          sw.state = SW.HAZARD;
+          sw.messageTimer = 2.2;
+          flushHud();
+        }
       } else if (sw.state === SW.HAZARD || sw.state === SW.OB) {
         sw.messageTimer -= dt;
         if (sw.messageTimer <= 0) {
@@ -3404,10 +3448,22 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
           ball.vx = 0; ball.vy = 0; ball.vz = 0; ball.z = 0;
           ball.state = 'rest';
           ball.trail = [];
-          p.x = ball.x - 7; p.y = ball.y + 1; p.facing = 'E';
+          const poseA = addressPose(ball, sw.aimAngle);
+          p.x = poseA.px; p.y = poseA.py; p.facing = poseA.facing;
           aimAtFlag();
           autoPickClubAndZoom();
           sw.state = SW.AIMING;
+          // Persist current-player lie for the match bookkeeping.
+          saveActivePlayer();
+          // If the player whose ball just got penalised is an NPC,
+          // re-kick the NPC auto-swing so the turn doesn't silently
+          // stall (the previous runNPCSwing had cleared the pending
+          // flag before the ball splashed into the hazard).
+          const pl = playersRef.current[currentPlayerIdxRef.current];
+          if (pl && pl.isNPC) {
+            npcCooldownRef.current = 0.55;
+            npcPendingRef.current = true;
+          }
           flushHud();
         }
       } else if (sw.state === SW.HOLED) {
@@ -3595,7 +3651,9 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       });
       if (ball.state === 'dropping') {
         drawables.push({ kind: 'balldrop', x: ball.x, y: ball.y, t: ball.dropT / 0.75 });
-      } else if (sw.state !== SW.HOLED) {
+      } else if (sw.state !== SW.HOLED && sw.state !== SW.SPLASHING) {
+        // Hide the ball during the splash — it's "under water" until
+        // the hazard notification brings it back to the last-good lie.
         drawables.push({ kind: 'ball', x: ball.x, y: ball.y, z: ball.z });
       }
       // Always draw the golfer — players expect to see themselves
@@ -3646,6 +3704,36 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
 
       for (const leaf of leavesRef.current) drawLeaf(ctx, leaf, now);
       for (const leaf of burstLeaves) drawLeaf(ctx, leaf, now);
+
+      // Water splash — pixelated ripples + droplets at the entry point.
+      if (splashFx.active) {
+        const sx = Math.floor(splashFx.x);
+        const sy = Math.floor(splashFx.y);
+        const t = Math.max(0, Math.min(1, splashFx.t / SPLASH_DURATION));
+        // Three expanding pixel rings (chunky, stepped).
+        const ringRadii = [5 + t * 12, 3 + t * 9, 1 + t * 6];
+        const ringAlphas = [0.8 * (1 - t), 0.7 * (1 - t * 0.8), 0.9 * (1 - t * 0.6)];
+        for (let i = 0; i < 3; i++) {
+          const r = Math.floor(ringRadii[i]);
+          const a = Math.max(0, ringAlphas[i]);
+          ctx.fillStyle = `rgba(220,236,255,${a.toFixed(3)})`;
+          // Draw ring as 8-point pixel dots around circumference.
+          for (let k = 0; k < 12; k++) {
+            const ang = (k / 12) * Math.PI * 2;
+            const rx = Math.round(Math.cos(ang) * r);
+            const ry = Math.round(Math.sin(ang) * r * 0.55); // flatten for top-down
+            ctx.fillRect(sx + rx, sy + ry, 2, 1);
+          }
+        }
+        // Droplets — 2×2 light-blue pixels arcing outward.
+        ctx.fillStyle = `rgba(200,228,255,${(1 - t * 0.9).toFixed(3)})`;
+        for (const d of splashFx.droplets) {
+          ctx.fillRect(sx + Math.round(d.x), sy + Math.round(d.y), 2, 2);
+        }
+        // Central bright splash kernel fading out.
+        ctx.fillStyle = `rgba(255,255,255,${(0.9 * (1 - t)).toFixed(3)})`;
+        ctx.fillRect(sx - 1, sy - 1, 3, 2);
+      }
 
       ctx.restore();
 
@@ -3776,6 +3864,7 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
     hud.state !== SW.FLYING &&
     hud.state !== SW.ROLLING &&
     hud.state !== SW.DROPPING &&
+    hud.state !== SW.SPLASHING &&
     hud.state !== SW.HOLED &&
     hud.state !== SW.HAZARD &&
     hud.state !== SW.OB;
