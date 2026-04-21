@@ -3881,33 +3881,48 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
   );
 }
 
-// Match setup screen — picks player count (1–4), assigns YOU and up
-// to 3 CPUs to golfer profiles from the roster. Pixel-styled to match
-// the rest of the GS HUD.
+// Match setup screen — picks player count (1–4) and assigns CPU
+// golfers from the roster. The human player always uses the golfer
+// already selected on the IGT main menu, so we never ask for that
+// twice. Pixel-styled to match the rest of the GS HUD.
 function MatchSetupOverlay({ allGolfers, defaultHuman, onStart, onBack }) {
+  const safeRoster = Array.isArray(allGolfers) && allGolfers.length ? allGolfers : [];
   const [playerCount, setPlayerCount] = useState(2);
-  // slotGolferIdx[i] = index into allGolfers for player i.
-  const defaultIdx = Math.max(0, allGolfers.findIndex((g) => g.id === defaultHuman?.id));
-  const [slots, setSlots] = useState(() => {
-    const picks = [defaultIdx < 0 ? 0 : defaultIdx];
-    for (let i = 1; i < 4; i++) {
-      picks.push((picks[0] + i) % Math.max(1, allGolfers.length));
+  // CPU slot picks only — no human slot. Pre-seed them to different
+  // characters from the human so the match isn't you vs. three clones.
+  const humanIdx = Math.max(0, safeRoster.findIndex((g) => g.id === defaultHuman?.id));
+  const [cpuSlots, setCpuSlots] = useState(() => {
+    const picks = [];
+    for (let i = 0; i < 3; i++) {
+      const idx = safeRoster.length
+        ? (humanIdx + 1 + i) % safeRoster.length
+        : 0;
+      picks.push(idx);
     }
     return picks;
   });
-  const cycleSlot = (i, dir) => {
-    const next = (slots[i] + dir + allGolfers.length) % Math.max(1, allGolfers.length);
-    setSlots((arr) => arr.map((v, j) => (j === i ? next : v)));
+  const cycleCpu = (i, dir) => {
+    if (!safeRoster.length) return;
+    const next = (cpuSlots[i] + dir + safeRoster.length) % safeRoster.length;
+    setCpuSlots((arr) => arr.map((v, j) => (j === i ? next : v)));
   };
   const start = () => {
     const players = [];
-    for (let i = 0; i < playerCount; i++) {
-      const g = allGolfers[slots[i]] || allGolfers[0];
+    const human = defaultHuman || safeRoster[0] || {
+      id: 'human', name: 'YOU', stats: {}, mental: {},
+    };
+    players.push({
+      id: 'p1',
+      name: human.name || 'YOU',
+      isNPC: false,
+      golfer: human,
+    });
+    for (let i = 1; i < playerCount; i++) {
+      const g = safeRoster[cpuSlots[i - 1]] || safeRoster[0] || null;
       players.push({
         id: `p${i + 1}`,
-        name: i === 0 ? 'YOU' : (g?.name || `CPU ${i}`),
-        isNPC: i > 0,
-        golferIdx: slots[i],
+        name: (g && g.name) ? g.name : `CPU ${i}`,
+        isNPC: true,
         golfer: g,
       });
     }
@@ -3918,7 +3933,7 @@ function MatchSetupOverlay({ allGolfers, defaultHuman, onStart, onBack }) {
       <View style={pickerStyles.wrap}>
         <Text style={pickerStyles.title}>MATCH SETUP</Text>
         <Text style={pickerStyles.sub}>Pick player count + opponents</Text>
-        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
           {[1, 2, 3, 4].map((n) => (
             <Pressable
               key={n}
@@ -3929,12 +3944,21 @@ function MatchSetupOverlay({ allGolfers, defaultHuman, onStart, onBack }) {
             </Pressable>
           ))}
         </View>
-        {Array.from({ length: playerCount }).map((_, i) => {
-          const g = allGolfers[slots[i]] || allGolfers[0];
+        <View style={matchStyles.slotRow}>
+          <Text style={matchStyles.slotLabel}>YOU</Text>
+          <View style={matchStyles.slotName}>
+            <Text style={matchStyles.slotNameText}>{defaultHuman?.name || 'PLAYER 1'}</Text>
+            <Text style={matchStyles.slotStatsText}>
+              PWR {defaultHuman?.stats?.power ?? '—'}  ·  ACC {defaultHuman?.stats?.accuracy ?? '—'}  ·  TCH {defaultHuman?.stats?.touch ?? '—'}
+            </Text>
+          </View>
+        </View>
+        {Array.from({ length: Math.max(0, playerCount - 1) }).map((_, i) => {
+          const g = safeRoster[cpuSlots[i]] || safeRoster[0] || null;
           return (
             <View key={i} style={matchStyles.slotRow}>
-              <Text style={matchStyles.slotLabel}>{i === 0 ? 'YOU' : `CPU ${i}`}</Text>
-              <Pressable style={matchStyles.cycleBtn} onPress={() => cycleSlot(i, -1)}>
+              <Text style={matchStyles.slotLabel}>{`CPU ${i + 1}`}</Text>
+              <Pressable style={matchStyles.cycleBtn} onPress={() => cycleCpu(i, -1)}>
                 <Text style={matchStyles.cycleText}>◀</Text>
               </Pressable>
               <View style={matchStyles.slotName}>
@@ -3943,7 +3967,7 @@ function MatchSetupOverlay({ allGolfers, defaultHuman, onStart, onBack }) {
                   PWR {g?.stats?.power ?? '—'}  ·  ACC {g?.stats?.accuracy ?? '—'}  ·  TCH {g?.stats?.touch ?? '—'}
                 </Text>
               </View>
-              <Pressable style={matchStyles.cycleBtn} onPress={() => cycleSlot(i, +1)}>
+              <Pressable style={matchStyles.cycleBtn} onPress={() => cycleCpu(i, +1)}>
                 <Text style={matchStyles.cycleText}>▶</Text>
               </Pressable>
             </View>
