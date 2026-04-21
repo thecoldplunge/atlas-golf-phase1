@@ -2052,6 +2052,19 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         // Only zoom OUT from the current user preference — never force a
         // tighter zoom than the player chose manually for their shape.
         zoomRef.current = Math.max(minZoomHere, Math.min(zoomRef.current, fitZoom));
+      } else if (
+        cMode === 'aim'
+        && (sw.state === SW.FLYING || sw.state === SW.ROLLING)
+        && !isPutting
+      ) {
+        // Flight-mode zoom: widen to fit the arc + a little extra head
+        // room above for the apex visualisation. ~72% of the shorter
+        // axis covers carry plus typical apex (~30% of carry).
+        const carryPx = computeCarry(selectedClub, 1.0);
+        const shortPx = Math.min(viewW, viewH);
+        const desiredScale = (shortPx * 0.72) / Math.max(32, carryPx);
+        const fitZoom = desiredScale / baseScale;
+        zoomRef.current = Math.max(minZoomHere, Math.min(zoomRef.current, fitZoom));
       }
       const scale = baseScale * zoomRef.current;
       let followX, followY, anchorOffsetX = 0, anchorOffsetY = 0;
@@ -2085,10 +2098,18 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
           anchorOffsetX = isTabletGS ? (viewW * 0.22) / scale : 0;
           anchorOffsetY = isTabletGS ? 0 : -(viewH * 0.28) / scale;
         } else if (isBallMoving) {
-          // Lead the ball by ~0.25s of its current velocity so the shot
-          // feels tracked from the impact side, not chasing from behind.
-          followX = ball.x + (ball.vx || 0) * 0.25;
-          followY = ball.y + (ball.vy || 0) * 0.25;
+          // Flight framing: lead the ball aggressively and push it toward
+          // the BOTTOM of the frame so the arc/apex/landing fills the top
+          // ~70% of the screen. Strong lead (~0.6s of current velocity)
+          // keeps the flight path visible as the ball climbs and drops.
+          const lead = sw.state === SW.FLYING ? 0.6 : 0.3;
+          followX = ball.x + (ball.vx || 0) * lead;
+          followY = ball.y + (ball.vy || 0) * lead;
+          // Anchor the ball in the lower quarter of the frame. anchorOffsetY
+          // is subtracted from camY, so a negative value pushes camY up in
+          // world space — which draws the followed point LOWER on screen.
+          anchorOffsetX = isTabletGS ? (viewW * 0.20) / scale : 0;
+          anchorOffsetY = isTabletGS ? 0 : -(viewH * 0.22) / scale;
         } else {
           followX = ball.x;
           followY = ball.y;
