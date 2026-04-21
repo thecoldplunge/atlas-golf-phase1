@@ -1203,29 +1203,45 @@ function drawSwipeFeedback(ctx, swipe, dpr) {
   const sx = swipe.startX, sy = swipe.startY;
   const cx = swipe.currentX, cy = swipe.currentY;
   const mag = Math.hypot(cx - sx, cy - sy);
-  const norm = Math.min(1, mag / 180);
+  // 100% power is 170 * dpr px (matches endSwipe's divisor). Clamp the
+  // visible feedback line at that radius so pulling further doesn't make
+  // the line grow past the 100% mark — it just reads 100% and holds.
+  const maxRadius = 170 * dpr;
+  const ratio = mag > 0 ? Math.min(1, maxRadius / mag) : 1;
+  const ex = sx + (cx - sx) * ratio;
+  const ey = sy + (cy - sy) * ratio;
+  const norm = Math.min(1, mag / maxRadius);
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   ctx.strokeStyle = 'rgba(0,0,0,0.45)';
   ctx.lineWidth = 10 * dpr;
-  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(cx, cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
   const hue = 120 - 110 * norm;
   ctx.strokeStyle = `hsla(${hue}, 80%, 60%, 0.9)`;
   ctx.lineWidth = 6 * dpr;
-  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(cx, cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
   ctx.strokeStyle = 'rgba(255,255,255,0.95)';
   ctx.lineWidth = 2 * dpr;
-  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(cx, cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.beginPath(); ctx.arc(sx, sy, (10 + norm * 26) * dpr, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = `hsla(${hue}, 80%, 55%, 0.7)`;
   ctx.beginPath(); ctx.arc(sx, sy, (8 + norm * 22) * dpr, 0, Math.PI * 2); ctx.fill();
+  // Draw the 100% ring as a subtle reference so the player sees they've
+  // hit the cap. Only visible once they're in the final ~15%.
+  if (norm > 0.85) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 1 * dpr;
+    ctx.setLineDash([4 * dpr, 4 * dpr]);
+    ctx.beginPath(); ctx.arc(sx, sy, maxRadius, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+  }
   ctx.font = `bold ${14 * dpr}px ui-monospace, Menlo, monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#f5f5ec';
-  ctx.fillText(`${Math.round(norm * 100)}%`, cx, cy - 24 * dpr);
+  ctx.fillText(`${Math.round(norm * 100)}%`, ex, ey - 24 * dpr);
   ctx.restore();
 }
 
@@ -1328,6 +1344,11 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
   // menu. Cleared on strike (endSwipe) so every new shot setup re-runs
   // the auto-Tap heuristic from scratch.
   const shotTypeManualRef = useRef(false);
+  // Last-shot stats — captured at strike time, finalised when the ball
+  // comes to rest (or drops). Drives the small summary card on the
+  // right side of the screen.
+  const lastShotRef = useRef(null);
+  const [lastShotHud, setLastShotHud] = useState(null);
 
   const [hud, setHud] = useState({
     state: SW.IDLE, club: 'Driver', clubShort: 'DR',
@@ -1434,7 +1455,9 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       b.spinX = 0; b.spinY = 0;
       b.dropT = 0;
       const p = posRef.current;
-      p.x = b.x + 4; p.y = b.y - 2; p.facing = 'N'; p.moving = false;
+      // Stand to the LEFT of the ball facing RIGHT (east) so the sprite
+      // reads as a golfer addressing the ball from the top-down view.
+      p.x = b.x - 7; p.y = b.y + 1; p.facing = 'E'; p.moving = false;
       swingRef.current.strokeCount = 1;
       swingRef.current.spinX = 0;
       swingRef.current.spinY = 0;
@@ -1507,14 +1530,28 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       const p = posRef.current;
       if (ball.state === 'rolling') sw.state = SW.ROLLING;
       else if (ball.state === 'dropping') sw.state = SW.DROPPING;
-      else if (ball.state === 'stopped') {
-        p.x = ball.x + 4; p.y = ball.y - 2; p.facing = 'N';
-        ball.state = 'rest';
-        ball.trail = [];
-        aimAtFlag();
-        autoPickClubAndZoom();
-        sw.state = SW.AIMING;
-        flushHud();
+      else if (ball.state === 'stopped' || ball.state === 'holed') {
+        // Finalize the last-shot stats before transitioning so the summary
+        // card has carry + end lie.
+        if (lastShotRef.current && lastShotRef.current.carryYd === null) {
+          const ls = lastShotRef.current;
+          const distPx = Math.hypot(ball.x - ls.startX, ball.y - ls.startY);
+          ls.carryYd = Math.round(distPx / TILE * YARDS_PER_TILE);
+          ls.endLie = ball.state === 'holed'
+            ? 'Holed'
+            : (surfacePropsAt(ball.x, ball.y)?.label || '—');
+          ls.holed = ball.state === 'holed';
+          setLastShotHud({ ...ls });
+        }
+        if (ball.state === 'stopped') {
+          p.x = ball.x - 7; p.y = ball.y + 1; p.facing = 'E';
+          ball.state = 'rest';
+          ball.trail = [];
+          aimAtFlag();
+          autoPickClubAndZoom();
+          sw.state = SW.AIMING;
+          flushHud();
+        }
       }
       else if (ball.state === 'hazard') { sw.state = SW.HAZARD; sw.messageTimer = 2.2; sw.strokeCount++; flushHud(); }
       else if (ball.state === 'ob') { sw.state = SW.OB; sw.messageTimer = 2.2; sw.strokeCount++; flushHud(); }
@@ -1583,6 +1620,21 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       ball.lastGoodX = ball.x; ball.lastGoodY = ball.y;
       const liePhys = surfacePropsAt(ball.x, ball.y);
       const clubStats = bagStatsRef.current[club.key] || null;
+      // Stash the start of the shot — end coords + lie are filled in
+      // when settleBallTransitions detects the ball has stopped.
+      lastShotRef.current = {
+        clubShort: club.short || club.key,
+        clubName: club.name || '',
+        shotType: sw.shotType || 'normal',
+        powerPct: Math.round(power * 100),
+        accuracy,
+        startX: ball.x,
+        startY: ball.y,
+        startLie: liePhys?.label || '—',
+        carryYd: null,
+        endLie: null,
+        holed: false,
+      };
       launchBall(ball, sw.aimAngle, power, accuracy, sw.spinX, sw.spinY, club, {
         golferFactors: golferFactorsRef.current,
         clubStats,
@@ -1820,7 +1872,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         }
       } else if (sw.state === SW.AIMING || sw.state === SW.SWIPING) {
         p.moving = false;
-        p.x = ball.x + 4; p.y = ball.y - 2;
+        p.x = ball.x - 7; p.y = ball.y + 1;
         const j = joystickRef.current;
         if (sw.state === SW.AIMING && j) {
           const dpr = window.devicePixelRatio || 1;
@@ -1844,7 +1896,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
           ball.vx = 0; ball.vy = 0; ball.vz = 0; ball.z = 0;
           ball.state = 'rest';
           ball.trail = [];
-          p.x = ball.x + 4; p.y = ball.y - 2; p.facing = 'N';
+          p.x = ball.x - 7; p.y = ball.y + 1; p.facing = 'E';
           aimAtFlag();
           autoPickClubAndZoom();
           sw.state = SW.AIMING;
@@ -1996,7 +2048,11 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       } else if (sw.state !== SW.HOLED) {
         drawables.push({ kind: 'ball', x: ball.x, y: ball.y, z: ball.z });
       }
-      const showGolfer = !(sw.state === SW.FLYING || sw.state === SW.ROLLING || sw.state === SW.DROPPING || sw.state === SW.HOLED);
+      // Always draw the golfer — players expect to see themselves
+      // watching the shot unfold, not vanish at impact. Hidden only
+      // briefly during the HOLED celebration so the ball drop is the
+      // only focal point.
+      const showGolfer = sw.state !== SW.HOLED;
       if (showGolfer) {
         drawables.push({ kind: 'golfer', x: p.x, y: p.y, facing: p.facing, phase: p.moving ? p.walkPhase : null });
       }
@@ -2181,6 +2237,30 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
           <Text style={{ color: '#fff6d8', fontSize: 13, fontWeight: '800', letterSpacing: 1 }}>{cameraMode === 'aim' ? 'AIM' : 'ME'}</Text>
         </Pressable>
       </View>
+
+      {/* Last-shot summary — right side, below the zoom/VIEW column.
+          Hidden until the player has actually struck a shot. */}
+      {lastShotHud && lastShotHud.carryYd != null ? (
+        <View style={styles.lastShotCard} pointerEvents="none">
+          <Text style={styles.lastShotLabel}>LAST SHOT</Text>
+          <Text style={styles.lastShotDist}>
+            {lastShotHud.carryYd}
+            <Text style={styles.lastShotDistUnit}> yd</Text>
+          </Text>
+          <View style={styles.lastShotRow}>
+            <Text style={styles.lastShotKey}>CLUB</Text>
+            <Text style={styles.lastShotVal}>{lastShotHud.clubShort} · {lastShotHud.powerPct}%</Text>
+          </View>
+          <View style={styles.lastShotRow}>
+            <Text style={styles.lastShotKey}>TYPE</Text>
+            <Text style={styles.lastShotVal}>{(SHOT_TYPE_PROFILES[lastShotHud.shotType] || SHOT_TYPE_PROFILES.normal).label}</Text>
+          </View>
+          <View style={styles.lastShotRow}>
+            <Text style={styles.lastShotKey}>LIE</Text>
+            <Text style={[styles.lastShotVal, lastShotHud.holed && styles.lastShotHoled]}>{lastShotHud.endLie}</Text>
+          </View>
+        </View>
+      ) : null}
 
       {/* Bottom-row HUD cards: CLUB · SHAPE · TYPE. Each is 78–84 wide so
           all three fit left of the SWING button on a 390+ viewport. VIEW
@@ -2539,6 +2619,42 @@ const styles = StyleSheet.create({
   shapeCrossV: { position: 'absolute', top: 4, bottom: 4, left: 22, width: 1, backgroundColor: '#4a5a4a' },
   shapeDot: { position: 'absolute', width: 5, height: 5, marginLeft: -2, marginTop: -2, backgroundColor: '#fbe043', borderRadius: 3 },
 
+  // Last-shot summary card — right-side floating panel, anchored below
+  // the zoom/VIEW column (which ends at ~top 290) and safely above the
+  // swing pad (bottom 24 + 80 ≈ 104).
+  lastShotCard: {
+    position: 'absolute',
+    top: 300, right: 10,
+    backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
+    paddingHorizontal: 10, paddingVertical: 8,
+    width: 128,
+  },
+  lastShotLabel: {
+    color: '#a9d4a9', fontSize: 9, letterSpacing: 1.5,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  lastShotDist: {
+    color: '#fff6d8', fontSize: 22, fontWeight: '900', marginTop: 2,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  lastShotDistUnit: {
+    color: '#a9d4a9', fontSize: 10, fontWeight: '700',
+  },
+  lastShotRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginTop: 4,
+  },
+  lastShotKey: {
+    color: '#a9d4a9', fontSize: 9, letterSpacing: 1,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  lastShotVal: {
+    color: '#f5f5ec', fontSize: 11, fontWeight: '700',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  lastShotHoled: {
+    color: '#88F8BB',
+  },
   // Intergalactic-HUD swing pad: matches the dark tactical panels across
   // the rest of the UI instead of the old bright-red sports graphic.
   // Keeps the Pressable big (90×90+) and easy to thumb, adds a subtle
