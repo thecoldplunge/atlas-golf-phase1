@@ -691,7 +691,79 @@ function drawFlag(ctx, px, py, time) {
   ctx.fillRect(flapX + 2, flapY + 2, 1, 1);
 }
 
-function drawGolfer(ctx, px, py, facing, phase) {
+// Map a club key to a silhouette category so drawClub can render the
+// right shaft length + head shape.
+function clubCategoryFor(clubKey) {
+  if (clubKey === 'PT') return 'putter';
+  if (clubKey === 'PW' || clubKey === 'SW' || clubKey === 'LW' || clubKey === 'GW') return 'wedge';
+  if (clubKey === 'DR' || clubKey === '3W' || clubKey === '5W' || clubKey === '7W') return 'wood';
+  return 'iron';
+}
+
+// Swing-arc angle in screen-degrees, where 0° = east (ball direction),
+// −90° = north (up the screen, behind golfer's head), 90° = south
+// (down-screen, follow-through side). Address sits slightly below east;
+// full backswing rotates up-and-back; forward swing sweeps back → impact
+// → follow-through finish.
+function swingAngleDeg(info) {
+  if (!info || info.phase === 'address') return 15;
+  if (info.phase === 'back') {
+    const p = Math.max(0, Math.min(1, info.power || 0));
+    return 15 - p * 115; // 15° → −100°
+  }
+  if (info.phase === 'forward') {
+    const t = Math.max(0, Math.min(1, info.forwardT || 0));
+    if (t < 0.45) return -100 + (t / 0.45) * 115; // back → impact (15°)
+    return 15 + ((t - 0.45) / 0.55) * 100;        // impact → finish (115°)
+  }
+  return 15;
+}
+
+// Draws the equipped club coming out of the golfer's right hand. Colors
+// match the rest of the GS palette so the club reads as part of the
+// sprite, not a dev overlay.
+function drawClub(ctx, hx, hy, angleDeg, category) {
+  const len = category === 'putter' ? 8 : category === 'wedge' ? 10 : category === 'iron' ? 11 : 13;
+  const rad = (angleDeg * Math.PI) / 180;
+  const ex = hx + Math.cos(rad) * len;
+  const ey = hy + Math.sin(rad) * len;
+  // Shaft
+  ctx.strokeStyle = '#cfd0d3';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(hx, hy);
+  ctx.lineTo(ex, ey);
+  ctx.stroke();
+  // Head
+  const perp = rad + Math.PI / 2;
+  if (category === 'putter') {
+    ctx.strokeStyle = '#9a9fa7';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ex + Math.cos(perp) * 2, ey + Math.sin(perp) * 2);
+    ctx.lineTo(ex - Math.cos(perp) * 2, ey - Math.sin(perp) * 2);
+    ctx.stroke();
+  } else if (category === 'wood') {
+    ctx.fillStyle = '#1b2025';
+    ctx.beginPath();
+    ctx.arc(ex, ey, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#4a5058';
+    ctx.lineWidth = 0.75;
+    ctx.stroke();
+  } else {
+    // Iron + wedge: thin angled blade, wedge a touch wider.
+    ctx.strokeStyle = category === 'wedge' ? '#8b9096' : '#6b7078';
+    ctx.lineWidth = 1.5;
+    const w = category === 'wedge' ? 3 : 2.2;
+    ctx.beginPath();
+    ctx.moveTo(ex + Math.cos(perp) * w, ey + Math.sin(perp) * w);
+    ctx.lineTo(ex - Math.cos(perp) * w, ey - Math.sin(perp) * w);
+    ctx.stroke();
+  }
+}
+
+function drawGolfer(ctx, px, py, facing, phase, swingInfo) {
   const x = Math.floor(px), y = Math.floor(py);
   const moving = phase !== null;
   const step = moving ? (Math.sin(phase) > 0 ? 1 : 0) : 0;
@@ -756,6 +828,12 @@ function drawGolfer(ctx, px, py, facing, phase) {
   } else if (facing === 'W') {
     ctx.fillStyle = COLORS.cup;
     ctx.fillRect(x - 2, y - 18, 1, 1);
+  }
+  // Club overlay — only when facing east (the address pose) so the club
+  // doesn't stick out through the body on other facings.
+  if (swingInfo && facing === 'E') {
+    const hx = x + 4, hy = y - 9;
+    drawClub(ctx, hx, hy, swingAngleDeg(swingInfo), swingInfo.clubCategory || 'iron');
   }
 }
 
@@ -1203,17 +1281,26 @@ function drawSwipeFeedback(ctx, swipe, dpr) {
   const sx = swipe.startX, sy = swipe.startY;
   const cx = swipe.currentX, cy = swipe.currentY;
   const mag = Math.hypot(cx - sx, cy - sy);
-  // 100% power is 170 * dpr px (matches endSwipe's divisor). Clamp the
-  // visible feedback line at that radius so pulling further doesn't make
-  // the line grow past the 100% mark — it just reads 100% and holds.
-  const maxRadius = 170 * dpr;
+  // 100% power radius. Kept short (~110 css px) so the player can reach
+  // 100% with a pull that fits between the SWING pad and the bottom edge
+  // of the screen. Line, label, and head-dot ALL clamp to this radius —
+  // pulling past it only holds the 100% reading, nothing grows past the
+  // ring.
+  const maxRadius = 110 * dpr;
   const ratio = mag > 0 ? Math.min(1, maxRadius / mag) : 1;
   const ex = sx + (cx - sx) * ratio;
   const ey = sy + (cy - sy) * ratio;
   const norm = Math.min(1, mag / maxRadius);
+  const headR = (8 + norm * 12) * dpr; // was 22 — no more balloon past cap
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  // Always draw the 100% ring so the player sees where the cap sits.
+  ctx.strokeStyle = norm >= 1 ? 'rgba(255,240,170,0.85)' : 'rgba(255,255,255,0.32)';
+  ctx.lineWidth = (norm >= 1 ? 1.5 : 1) * dpr;
+  ctx.setLineDash([4 * dpr, 4 * dpr]);
+  ctx.beginPath(); ctx.arc(sx, sy, maxRadius, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
   ctx.strokeStyle = 'rgba(0,0,0,0.45)';
   ctx.lineWidth = 10 * dpr;
   ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
@@ -1224,24 +1311,22 @@ function drawSwipeFeedback(ctx, swipe, dpr) {
   ctx.strokeStyle = 'rgba(255,255,255,0.95)';
   ctx.lineWidth = 2 * dpr;
   ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+  // Origin halo — does NOT grow past the 100% ring radius.
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.beginPath(); ctx.arc(sx, sy, (10 + norm * 26) * dpr, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(sx, sy, (10 + norm * 14) * dpr, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = `hsla(${hue}, 80%, 55%, 0.7)`;
-  ctx.beginPath(); ctx.arc(sx, sy, (8 + norm * 22) * dpr, 0, Math.PI * 2); ctx.fill();
-  // Draw the 100% ring as a subtle reference so the player sees they've
-  // hit the cap. Only visible once they're in the final ~15%.
-  if (norm > 0.85) {
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    ctx.lineWidth = 1 * dpr;
-    ctx.setLineDash([4 * dpr, 4 * dpr]);
-    ctx.beginPath(); ctx.arc(sx, sy, maxRadius, 0, Math.PI * 2); ctx.stroke();
-    ctx.setLineDash([]);
-  }
+  ctx.beginPath(); ctx.arc(sx, sy, (8 + norm * 10) * dpr, 0, Math.PI * 2); ctx.fill();
+  // Head dot at the clamped endpoint, never outside the ring.
+  ctx.fillStyle = `hsla(${hue}, 85%, 60%, 0.95)`;
+  ctx.beginPath(); ctx.arc(ex, ey, headR, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 1 * dpr;
+  ctx.beginPath(); ctx.arc(ex, ey, headR, 0, Math.PI * 2); ctx.stroke();
   ctx.font = `bold ${14 * dpr}px ui-monospace, Menlo, monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#f5f5ec';
-  ctx.fillText(`${Math.round(norm * 100)}%`, ex, ey - 24 * dpr);
+  ctx.fillStyle = '#fff6d8';
+  ctx.fillText(`${Math.round(norm * 100)}%`, ex, ey - (headR + 10 * dpr));
   ctx.restore();
 }
 
@@ -1609,7 +1694,10 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       const ball = ballRef.current;
       const club = CLUBS[sw.clubIdx];
       const dpr = window.devicePixelRatio || 1;
-      const power = Math.max(0.1, Math.min(1, s.maxMag / (170 * dpr)));
+      // 100% power at 110 css px of pull — keeps the full swing reachable
+      // even when the player starts pulling from the SWING pad (which
+      // sits at bottom-right with ~80 px of clearance below it).
+      const power = Math.max(0.1, Math.min(1, s.maxMag / (110 * dpr)));
       const accuracy = Math.max(-1, Math.min(1, s.maxDx / (55 * dpr)));
       if (s.maxMag < 20 * dpr) {
         sw.state = SW.AIMING;
@@ -1951,19 +2039,31 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         cMode === 'aim'
         && (sw.state === SW.IDLE || sw.state === SW.AIMING || sw.state === SW.SWIPING)
       ) {
-        // Aim-mode auto-zoom: at default 1.0× the full carry of a driver
-        // (~200 world units) runs right off the screen, so the landing
-        // spot shows but the player doesn't. Pick a zoom that fits the
-        // ball→landing span into ~60% of the shorter viewport axis.
-        const clubCarryPx = (selectedClub.v || 100) * 0.9;
-        const landX = ball.x + Math.sin(sw.aimAngle) * clubCarryPx;
-        const landY = ball.y - Math.cos(sw.aimAngle) * clubCarryPx;
-        const dist = Math.hypot(landX - ball.x, landY - ball.y);
+        // Aim-mode auto-zoom: at default 1.0× a 7-iron or driver carry
+        // runs right off the screen, so the landing spot ends up above
+        // the viewport. Use computeCarry (projectile formula) to get the
+        // ACTUAL carry distance — club.v is launch speed, not distance
+        // — and pick a zoom that fits the ball→landing span into ~60%
+        // of the shorter viewport axis.
+        const carryPx = computeCarry(selectedClub, 1.0);
         const shortPx = Math.min(viewW, viewH);
-        const desiredScale = (shortPx * 0.60) / Math.max(32, dist);
+        const desiredScale = (shortPx * 0.60) / Math.max(32, carryPx);
         const fitZoom = desiredScale / baseScale;
         // Only zoom OUT from the current user preference — never force a
         // tighter zoom than the player chose manually for their shape.
+        zoomRef.current = Math.max(minZoomHere, Math.min(zoomRef.current, fitZoom));
+      } else if (
+        cMode === 'aim'
+        && (sw.state === SW.FLYING || sw.state === SW.ROLLING)
+        && !isPutting
+      ) {
+        // Flight-mode zoom: widen to fit the arc + a little extra head
+        // room above for the apex visualisation. ~72% of the shorter
+        // axis covers carry plus typical apex (~30% of carry).
+        const carryPx = computeCarry(selectedClub, 1.0);
+        const shortPx = Math.min(viewW, viewH);
+        const desiredScale = (shortPx * 0.72) / Math.max(32, carryPx);
+        const fitZoom = desiredScale / baseScale;
         zoomRef.current = Math.max(minZoomHere, Math.min(zoomRef.current, fitZoom));
       }
       const scale = baseScale * zoomRef.current;
@@ -1985,7 +2085,8 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         // While the ball is flying/rolling/settling, follow the ball itself
         // with a small velocity lead so fast shots don't outrun the frame.
         const club = CLUBS[sw.clubIdx] || CLUBS[0];
-        const clubCarryPx = (club.v || 100) * 0.9;
+        // Real carry distance (projectile range), not club.v (launch speed).
+        const clubCarryPx = computeCarry(club, 1.0);
         const isSetupPhase =
           sw.state === SW.AIMING || sw.state === SW.SWIPING || sw.state === SW.IDLE;
         const isBallMoving =
@@ -1997,10 +2098,18 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
           anchorOffsetX = isTabletGS ? (viewW * 0.22) / scale : 0;
           anchorOffsetY = isTabletGS ? 0 : -(viewH * 0.28) / scale;
         } else if (isBallMoving) {
-          // Lead the ball by ~0.25s of its current velocity so the shot
-          // feels tracked from the impact side, not chasing from behind.
-          followX = ball.x + (ball.vx || 0) * 0.25;
-          followY = ball.y + (ball.vy || 0) * 0.25;
+          // Flight framing: lead the ball aggressively and push it toward
+          // the BOTTOM of the frame so the arc/apex/landing fills the top
+          // ~70% of the screen. Strong lead (~0.6s of current velocity)
+          // keeps the flight path visible as the ball climbs and drops.
+          const lead = sw.state === SW.FLYING ? 0.6 : 0.3;
+          followX = ball.x + (ball.vx || 0) * lead;
+          followY = ball.y + (ball.vy || 0) * lead;
+          // Anchor the ball in the lower quarter of the frame. anchorOffsetY
+          // is subtracted from camY, so a negative value pushes camY up in
+          // world space — which draws the followed point LOWER on screen.
+          anchorOffsetX = isTabletGS ? (viewW * 0.20) / scale : 0;
+          anchorOffsetY = isTabletGS ? 0 : -(viewH * 0.22) / scale;
         } else {
           followX = ball.x;
           followY = ball.y;
