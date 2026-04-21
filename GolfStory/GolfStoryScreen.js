@@ -2886,29 +2886,6 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         </Pressable>
       </View>
 
-      {/* Last-shot summary — right side, below the zoom/VIEW column.
-          Hidden until the player has actually struck a shot. */}
-      {lastShotHud && lastShotHud.carryYd != null ? (
-        <View style={styles.lastShotCard} pointerEvents="none">
-          <Text style={styles.lastShotLabel}>LAST SHOT</Text>
-          <Text style={styles.lastShotDist}>
-            {lastShotHud.carryYd}
-            <Text style={styles.lastShotDistUnit}> yd</Text>
-          </Text>
-          <View style={styles.lastShotRow}>
-            <Text style={styles.lastShotKey}>CLUB</Text>
-            <Text style={styles.lastShotVal}>{lastShotHud.clubShort} · {lastShotHud.powerPct}%</Text>
-          </View>
-          <View style={styles.lastShotRow}>
-            <Text style={styles.lastShotKey}>TYPE</Text>
-            <Text style={styles.lastShotVal}>{(SHOT_TYPE_PROFILES[lastShotHud.shotType] || SHOT_TYPE_PROFILES.normal).label}</Text>
-          </View>
-          <View style={styles.lastShotRow}>
-            <Text style={styles.lastShotKey}>LIE</Text>
-            <Text style={[styles.lastShotVal, lastShotHud.holed && styles.lastShotHoled]}>{lastShotHud.endLie}</Text>
-          </View>
-        </View>
-      ) : null}
 
       {/* Bottom-row HUD cards: CLUB · SHAPE · TYPE. Each is 78–84 wide so
           all three fit left of the SWING button on a 390+ viewport. VIEW
