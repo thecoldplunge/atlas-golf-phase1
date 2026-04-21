@@ -2063,6 +2063,16 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
   const canvasRef = useRef(null);
   const staticRef = useRef(null);
   const holeIdxRef = useRef(0);
+  // Per-round score tracking — one entry per hole finished, e.g.
+  // { hole: 1, par: 3, strokes: 4 }. Used by the scorecard overlay.
+  const scoresRef = useRef([]);
+  const [scorecardOpen, setScorecardOpen] = useState(false);
+  // React mirror of scoresRef — drives the scorecard re-render.
+  const [scoresHud, setScoresHud] = useState([]);
+  // Signal from the scorecard overlay back into the tick loop — flips
+  // to true when the player taps "Next Hole" and the loop calls
+  // advanceHole on the following frame.
+  const pendingAdvanceRef = useRef(false);
   const zoomRef = useRef(1.0);
   const joystickRef = useRef(null);
   const swipeRef = useRef(null);
@@ -2290,7 +2300,14 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
     flushHud();
 
     const advanceHole = () => {
+      const wrapping = (holeIdxRef.current + 1) >= HOLES.length;
       holeIdxRef.current = (holeIdxRef.current + 1) % HOLES.length;
+      if (wrapping) {
+        // New round — clear the scorecard so the player starts fresh.
+        scoresRef.current = [];
+        setScoresHud([]);
+      }
+      setScorecardOpen(false);
       loadHole(holeIdxRef.current, orientation);
       rebuildStatic();
       randomizeWind();
@@ -2334,12 +2351,24 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
           p.x = pose.px; p.y = pose.py; p.facing = pose.facing;
           flushHud();
         } else {
-          // ball.state === 'holed' — transition the swing state here too.
-          // Before this fix the stopped/holed branch ate the holed case
-          // and the subsequent `else if (holed)` never ran, so sw.state
-          // stayed at SW.DROPPING and the game stuck on the hole.
+          // ball.state === 'holed' — transition the swing state, record
+          // the final stroke count for the round scorecard, and surface
+          // the scorecard overlay so the player can see their progress
+          // before tapping to the next hole.
           sw.state = SW.HOLED;
-          sw.messageTimer = 3;
+          // Scorecard overlay takes over from the auto-advance timer —
+          // the player taps "Next Hole" on the card to move on.
+          sw.messageTimer = 0;
+          const holeNum = holeIdxRef.current + 1;
+          const already = scoresRef.current.find((s) => s.hole === holeNum);
+          if (!already) {
+            scoresRef.current = [
+              ...scoresRef.current,
+              { hole: holeNum, par: CURRENT_HOLE.par, strokes: sw.strokeCount },
+            ];
+            setScoresHud(scoresRef.current);
+            setScorecardOpen(true);
+          }
           flushHud();
         }
       }
@@ -2758,12 +2787,16 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         }
       } else if (sw.state === SW.HOLED) {
         sw.messageTimer -= dt;
-        // Auto-advance to the next hole when the holed-out message
-        // expires, so the game never gets stuck waiting for a tap on a
-        // canvas region that might be hidden behind HUD chrome.
-        if (sw.messageTimer <= 0) {
+        // Auto-advance only for the non-HOLED stall states (HAZARD /
+        // OB). HOLED is driven by the scorecard overlay's Next Hole
+        // button; the pendingAdvanceRef flag below picks that up.
+        if (sw.messageTimer <= 0 && sw.state !== SW.HOLED) {
           advanceHole();
         }
+      }
+      if (pendingAdvanceRef.current) {
+        pendingAdvanceRef.current = false;
+        advanceHole();
       }
 
       hudAccum += dt;
@@ -2826,11 +2859,20 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         const isBallMoving =
           sw.state === SW.FLYING || sw.state === SW.ROLLING || sw.state === SW.DROPPING;
         if (isSetupPhase) {
-          followX = ball.x + Math.sin(sw.aimAngle) * clubCarryPx;
-          followY = ball.y - Math.cos(sw.aimAngle) * clubCarryPx;
-          // Push the landing spot toward top (phone) or right (tablet).
-          anchorOffsetX = isTabletGS ? (viewW * 0.22) / scale : 0;
-          anchorOffsetY = isTabletGS ? 0 : -(viewH * 0.28) / scale;
+          // Keep the camera anchored on the BALL during aim so a tap on
+          // screen coordinate (X, Y) reliably points the aim vector at
+          // the world point under the tap. (Previously the camera tracked
+          // the projected landing spot — which moves when the aim moves
+          // — so tapping a target would pan the view, the tap would
+          // miss, and the golfer could slide off-screen.)
+          // A gentle lead toward the aim direction keeps the target
+          // side of the frame biased upward so the landing area is
+          // still visible on the typical tee shot.
+          const lead = Math.min(clubCarryPx * 0.35, 120);
+          followX = ball.x + Math.sin(sw.aimAngle) * lead;
+          followY = ball.y - Math.cos(sw.aimAngle) * lead;
+          anchorOffsetX = 0;
+          anchorOffsetY = isTabletGS ? 0 : -(viewH * 0.14) / scale;
         } else if (isBallMoving) {
           // Flight framing: lead the ball aggressively and push it toward
           // the BOTTOM of the frame so the arc/apex/landing fills the top
@@ -3268,6 +3310,162 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       <Pressable style={styles.exitBtn} onPress={onExit}>
         <Text style={styles.exitText}>✕</Text>
       </Pressable>
+
+      <Pressable style={styles.cardBtn} onPress={() => setScorecardOpen(true)}>
+        <Text style={styles.cardBtnLabel}>CARD</Text>
+      </Pressable>
+
+      {scorecardOpen ? (
+        <GSScorecardOverlay
+          scores={scoresHud}
+          activeHoleIdx={holeIdxRef.current}
+          holeCount={HOLES.length}
+          finishedThisHole={hud.state === SW.HOLED}
+          onClose={() => setScorecardOpen(false)}
+          onNextHole={() => {
+            setScorecardOpen(false);
+            // advanceHole closure isn't in this scope — flip the swing
+            // state to HOLED + zero the message timer so the tick loop
+            // picks it up. A tap on the canvas also advances in that
+            // state, so we simulate one via a ref flag.
+            pendingAdvanceRef.current = true;
+          }}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+// Pixel-pop scorecard overlay. Mirrors the main-game scorecard's
+// table structure (Hole / Par / Score rows with badge shapes for
+// birdie / bogey / eagle etc.) but styled with the GS HUD palette
+// (dark green panel, bone-white border, intergalactic accents).
+function getGsScoreShape(strokes, par) {
+  const diff = strokes - par;
+  if (diff <= -2) return 'eagle';
+  if (diff === -1) return 'birdie';
+  if (diff === 0) return 'par';
+  if (diff === 1) return 'bogey';
+  if (diff === 2) return 'doubleBogey';
+  return 'tripleBogey';
+}
+
+function ScoreBadge({ strokes, par }) {
+  const shape = getGsScoreShape(strokes, par);
+  const common = scStyles.badgeText;
+  if (shape === 'eagle') {
+    return (
+      <View style={scStyles.badgeDoubleOuter}>
+        <View style={scStyles.badgeDoubleInner}>
+          <Text style={common}>{strokes}</Text>
+        </View>
+      </View>
+    );
+  }
+  if (shape === 'birdie') {
+    return <View style={scStyles.badgeCircle}><Text style={common}>{strokes}</Text></View>;
+  }
+  if (shape === 'bogey') {
+    return <View style={scStyles.badgeSquare}><Text style={common}>{strokes}</Text></View>;
+  }
+  if (shape === 'doubleBogey') {
+    return (
+      <View style={scStyles.badgeDoubleSquareOuter}>
+        <View style={scStyles.badgeDoubleSquareInner}>
+          <Text style={common}>{strokes}</Text>
+        </View>
+      </View>
+    );
+  }
+  if (shape === 'tripleBogey') {
+    return <View style={scStyles.badgeSolidSquare}><Text style={scStyles.badgeSolidText}>{strokes}</Text></View>;
+  }
+  return <Text style={scStyles.cellText}>{strokes}</Text>;
+}
+
+function GSScorecardOverlay({ scores, activeHoleIdx, holeCount, finishedThisHole, onClose, onNextHole }) {
+  const rows = [];
+  for (let i = 0; i < holeCount; i++) {
+    const existing = scores.find((s) => s.hole === i + 1);
+    rows.push(existing || { hole: i + 1, par: HOLES[i]?.par || 3, strokes: null });
+  }
+  const playedRows = rows.filter((r) => r.strokes !== null);
+  const totalStrokes = playedRows.reduce((s, r) => s + r.strokes, 0);
+  const totalParPlayed = playedRows.reduce((s, r) => s + r.par, 0);
+  const diff = totalStrokes - totalParPlayed;
+  const diffText = playedRows.length === 0
+    ? '—'
+    : diff === 0 ? 'E' : `${diff > 0 ? '+' : ''}${diff}`;
+  const roundDone = playedRows.length >= holeCount;
+  return (
+    <View style={scStyles.overlay}>
+      <View style={scStyles.card}>
+        <Text style={scStyles.title}>
+          {roundDone ? 'ROUND COMPLETE' : finishedThisHole ? 'HOLE COMPLETE' : 'SCORECARD'}
+        </Text>
+        <View style={scStyles.table}>
+          <View style={scStyles.row}>
+            <View style={scStyles.labelCell}><Text style={scStyles.labelText}>HOLE</Text></View>
+            {rows.map((r) => (
+              <View
+                key={`h-${r.hole}`}
+                style={[scStyles.cell, r.hole === activeHoleIdx + 1 ? scStyles.cellActive : null]}
+              >
+                <Text style={scStyles.cellText}>{r.hole}</Text>
+              </View>
+            ))}
+            <View style={scStyles.totalCell}><Text style={scStyles.totalCellText}>TOT</Text></View>
+          </View>
+          <View style={scStyles.row}>
+            <View style={scStyles.labelCell}><Text style={scStyles.labelText}>PAR</Text></View>
+            {rows.map((r) => (
+              <View key={`p-${r.hole}`} style={scStyles.cell}><Text style={scStyles.cellText}>{r.par}</Text></View>
+            ))}
+            <View style={scStyles.totalCell}>
+              <Text style={scStyles.totalCellText}>
+                {rows.reduce((s, r) => s + r.par, 0)}
+              </Text>
+            </View>
+          </View>
+          <View style={scStyles.row}>
+            <View style={scStyles.labelCell}><Text style={scStyles.labelText}>SCORE</Text></View>
+            {rows.map((r) => (
+              <View
+                key={`s-${r.hole}`}
+                style={[scStyles.cell, r.hole === activeHoleIdx + 1 ? scStyles.cellActive : null]}
+              >
+                {r.strokes === null
+                  ? <Text style={scStyles.cellUnplayed}>—</Text>
+                  : <ScoreBadge strokes={r.strokes} par={r.par} />}
+              </View>
+            ))}
+            <View style={scStyles.totalCell}>
+              <Text style={scStyles.totalCellText}>
+                {totalStrokes || '—'}
+              </Text>
+            </View>
+          </View>
+        </View>
+        <View style={scStyles.summaryRow}>
+          <Text style={scStyles.summaryText}>
+            {playedRows.length}/{holeCount} played
+          </Text>
+          <Text style={[scStyles.summaryText, scStyles.summaryDiff, diff < 0 ? scStyles.diffUnder : diff > 0 ? scStyles.diffOver : scStyles.diffEven]}>
+            {diffText}
+          </Text>
+        </View>
+        <View style={scStyles.buttonRow}>
+          {finishedThisHole ? (
+            <Pressable style={scStyles.primaryBtn} onPress={onNextHole}>
+              <Text style={scStyles.primaryBtnText}>{roundDone ? 'NEW ROUND ▸' : 'NEXT HOLE ▸'}</Text>
+            </Pressable>
+          ) : (
+            <Pressable style={scStyles.primaryBtn} onPress={onClose}>
+              <Text style={scStyles.primaryBtnText}>CLOSE</Text>
+            </Pressable>
+          )}
+        </View>
+      </View>
     </View>
   );
 }
@@ -3365,9 +3563,146 @@ const shapePadStyles = StyleSheet.create({
   },
 });
 
+const scStyles = StyleSheet.create({
+  overlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(5,10,7,0.88)',
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 12, zIndex: 280,
+  },
+  card: {
+    width: '100%', maxWidth: 480,
+    backgroundColor: '#0e1a12',
+    borderWidth: 3, borderColor: '#f5f5ec',
+    padding: 14, gap: 10,
+  },
+  title: {
+    color: '#fff6d8',
+    fontSize: 18, fontWeight: '900', letterSpacing: 3,
+    textAlign: 'center',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  table: { gap: 3 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 2, flexWrap: 'nowrap' },
+  labelCell: {
+    width: 44, height: 28, alignItems: 'flex-start', justifyContent: 'center', paddingLeft: 2,
+  },
+  labelText: {
+    color: '#88f8bb', fontSize: 11, fontWeight: '900', letterSpacing: 1.5,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  cell: {
+    flexGrow: 1, flexShrink: 1, flexBasis: 0,
+    minWidth: 22, height: 28,
+    borderWidth: 1, borderColor: 'rgba(136, 248, 187, 0.18)',
+    backgroundColor: 'rgba(14, 40, 22, 0.9)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  cellActive: {
+    backgroundColor: 'rgba(136, 248, 187, 0.18)',
+    borderColor: '#88f8bb',
+  },
+  cellText: {
+    color: '#f5fbef', fontSize: 12, fontWeight: '800',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  cellUnplayed: {
+    color: 'rgba(255,255,255,0.25)', fontSize: 12,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  totalCell: {
+    width: 36, height: 28,
+    borderWidth: 1, borderColor: '#f5f5ec',
+    backgroundColor: 'rgba(245,245,236,0.06)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  totalCellText: {
+    color: '#fff6d8', fontSize: 12, fontWeight: '900', letterSpacing: 1,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  badgeText: {
+    color: '#f5fbef', fontSize: 11, fontWeight: '900',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  badgeCircle: {
+    minWidth: 22, height: 22, borderRadius: 999,
+    borderWidth: 2, borderColor: '#fbe043',
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5,
+  },
+  badgeSquare: {
+    minWidth: 22, height: 22,
+    borderWidth: 2, borderColor: '#ff6ad5',
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5,
+  },
+  badgeDoubleOuter: {
+    minWidth: 26, height: 26, borderRadius: 999,
+    borderWidth: 2, borderColor: '#fbe043',
+    alignItems: 'center', justifyContent: 'center', padding: 1,
+  },
+  badgeDoubleInner: {
+    minWidth: 18, height: 18, borderRadius: 999,
+    borderWidth: 2, borderColor: '#fbe043',
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
+  },
+  badgeDoubleSquareOuter: {
+    minWidth: 26, height: 26,
+    borderWidth: 2, borderColor: '#ff6ad5',
+    alignItems: 'center', justifyContent: 'center', padding: 1,
+  },
+  badgeDoubleSquareInner: {
+    minWidth: 18, height: 18,
+    borderWidth: 2, borderColor: '#ff6ad5',
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
+  },
+  badgeSolidSquare: {
+    minWidth: 22, height: 22,
+    backgroundColor: '#ff6ad5',
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5,
+  },
+  badgeSolidText: {
+    color: '#0e1a12', fontSize: 11, fontWeight: '900',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 4, paddingTop: 4,
+    borderTopWidth: 1, borderTopColor: 'rgba(245,245,236,0.18)',
+  },
+  summaryText: {
+    color: '#c8dfc4', fontSize: 12, fontWeight: '800', letterSpacing: 1,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  summaryDiff: { fontSize: 16, fontWeight: '900' },
+  diffUnder: { color: '#fbe043' },
+  diffEven: { color: '#c8dfc4' },
+  diffOver: { color: '#ff6ad5' },
+  buttonRow: { flexDirection: 'row', justifyContent: 'center', gap: 10 },
+  primaryBtn: {
+    backgroundColor: 'rgba(136, 248, 187, 0.12)',
+    borderWidth: 2, borderColor: '#88f8bb',
+    paddingVertical: 10, paddingHorizontal: 22,
+  },
+  primaryBtnText: {
+    color: '#f5fbef', fontSize: 13, fontWeight: '900', letterSpacing: 2,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+});
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.skyVoid, overscrollBehavior: 'none', touchAction: 'none' },
   canvasHost: { flex: 1, touchAction: 'none' },
+  cardBtn: {
+    position: 'absolute', top: 16, right: 60,
+    paddingHorizontal: 10, height: 38,
+    backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  cardBtnLabel: {
+    color: '#fff6d8', fontSize: 12, fontWeight: '900', letterSpacing: 2,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
   exitBtn: {
     position: 'absolute', top: 16, right: 16,
     backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
