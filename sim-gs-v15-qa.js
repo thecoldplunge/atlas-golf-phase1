@@ -134,7 +134,63 @@ assert(r.mode === 'lead-ball', 'Putter + ROLLING → lead the ball (not stuck on
 r = cameraFollow({ ball, p, flag, club: driver, sw: { ...sw, state: SW.IDLE }, cMode: 'golfer', ...vp });
 assert(r.mode === 'golfer', 'Golfer mode centers on player', r.mode);
 
-console.log('\n=== 5. Putting zoom auto-scale ===\n');
+console.log('\n=== 5a. Aim-mode auto-zoom (fixes tee off-screen bug) ===\n');
+// Pick a zoom so the ball→landing span is ~60% of the shorter viewport
+// axis, never tighter than the current user zoom, and never below the
+// world-fit min zoom.
+function aimFitZoom(clubCarryPx, viewW, viewH, baseScale, currentZoom, minZoom) {
+  const shortPx = Math.min(viewW, viewH);
+  const desiredScale = (shortPx * 0.60) / Math.max(32, clubCarryPx);
+  const fitZoom = desiredScale / baseScale;
+  return Math.max(minZoom, Math.min(currentZoom, fitZoom));
+}
+
+const vpPhone = { viewW: 400, viewH: 800, baseScale: 4 };
+const clubs = {
+  PT: { key: 'PT', v: 110 },
+  PW: { key: 'PW', v: 112 },
+  '7I': { key: '7I', v: 148 },
+  DR: { key: 'DR', v: 225 },
+};
+// Minimum zoom fit (assume world is large enough so minZoom ~ 0.5).
+const minZoom = 0.5;
+const currentZoom = 1.0;
+
+for (const [name, club] of Object.entries(clubs)) {
+  const clubCarryPx = (club.v || 100) * 0.9;
+  const z = aimFitZoom(clubCarryPx, vpPhone.viewW, vpPhone.viewH, vpPhone.baseScale, currentZoom, minZoom);
+  const scale = vpPhone.baseScale * z;
+  const spanPx = clubCarryPx * scale;
+  const spanFrac = spanPx / vpPhone.viewH;
+  console.log(`  ${name.padEnd(3)}  v=${club.v}  carryPx=${clubCarryPx.toFixed(0)}  zoom=${z.toFixed(2)}x  span/viewH=${(spanFrac*100).toFixed(0)}%`);
+}
+
+assert(
+  aimFitZoom((clubs.DR.v * 0.9), 400, 800, 4, 1.0, 0.5) < 1.0,
+  'Driver forces zoom-out from 1.0× so the landing spot fits',
+  aimFitZoom((clubs.DR.v * 0.9), 400, 800, 4, 1.0, 0.5).toFixed(2)
+);
+
+// Verify ball appears on screen at a new auto-zoom (not off the bottom).
+function ballOnScreen(clubCarryPx, viewW, viewH, baseScale, zoom) {
+  const scale = baseScale * zoom;
+  // anchorOffsetY = -(viewH * 0.28) / scale; landing at top ~22% => ball below.
+  const ballScreenY = clubCarryPx * scale + (viewH * 0.22);
+  return { ballScreenY, visible: ballScreenY < viewH };
+}
+
+const driverZoom = aimFitZoom(clubs.DR.v * 0.9, 400, 800, 4, 1.0, 0.5);
+const { ballScreenY, visible } = ballOnScreen(clubs.DR.v * 0.9, 400, 800, 4, driverZoom);
+console.log(`  driver @ zoom ${driverZoom.toFixed(2)}  →  ball screen y ≈ ${ballScreenY.toFixed(0)} of 800  (${visible ? 'visible' : 'OFF-SCREEN'})`);
+assert(visible, 'Player sprite fits in the frame on a driver tee shot', `ballY=${ballScreenY.toFixed(0)} < 800`);
+
+// Putter uses its own framing path; aim fit shouldn't apply.
+const putterFitZoom = aimFitZoom(clubs.PT.v * 0.9, 400, 800, 4, 1.0, 0.5);
+// (Aim-fit never fights putter path because the putter branch sets zoom
+// before this runs.) Sanity only.
+console.log(`  (putter aim-fit would be ${putterFitZoom.toFixed(2)}x, but putter uses dedicated framing)`);
+
+console.log('\n=== 5b. Putting zoom auto-scale ===\n');
 // Close putt: should pick a larger zoom. Long putt: smaller zoom.
 function puttingZoomFor(distPx, viewW, viewH, baseScale) {
   const shortPx = Math.min(viewW, viewH);
