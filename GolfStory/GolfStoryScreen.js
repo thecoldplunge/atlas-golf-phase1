@@ -1205,26 +1205,11 @@ function drawGolfer(ctx, px, py, facing, phase, swingInfo) {
   // Hat brim highlight (always) — bright edge along the front of the hat.
   ctx.fillStyle = 'rgba(255,246,216,0.35)';
   ctx.fillRect(x - 3, y - 19, 6, 1);
-  // Club overlay — rotated toward the club-head direction derived from
-  // the golfer's facing. This way the address/backswing/follow-through
-  // animate in the correct plane regardless of hole orientation.
-  if (swingInfo) {
-    // Hand position offset FROM the golfer, perpendicular to their body
-    // on the club-side. For right-handed address pose, the hand sits
-    // slightly in front (toward the target) on the golfer's right.
-    const facingRad =
-      facing === 'E' ? 0 :
-      facing === 'S' ? Math.PI / 2 :
-      facing === 'W' ? Math.PI :
-      -Math.PI / 2;
-    const hOff = 4;
-    const hx = x + Math.cos(facingRad) * hOff;
-    const hy = y - 9 + Math.sin(facingRad) * hOff;
-    // Swing angle is defined relative to the facing direction (0° = toward
-    // target = facingRad). Convert to screen-space angle.
-    const swingRelDeg = swingAngleDeg(swingInfo);
-    const screenDeg = (facingRad * 180) / Math.PI + swingRelDeg;
-    drawClub(ctx, hx, hy, screenDeg, swingInfo.clubCategory || 'iron');
+  // Club overlay — only when facing east (the address pose) so the club
+  // doesn't stick out through the body on other facings.
+  if (swingInfo && facing === 'E') {
+    const hx = x + 4, hy = y - 9;
+    drawClub(ctx, hx, hy, swingAngleDeg(swingInfo), swingInfo.clubCategory || 'iron');
   }
 }
 
