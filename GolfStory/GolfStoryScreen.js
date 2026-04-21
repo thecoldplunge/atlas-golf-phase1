@@ -1655,54 +1655,79 @@ function drawJoystick(ctx, cx, cy, dx, dy, active, dpr) {
 
 function drawSwipeFeedback(ctx, swipe, dpr) {
   const sx = swipe.startX, sy = swipe.startY;
-  const cx = swipe.currentX, cy = swipe.currentY;
-  const mag = Math.hypot(cx - sx, cy - sy);
-  // 100% power radius. Kept short (~110 css px) so the player can reach
-  // 100% with a pull that fits between the SWING pad and the bottom edge
-  // of the screen. Line, label, and head-dot ALL clamp to this radius —
-  // pulling past it only holds the 100% reading, nothing grows past the
-  // ring.
   const maxRadius = 80 * dpr;
-  const ratio = mag > 0 ? Math.min(1, maxRadius / mag) : 1;
-  const ex = sx + (cx - sx) * ratio;
-  const ey = sy + (cy - sy) * ratio;
-  const norm = Math.min(1, mag / maxRadius);
-  const headR = (8 + norm * 12) * dpr; // was 22 — no more balloon past cap
+  // Phase 1 power reads off the backswing depth. Once the swing is
+  // locked it stops charging — the peakDy / peakY captured at the
+  // reversal moment is what's shown from then on.
+  const peakDy = swipe.locked
+    ? swipe.peakDy
+    : Math.max(swipe.peakDy, Math.max(0, swipe.currentY - sy));
+  const drawDy = Math.min(maxRadius, peakDy);
+  const px = sx;
+  const py = sy + drawDy;
+  const norm = Math.min(1, peakDy / maxRadius);
+  const headR = (8 + norm * 12) * dpr;
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  // Always draw the 100% ring so the player sees where the cap sits.
+  // 100% ring at the start point.
   ctx.strokeStyle = norm >= 1 ? 'rgba(255,240,170,0.85)' : 'rgba(255,255,255,0.32)';
   ctx.lineWidth = (norm >= 1 ? 1.5 : 1) * dpr;
   ctx.setLineDash([4 * dpr, 4 * dpr]);
   ctx.beginPath(); ctx.arc(sx, sy, maxRadius, 0, Math.PI * 2); ctx.stroke();
   ctx.setLineDash([]);
+  // Backswing shaft: start → peak (vertical line down).
   ctx.strokeStyle = 'rgba(0,0,0,0.45)';
   ctx.lineWidth = 10 * dpr;
-  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(px, py); ctx.stroke();
   const hue = 120 - 110 * norm;
   ctx.strokeStyle = `hsla(${hue}, 80%, 60%, 0.9)`;
   ctx.lineWidth = 6 * dpr;
-  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(px, py); ctx.stroke();
   ctx.strokeStyle = 'rgba(255,255,255,0.95)';
   ctx.lineWidth = 2 * dpr;
-  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
-  // Origin halo — does NOT grow past the 100% ring radius.
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(px, py); ctx.stroke();
+  // Origin halo.
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.beginPath(); ctx.arc(sx, sy, (10 + norm * 14) * dpr, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = `hsla(${hue}, 80%, 55%, 0.7)`;
   ctx.beginPath(); ctx.arc(sx, sy, (8 + norm * 10) * dpr, 0, Math.PI * 2); ctx.fill();
-  // Head dot at the clamped endpoint, never outside the ring.
+  // Head dot at the backswing peak — ringed in gold once locked.
   ctx.fillStyle = `hsla(${hue}, 85%, 60%, 0.95)`;
-  ctx.beginPath(); ctx.arc(ex, ey, headR, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-  ctx.lineWidth = 1 * dpr;
-  ctx.beginPath(); ctx.arc(ex, ey, headR, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(px, py, headR, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = swipe.locked ? 'rgba(255,230,120,0.95)' : 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = (swipe.locked ? 2 : 1) * dpr;
+  ctx.beginPath(); ctx.arc(px, py, headR + (swipe.locked ? 2 * dpr : 0), 0, Math.PI * 2); ctx.stroke();
+  // Power label.
   ctx.font = `bold ${14 * dpr}px ui-monospace, Menlo, monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#fff6d8';
-  ctx.fillText(`${Math.round(norm * 100)}%`, ex, ey - (headR + 10 * dpr));
+  const label = swipe.locked ? `LOCK ${Math.round(norm * 100)}%` : `${Math.round(norm * 100)}%`;
+  ctx.fillText(label, px, py + headR + 14 * dpr);
+  // Forward-swing deviation indicator — visible only after lock. A
+  // straight upward swipe holds the dashed line vertical and tinted
+  // green; drifting left / right hooks the line sideways and warms it.
+  if (swipe.locked) {
+    const cx = swipe.currentX, cy = swipe.currentY;
+    const devPx = cx - swipe.peakX;
+    const devNorm = Math.max(-1, Math.min(1, devPx / (45 * dpr)));
+    const devHue = 120 - Math.abs(devNorm) * 110;
+    ctx.strokeStyle = `hsla(${devHue}, 80%, 60%, 0.9)`;
+    ctx.lineWidth = 4 * dpr;
+    ctx.setLineDash([6 * dpr, 4 * dpr]);
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(cx, cy); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = `hsla(${devHue}, 85%, 60%, 0.95)`;
+    ctx.beginPath(); ctx.arc(cx, cy, 5 * dpr, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = 1 * dpr;
+    ctx.beginPath(); ctx.arc(cx, cy, 5 * dpr, 0, Math.PI * 2); ctx.stroke();
+    // Shape tag.
+    ctx.fillStyle = '#fff6d8';
+    const shape = Math.abs(devNorm) < 0.15 ? 'STRAIGHT' : devNorm < 0 ? 'HOOK ←' : 'SLICE →';
+    ctx.fillText(shape, cx, cy - 16 * dpr);
+  }
   ctx.restore();
 }
 
@@ -2078,8 +2103,18 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       swipeRef.current = {
         startX: canvasX, startY: canvasY,
         currentX: canvasX, currentY: canvasY,
-        peakX: canvasX, peakY: canvasY,
-        maxMag: 0, maxDx: 0, maxDy: 0,
+        // Backswing tracking — mirrors App.js swing state machine.
+        //   peakDy  = max downward travel from start (charges power)
+        //   peakX/Y = lowest point reached during the backswing
+        //   locked  = true once the finger reverses back up past a
+        //             threshold. Power commits at that moment.
+        peakDy: 0,
+        peakX: canvasX,
+        peakY: canvasY,
+        locked: false,
+        // Forward-swing deviation — signed peak horizontal drift from
+        // the lock point. Drives hook / slice.
+        fwdPeakDevX: 0,
       };
       flushHud();
       return true;
@@ -2088,15 +2123,29 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
     const updateSwipe = (canvasX, canvasY) => {
       const s = swipeRef.current;
       if (!s) return;
+      const dpr = window.devicePixelRatio || 1;
       s.currentX = canvasX; s.currentY = canvasY;
-      const dx = canvasX - s.startX, dy = canvasY - s.startY;
-      const mag = Math.hypot(dx, dy);
-      if (mag > s.maxMag) {
-        s.maxMag = mag;
-        s.maxDx = dx;
-        s.maxDy = dy;
-        s.peakX = canvasX;
-        s.peakY = canvasY;
+      const dy = canvasY - s.startY;
+      if (!s.locked) {
+        if (dy > s.peakDy) {
+          // Still pulling down — charge power.
+          s.peakDy = dy;
+          s.peakX = canvasX;
+          s.peakY = canvasY;
+        } else if (s.peakDy > 20 * dpr && (s.peakY - canvasY) > 8 * dpr) {
+          // Finger reversed upward past the threshold — LOCK power and
+          // enter the forward swing. Power cannot grow beyond this point.
+          s.locked = true;
+        }
+      } else {
+        // Forward swing — peak-track the signed horizontal drift from
+        // the lock point. The worst moment is what scores (a late
+        // recovery doesn't erase a mid-swing wobble).
+        const dev = (canvasX - s.peakX) / (45 * dpr);
+        const clamped = Math.max(-1, Math.min(1, dev));
+        if (Math.abs(clamped) > Math.abs(s.fwdPeakDevX)) {
+          s.fwdPeakDevX = clamped;
+        }
       }
     };
 
@@ -2107,18 +2156,22 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       const ball = ballRef.current;
       const club = CLUBS[sw.clubIdx];
       const dpr = window.devicePixelRatio || 1;
-      // Single-phase power: how far the finger pulled out before release.
-      // 100% power at 80 css px of pull (scaled by dpr). Simpler than the
-      // two-phase model and avoids the "zero follow-through → 0 power"
-      // trap where a pull-and-lift shot would barely move the ball.
-      const power = Math.max(0.1, Math.min(1, s.maxMag / (80 * dpr)));
-      const accuracy = Math.max(-1, Math.min(1, s.maxDx / (55 * dpr)));
-      if (s.maxMag < 20 * dpr) {
+      // Two-phase swing, matching App.js:
+      //   Phase 1 (backswing):   pull down → peakDy sets the power ceiling
+      //   Phase 2 (forward):     swipe up  → horizontal drift shapes the shot
+      // Releasing without a reversal (pure pull-and-lift) aborts — the
+      // user must commit to the forward swing for the shot to fire.
+      if (!s.locked || s.peakDy < 20 * dpr) {
         sw.state = SW.AIMING;
         swipeRef.current = null;
         flushHud();
         return;
       }
+      const power = Math.max(0.1, Math.min(1, s.peakDy / (80 * dpr)));
+      // Accuracy = forward peak deviation + a small backswing-drift contribution
+      // (~25% weight, same blend as App.js).
+      const backDev = Math.max(-1, Math.min(1, (s.peakX - s.startX) / (45 * dpr)));
+      const accuracy = Math.max(-1, Math.min(1, s.fwdPeakDevX + backDev * 0.25));
       ball.lastGoodX = ball.x; ball.lastGoodY = ball.y;
       const liePhys = surfacePropsAt(ball.x, ball.y);
       const clubStats = bagStatsRef.current[club.key] || null;
@@ -2248,7 +2301,8 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         swipeRef.current = {
           startX: canvasX, startY: canvasY,
           currentX: canvasX, currentY: canvasY,
-          maxMag: 0, maxDx: 0, maxDy: 0,
+          peakDy: 0, peakX: canvasX, peakY: canvasY,
+          locked: false, fwdPeakDevX: 0,
           fromButton: true,
         };
         activePointers.set(pointerId, 'swipe');
@@ -2628,21 +2682,13 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         if (sw.state === SW.SWIPING && swipeRef.current) {
           const s = swipeRef.current;
           const dprLocal = window.devicePixelRatio || 1;
-          const mag = Math.hypot(s.currentX - s.startX, s.currentY - s.startY);
-          const backPower = Math.min(1, s.maxMag / (80 * dprLocal));
-          // If the finger is still near peak → backswing pose, club far back.
-          // If it's returning toward start → live forward-swing animation.
-          const returnDist = Math.hypot(s.currentX - s.peakX, s.currentY - s.peakY);
-          const returningPct = s.maxMag > 0 ? Math.min(1, returnDist / s.maxMag) : 0;
-          if (returningPct > 0.05 && s.maxMag > 8 * dprLocal) {
-            swingInfo = {
-              phase: 'forward',
-              // Map returningPct 0→1 onto the forward-swing curve so the
-              // club sweeps from the peak through impact as the player
-              // pulls back in.
-              forwardT: returningPct,
-              clubCategory: clubCatForAnim,
-            };
+          const backPower = Math.min(1, s.peakDy / (80 * dprLocal));
+          if (s.locked) {
+            // Forward phase — progress is how far back up from the peak
+            // the finger has traveled, relative to the backswing depth.
+            const travelUp = Math.max(0, s.peakY - s.currentY);
+            const forwardT = s.peakDy > 0 ? Math.max(0, Math.min(1, travelUp / s.peakDy)) : 0;
+            swingInfo = { phase: 'forward', forwardT, clubCategory: clubCatForAnim };
           } else {
             swingInfo = { phase: 'back', power: backPower, clubCategory: clubCatForAnim };
           }
@@ -2940,7 +2986,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         >
           <View style={styles.swingBtnGlow} pointerEvents="none" />
           <Text style={styles.swingBtnLabel}>SWING</Text>
-          <Text style={styles.swingBtnHint}>pull to swing</Text>
+          <Text style={styles.swingBtnHint}>pull ↓ then swipe ↑</Text>
         </View>
       ) : null}
 
