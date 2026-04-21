@@ -2449,72 +2449,80 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       sctx.clearRect(0, 0, WORLD_W, WORLD_H);
       const imgData = buildWorldImageData();
       sctx.putImageData(imgData, 0, 0);
-      // Slope visualisation: a repeating lattice of small downhill
-      // arrows rendered in two shades of green, as if the greenskeeper
-      // mowed them into the turf. Both fairway AND green surfaces get
-      // the pattern. Density scales subtly with slope magnitude — bigger
-      // grade → tighter spacing → more arrows visible per chunk.
+      // Mower patterns on every fairway + green.
+      //   • Flat surfaces get parallel diagonal stripes (standard lawn
+      //     mowing look) — alternating darker / lighter green bands.
+      //   • Sloped surfaces get big chevron stripes pointing downhill,
+      //     like a lane of painted arrows mowed into the turf. The
+      //     chevron apex lines up with the downhill direction so the
+      //     shape communicates grade at a glance.
+      // Per-row run-length batching keeps the pixel loop tractable for
+      // a one-shot static bake.
+      const MOW_DARK_DARK  = 'rgba(6, 26, 10, 0.22)';
+      const MOW_DARK_MID   = 'rgba(12, 38, 14, 0.13)';
+      const MOW_LIGHT_MID  = 'rgba(220, 244, 200, 0.07)';
+      const MOW_LIGHT_HI   = 'rgba(238, 252, 214, 0.11)';
+      const paintBands = (x0, y0, x1, y1, shape, stripeFn, bandStyles) => {
+        for (let y = y0; y < y1; y++) {
+          const runs = bandStyles.map(() => -1); // runStart per band
+          for (let x = x0; x <= x1; x++) {
+            const inside = x < x1 && pointInShape(x + 0.5, y + 0.5, shape);
+            const band = inside ? stripeFn(x, y) : -1;
+            for (let b = 0; b < bandStyles.length; b++) {
+              if (band === b) {
+                if (runs[b] < 0) runs[b] = x;
+              } else if (runs[b] >= 0) {
+                sctx.fillStyle = bandStyles[b];
+                sctx.fillRect(runs[b], y, x - runs[b], 1);
+                runs[b] = -1;
+              }
+            }
+          }
+        }
+      };
       for (const surf of SURFACES) {
-        // Greens without a per-region slope inherit the per-hole
-        // GREEN_SLOPE so every green shows mowed downhill arrows too.
+        if (surf.type !== T_FAIRWAY && surf.type !== T_GREEN) continue;
+        const bb = surf.shape._bbox;
+        if (!bb) continue;
         const slope = surf.slope
           || (surf.type === T_GREEN && GREEN_SLOPE && GREEN_SLOPE.mag
               ? { angle: GREEN_SLOPE.angle, mag: GREEN_SLOPE.mag }
               : null);
-        if (!slope || !slope.mag) continue;
-        const bb = surf.shape._bbox;
-        if (!bb) continue;
-        const gx = Math.sin(slope.angle);
-        const gy = -Math.cos(slope.angle);
-        // Perpendicular (right-of-gradient) unit vector for row offset.
-        const perpX = -gy;
-        const perpY = gx;
-        // Spacing between arrows: ~16 px on gentle slopes, 12 px on steep.
-        const spacing = Math.max(11, 18 - slope.mag);
-        // Two greens mowed into the grass. Darker shade reads as the
-        // shadowed cut, lighter shade as the cross-grain stripe.
-        const darkGreen = '#183a1b';
-        const lightGreen = '#4a8042';
-        const bbW = bb[2] - bb[0];
-        const bbH = bb[3] - bb[1];
-        const diag = Math.sqrt(bbW * bbW + bbH * bbH);
-        const steps = Math.ceil(diag / spacing) + 2;
-        // Walk a rotated grid aligned with (perp, grad) so the arrow
-        // rows all point the same way and line up regardless of surface
-        // orientation. Origin at the bbox center.
-        const cx0 = (bb[0] + bb[2]) * 0.5;
-        const cy0 = (bb[1] + bb[3]) * 0.5;
-        for (let ri = -steps; ri <= steps; ri++) {
-          for (let ai = -steps; ai <= steps; ai++) {
-            // Stagger every other row by half-spacing so arrows
-            // interleave rather than forming a blocky square grid.
-            const stagger = (ri & 1) ? spacing * 0.5 : 0;
-            const tx = cx0 + perpX * ri * spacing + gx * (ai * spacing + stagger);
-            const ty = cy0 + perpY * ri * spacing + gy * (ai * spacing + stagger);
-            if (tx < bb[0] - 4 || tx > bb[2] + 4) continue;
-            if (ty < bb[1] - 4 || ty > bb[3] + 4) continue;
-            if (!pointInShape(tx, ty, surf.shape)) continue;
-            // Each row alternates the mowed shade.
-            sctx.fillStyle = (ri & 1) ? darkGreen : lightGreen;
-            // Shaft — 5 pixels along gradient, 1 px wide.
-            for (let s = -2; s <= 2; s++) {
-              const px = Math.round(tx + gx * s);
-              const py = Math.round(ty + gy * s);
-              sctx.fillRect(px, py, 1, 1);
+        const hasSlope = !!(slope && slope.mag);
+        // Gradient axis for the stripe math. Slope: real downhill.
+        // Flat: a gentle 30° diagonal so stripes look like lawn mow lines.
+        const gx = hasSlope ? Math.sin(slope.angle) : Math.cos(Math.PI * 0.18);
+        const gy = hasSlope ? -Math.cos(slope.angle) : Math.sin(Math.PI * 0.18);
+        // Period / bandwidth tuned per-pattern:
+        //   flat: 14 px stripes, ~50 / 50 dark vs light.
+        //   slope: 34 px chevron period, 14 px chevron shaft + 4 px edge.
+        const P = hasSlope ? 34 : 14;
+        const darkW = hasSlope ? 14 : 7;
+        const edgeW = hasSlope ? 4 : 3;
+        const stripeFn = hasSlope
+          ? (x, y) => {
+              const u = gx * x + gy * y;
+              const v = -gy * x + gx * y;
+              const phase = ((u + Math.abs(v)) % P + P) % P;
+              if (phase < darkW) return 0; // dark band (chevron shaft)
+              if (phase < darkW + edgeW) return 2; // bright edge
+              if (phase >= P - edgeW) return 3;   // bright trailing edge
+              return 1; // soft mid tone
             }
-            // Arrowhead — two angled fins at the tip.
-            const hx = Math.round(tx + gx * 2.5);
-            const hy = Math.round(ty + gy * 2.5);
-            for (let f = 1; f <= 2; f++) {
-              const lx = Math.round(hx - gx * f + perpX * f);
-              const ly = Math.round(hy - gy * f + perpY * f);
-              sctx.fillRect(lx, ly, 1, 1);
-              const rx = Math.round(hx - gx * f - perpX * f);
-              const ry = Math.round(hy - gy * f - perpY * f);
-              sctx.fillRect(rx, ry, 1, 1);
-            }
-          }
-        }
+          : (x, y) => {
+              const u = gx * x + gy * y;
+              const phase = ((u % P) + P) % P;
+              if (phase < darkW) return 0;
+              if (phase < darkW + edgeW) return 2;
+              if (phase >= P - edgeW) return 3;
+              return 1;
+            };
+        const bandStyles = [MOW_DARK_DARK, MOW_DARK_MID, MOW_LIGHT_HI, MOW_LIGHT_MID];
+        const x0 = Math.max(0, Math.floor(bb[0]));
+        const y0 = Math.max(0, Math.floor(bb[1]));
+        const x1 = Math.min(WORLD_W, Math.ceil(bb[2]));
+        const y1 = Math.min(WORLD_H, Math.ceil(bb[3]));
+        paintBands(x0, y0, x1, y1, surf.shape, stripeFn, bandStyles);
       }
       for (const p of PROPS) drawProp(sctx, p);
     };
