@@ -980,6 +980,34 @@ function drawFlag(ctx, px, py, time, { showPole = true } = {}) {
 
 // Map a club key to a silhouette category so drawClub can render the
 // right shaft length + head shape.
+// Address pose for a right-handed golfer. Given the ball and the aim
+// angle (radians, 0 = north, π/2 = east — matches sw.aimAngle), return
+// the sprite position + facing cardinal + the aim vector itself so the
+// swing animation can swing toward the target regardless of hole
+// orientation.
+//
+// Stance rule: body faces the target. Ball sits on the golfer's RIGHT
+// side, so the golfer is on the LEFT side of the ball. In screen
+// coords (y-down), the "right" direction relative to target T is the
+// CW-rotated vector (-Ty, Tx), so the golfer offset from the ball is
+// the opposite: (Ty, -Tx) (≈ LEFT of target).
+function addressPose(ball, aimAngle) {
+  const tx = Math.sin(aimAngle);
+  const ty = -Math.cos(aimAngle);
+  // Right direction relative to target (CW rotation in screen space).
+  const rx = -ty;
+  const ry = tx;
+  const stanceOffset = 7;
+  const px = ball.x - rx * stanceOffset;
+  const py = ball.y - ry * stanceOffset;
+  // Pick nearest cardinal for sprite facing.
+  const ax = Math.abs(tx), ay = Math.abs(ty);
+  let facing;
+  if (ax > ay) facing = tx > 0 ? 'E' : 'W';
+  else facing = ty > 0 ? 'S' : 'N';
+  return { px, py, facing, tx, ty, rx, ry };
+}
+
 function clubCategoryFor(clubKey) {
   if (clubKey === 'PT') return 'putter';
   if (clubKey === 'PW' || clubKey === 'SW' || clubKey === 'LW' || clubKey === 'GW') return 'wedge';
@@ -1849,15 +1877,16 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       b.spinX = 0; b.spinY = 0;
       b.dropT = 0;
       const p = posRef.current;
-      // Stand to the LEFT of the ball facing RIGHT (east) so the sprite
-      // reads as a golfer addressing the ball from the top-down view.
-      p.x = b.x - 7; p.y = b.y + 1; p.facing = 'E'; p.moving = false;
       swingRef.current.strokeCount = 1;
       swingRef.current.spinX = 0;
       swingRef.current.spinY = 0;
       swingRef.current.state = SW.AIMING;
       aimAtFlag();
       autoPickClubAndZoom();
+      // Pose the golfer AFTER aim is resolved so stance orients to the
+      // actual target line, not a stale cardinal.
+      const pose = addressPose(b, swingRef.current.aimAngle);
+      p.x = pose.px; p.y = pose.py; p.facing = pose.facing; p.moving = false;
     };
     setBallOnTee();
 
@@ -1938,12 +1967,13 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
           setLastShotHud({ ...ls });
         }
         if (ball.state === 'stopped') {
-          p.x = ball.x - 7; p.y = ball.y + 1; p.facing = 'E';
           ball.state = 'rest';
           ball.trail = [];
           aimAtFlag();
           autoPickClubAndZoom();
           sw.state = SW.AIMING;
+          const pose = addressPose(ball, sw.aimAngle);
+          p.x = pose.px; p.y = pose.py; p.facing = pose.facing;
           flushHud();
         }
       }
@@ -1981,6 +2011,7 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       swipeRef.current = {
         startX: canvasX, startY: canvasY,
         currentX: canvasX, currentY: canvasY,
+        peakX: canvasX, peakY: canvasY,
         maxMag: 0, maxDx: 0, maxDy: 0,
       };
       flushHud();
@@ -1993,7 +2024,13 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       s.currentX = canvasX; s.currentY = canvasY;
       const dx = canvasX - s.startX, dy = canvasY - s.startY;
       const mag = Math.hypot(dx, dy);
-      if (mag > s.maxMag) { s.maxMag = mag; s.maxDx = dx; s.maxDy = dy; }
+      if (mag > s.maxMag) {
+        s.maxMag = mag;
+        s.maxDx = dx;
+        s.maxDy = dy;
+        s.peakX = canvasX;
+        s.peakY = canvasY;
+      }
     };
 
     const endSwipe = () => {
@@ -2006,7 +2043,21 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
       // 100% power at 110 css px of pull — keeps the full swing reachable
       // even when the player starts pulling from the SWING pad (which
       // sits at bottom-right with ~80 px of clearance below it).
-      const power = Math.max(0.1, Math.min(1, s.maxMag / (80 * dpr)));
+      // Two-phase power: backswing peak sets the CEILING, follow-through
+      // from peak back toward start is the multiplier.
+      //   backPct    = how far out the finger went    (maxMag / 80·dpr)
+      //   followPct  = how far back from peak it came (0..1 of backPct)
+      //   power      = backPct × followPct
+      // Pull to 50% + full follow = 50% carry. Pull to 100% + half follow
+      // = 50% carry. Pull to 100% + full follow = 100% carry.
+      const backPct = Math.min(1, s.maxMag / (80 * dpr));
+      const followDx = s.currentX - s.peakX;
+      const followDy = s.currentY - s.peakY;
+      const followDist = Math.hypot(followDx, followDy);
+      const followPct = s.maxMag > 0 ? Math.min(1, followDist / s.maxMag) : 0;
+      const power = Math.max(0.08, backPct * followPct);
+      // Accuracy still reads off peak X-offset — that's the shot shape
+      // the player committed to at the top of the swing.
       const accuracy = Math.max(-1, Math.min(1, s.maxDx / (55 * dpr)));
       if (s.maxMag < 20 * dpr) {
         sw.state = SW.AIMING;
@@ -2269,18 +2320,27 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
         p.y = Math.max(8, Math.min(WORLD_H - 8, p.y + vy * speed * dt));
         if (p.moving) p.walkPhase += dt * 8; else p.walkPhase = 0;
         if (Math.hypot(p.x - ball.x, p.y - ball.y) < 18) {
-          // Snap the player into the proper address pose: LEFT of ball,
-          // facing east. Without this the walked-in facing sticks and
-          // the golfer ends up pointing whatever way they last walked.
-          p.x = ball.x - 7; p.y = ball.y + 1; p.facing = 'E'; p.moving = false;
+          // Snap the player into a proper address pose oriented to the
+          // target line — not a stale cardinal — so the stance works
+          // whether the hole plays north (portrait) or east (landscape).
           sw.state = SW.AIMING;
           aimAtFlag();
           autoPickClubAndZoom();
+          {
+            const pose = addressPose(ball, sw.aimAngle);
+            p.x = pose.px; p.y = pose.py; p.facing = pose.facing; p.moving = false;
+          }
           flushHud();
         }
       } else if (sw.state === SW.AIMING || sw.state === SW.SWIPING) {
         p.moving = false;
-        p.x = ball.x - 7; p.y = ball.y + 1;
+        {
+          const pose = addressPose(ball, sw.aimAngle);
+          p.x = pose.px; p.y = pose.py;
+          // facing is re-read here each tick so rotating aim rotates
+          // the sprite + the swing-arc direction too.
+          p.facing = pose.facing;
+        }
         const j = joystickRef.current;
         if (sw.state === SW.AIMING && j) {
           const dpr = window.devicePixelRatio || 1;
@@ -2515,8 +2575,23 @@ export default function GolfStoryScreen({ onExit, selectedGolfer, selectedBag, e
           const s = swipeRef.current;
           const dprLocal = window.devicePixelRatio || 1;
           const mag = Math.hypot(s.currentX - s.startX, s.currentY - s.startY);
-          const power = Math.min(1, mag / (80 * dprLocal));
-          swingInfo = { phase: 'back', power, clubCategory: clubCatForAnim };
+          const backPower = Math.min(1, s.maxMag / (80 * dprLocal));
+          // If the finger is still near peak → backswing pose, club far back.
+          // If it's returning toward start → live forward-swing animation.
+          const returnDist = Math.hypot(s.currentX - s.peakX, s.currentY - s.peakY);
+          const returningPct = s.maxMag > 0 ? Math.min(1, returnDist / s.maxMag) : 0;
+          if (returningPct > 0.05 && s.maxMag > 8 * dprLocal) {
+            swingInfo = {
+              phase: 'forward',
+              // Map returningPct 0→1 onto the forward-swing curve so the
+              // club sweeps from the peak through impact as the player
+              // pulls back in.
+              forwardT: returningPct,
+              clubCategory: clubCatForAnim,
+            };
+          } else {
+            swingInfo = { phase: 'back', power: backPower, clubCategory: clubCatForAnim };
+          }
         } else if (sw.state === SW.FLYING || sw.state === SW.ROLLING || sw.state === SW.DROPPING) {
           const elapsed = sw.strikeT ? (Date.now() - sw.strikeT) / 1000 : 999;
           if (elapsed < 0.22) {
