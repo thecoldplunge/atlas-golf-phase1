@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Image as RNImage, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   CLUBHOUSE_WORLD,
   RANGE_WORLD,
@@ -12,8 +12,12 @@ import {
 } from './Clubhouse';
 import golferAtlas from './golfer-atlas.json';
 // v0.78 — let Metro / Expo Web bundle the sprite sheet so its URL
-// survives the production build. On web, require() returns an object
-// with .uri pointing at the hashed asset path in dist/.
+// survives the production build. What `require()` returns here
+// varies by platform:
+//   • native RN: a numeric module id (for use with <Image />)
+//   • react-native-web ≥ 0.19: either a string URL OR an object with
+//     { uri, width, height }. resolveAssetSource isn't exposed as a
+//     static on RNW's Image, so we read .uri directly.
 const GOLFER_SHEET_SRC = require('../assets/golfer-sprites.png');
 
 // Simple on-screen error boundary. When any child throws during
@@ -3299,15 +3303,21 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
     gameModeRef.current = 'clubhouse';
     holeIdxRef.current = 0;
 
-    // v0.78 — load the golfer sprite sheet once. The drawGolfer path
-    // falls back to the procedural sprite until this resolves so the
-    // canvas never paints blank during the brief load window. The
-    // URL comes from require() so Expo's web export puts the file
-    // at the correct hashed path inside dist/.
+    // v0.78 — load the golfer sprite sheet once. drawGolfer falls
+    // back to the procedural sprite until this resolves so the canvas
+    // never paints blank during the brief load window. The URL comes
+    // from require() (bundled by Metro) so the file is reachable at
+    // its hashed path inside Vercel's dist/ output.
     if (!_sheetState.img && typeof Image !== 'undefined') {
-      const resolved = RNImage.resolveAssetSource(GOLFER_SHEET_SRC) || {};
-      const uri = resolved.uri
-        || (typeof GOLFER_SHEET_SRC === 'string' ? GOLFER_SHEET_SRC : null);
+      // RNW may return either a string URL or an object { uri, ... }.
+      // Node / native RN return a module id (not useful here — we
+      // only render on web).
+      const src = GOLFER_SHEET_SRC;
+      let uri = null;
+      if (typeof src === 'string') uri = src;
+      else if (src && typeof src === 'object') {
+        uri = src.uri || (src.default && (src.default.uri || src.default)) || null;
+      }
       if (uri) {
         const img = new Image();
         img.crossOrigin = 'anonymous';   // allow getImageData for palette swap
