@@ -2517,11 +2517,18 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
           }
           return true;
         };
+        // Center the chevron math on the surface's bbox so the V-apex
+        // axis actually passes through the fairway. Without this the
+        // v=0 ridge sits out at the world origin and every fairway
+        // sees only one side of the V — reading as diagonals.
+        const cx0 = (bb[0] + bb[2]) * 0.5;
+        const cy0 = (bb[1] + bb[3]) * 0.5;
         const stripeFn = hasSlope
           ? (x, y) => {
               if (!isTopHere(x, y)) return -1;
-              const u = gx * x + gy * y;
-              const v = -gy * x + gx * y;
+              const lx = x - cx0, ly = y - cy0;
+              const u = gx * lx + gy * ly;
+              const v = -gy * lx + gx * ly;
               const phase = ((u + Math.abs(v)) % P + P) % P;
               return phase < half ? 0 : 1;
             }
@@ -2827,8 +2834,9 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       if (label === 'Dirt') return -55;
       return 0;
     };
-    const chooseShotPlan = (pl, bx, by, fx, fy) => {
-      const courseIQ = pl.golfer?.mental?.courseManagement ?? 50;
+    const chooseShotPlan = (pl, bx, by, fx, fy, opts = {}) => {
+      const baseIQ = pl.golfer?.mental?.courseManagement ?? 50;
+      const courseIQ = opts.forceIQ != null ? Math.max(baseIQ, opts.forceIQ) : baseIQ;
       if (courseIQ < 55) return null;
       if (surfaceAt(bx, by) === T_GREEN) return null; // putter logic handles this
       const dxP = fx - bx, dyP = fy - by;
@@ -2911,7 +2919,16 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       const composure = mental.composure ?? 50;
       // Consult the Course-IQ planner — smart NPCs route around trees
       // and hazards; low-IQ NPCs fall back to pin-at-pin defaults.
-      const plan = chooseShotPlan(pl, b.x, b.y, flagX, flagY);
+      // If the NPC just rinsed it / went OOB, force the planner on (so
+      // they can see the water score −320 and pick a safer candidate)
+      // AND back off power by 15% per retry, capped at 3 retries. Keeps
+      // a bad-luck NPC from sending it into the water five shots in a row.
+      const retries = Math.min(3, pl.hazardRetries || 0);
+      const planOpts = retries > 0 ? { forceIQ: 80 } : {};
+      const plan = chooseShotPlan(pl, b.x, b.y, flagX, flagY, planOpts);
+      if (plan && retries > 0) {
+        plan.power = Math.max(0.35, plan.power * Math.pow(0.85, retries));
+      }
       const clubIdx = plan ? plan.clubIdx : pickClubForDistance(distYd, onGreen);
       sw.clubIdx = clubIdx;
       const club = CLUBS[clubIdx];
@@ -3114,6 +3131,10 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
           setLastShotHud({ ...ls });
         }
         const holed = ball.state === 'holed';
+        // Successful dry landing — clear the hazard-retry streak so
+        // the NPC's next approach doesn't still be scaled down.
+        const activePlayerForReset = playersRef.current[currentPlayerIdxRef.current];
+        if (activePlayerForReset) activePlayerForReset.hazardRetries = 0;
         const activeIdx = currentPlayerIdxRef.current;
         const active = playersRef.current[activeIdx];
         if (active) active.teedOff = true;
@@ -3143,6 +3164,8 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         sw.state = SW.SPLASHING;
         sw.messageTimer = SPLASH_DURATION + SPLASH_PAUSE;
         sw.strokeCount++;
+        const pl = playersRef.current[currentPlayerIdxRef.current];
+        if (pl) pl.hazardRetries = (pl.hazardRetries || 0) + 1;
         splashFx.x = ball.x;
         splashFx.y = ball.y;
         splashFx.t = 0;
@@ -3159,7 +3182,12 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         }
         flushHud();
       }
-      else if (ball.state === 'ob') { sw.state = SW.OB; sw.messageTimer = 2.2; sw.strokeCount++; flushHud(); }
+      else if (ball.state === 'ob') {
+        sw.state = SW.OB; sw.messageTimer = 2.2; sw.strokeCount++;
+        const pl = playersRef.current[currentPlayerIdxRef.current];
+        if (pl) pl.hazardRetries = (pl.hazardRetries || 0) + 1;
+        flushHud();
+      }
     };
 
     const screenToWorld = (clientX, clientY) => {
@@ -3752,12 +3780,16 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
             anchorOffsetX = 0;
             anchorOffsetY = 0;
           } else {
-            // Human VIEW=AIM framing: centre on the projected landing
-            // spot so the player sees where the shot will come down.
-            followX = ball.x + Math.sin(sw.aimAngle) * clubCarryPx;
-            followY = ball.y - Math.cos(sw.aimAngle) * clubCarryPx;
-            anchorOffsetX = isTabletGS ? (viewW * 0.22) / scale : 0;
-            anchorOffsetY = isTabletGS ? 0 : -(viewH * 0.28) / scale;
+            // Human VIEW=AIM framing: frame the MIDPOINT between ball
+            // and projected landing so the aim line + ball both sit
+            // close to centre, instead of dumping the aim reticle at
+            // the edge of a clamped view.
+            const lx = ball.x + Math.sin(sw.aimAngle) * clubCarryPx;
+            const ly = ball.y - Math.cos(sw.aimAngle) * clubCarryPx;
+            followX = (ball.x + lx) * 0.5;
+            followY = (ball.y + ly) * 0.5;
+            anchorOffsetX = 0;
+            anchorOffsetY = 0;
           }
         } else if (isBallMoving) {
           // Flight framing: lead the ball aggressively and push it toward
@@ -5541,9 +5573,8 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: 116, right: 10,
     backgroundColor: 'rgba(7, 11, 9, 0.88)',
     borderWidth: 2, borderColor: '#88F8BB',
-    paddingVertical: 18, paddingHorizontal: 18,
+    width: 96, height: 96, borderRadius: 48,
     alignItems: 'center', justifyContent: 'center',
-    minWidth: 96, minHeight: 80,
     // Small outer glow so the pad reads as the primary action without
     // going Red Plastic Button.
     shadowColor: '#88F8BB', shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 0 },
@@ -5552,6 +5583,7 @@ const styles = StyleSheet.create({
   },
   swingBtnGlow: {
     position: 'absolute', left: 4, right: 4, top: 4, bottom: 4,
+    borderRadius: 44,
     borderWidth: 1, borderColor: 'rgba(136, 248, 187, 0.35)',
     backgroundColor: 'transparent',
   },
