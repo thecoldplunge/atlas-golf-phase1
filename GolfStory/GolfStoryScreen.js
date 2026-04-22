@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image as RNImage, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   CLUBHOUSE_WORLD,
   RANGE_WORLD,
@@ -11,6 +11,10 @@ import {
   translateSurfaceType,
 } from './Clubhouse';
 import golferAtlas from './golfer-atlas.json';
+// v0.78 — let Metro / Expo Web bundle the sprite sheet so its URL
+// survives the production build. On web, require() returns an object
+// with .uri pointing at the hashed asset path in dist/.
+const GOLFER_SHEET_SRC = require('../assets/golfer-sprites.png');
 
 // Simple on-screen error boundary. When any child throws during
 // render / effect, we fall back to a dark screen with the exact
@@ -3297,20 +3301,27 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
 
     // v0.78 — load the golfer sprite sheet once. The drawGolfer path
     // falls back to the procedural sprite until this resolves so the
-    // canvas never paints blank during the brief load window.
+    // canvas never paints blank during the brief load window. The
+    // URL comes from require() so Expo's web export puts the file
+    // at the correct hashed path inside dist/.
     if (!_sheetState.img && typeof Image !== 'undefined') {
-      const img = new Image();
-      img.onload = () => {
-        _sheetState.img = img;
-        _sheetState.ready = true;
-      };
-      img.onerror = () => {
-        // Leave ready=false; procedural fallback keeps the game playable.
-        console.warn('[GS] golfer sprite sheet failed to load');
-      };
-      img.src = (typeof window !== 'undefined' && window.location && window.location.origin
-        ? window.location.origin
-        : '') + '/assets/golfer-sprites.png';
+      const resolved = RNImage.resolveAssetSource(GOLFER_SHEET_SRC) || {};
+      const uri = resolved.uri
+        || (typeof GOLFER_SHEET_SRC === 'string' ? GOLFER_SHEET_SRC : null);
+      if (uri) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';   // allow getImageData for palette swap
+        img.onload = () => {
+          _sheetState.img = img;
+          _sheetState.ready = true;
+        };
+        img.onerror = () => {
+          console.warn('[GS] golfer sprite sheet failed to load from', uri);
+        };
+        img.src = uri;
+      } else {
+        console.warn('[GS] sprite sheet require() produced no uri', GOLFER_SHEET_SRC);
+      }
     }
 
     staticRef.current = document.createElement('canvas');
