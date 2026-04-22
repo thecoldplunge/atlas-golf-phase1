@@ -2478,7 +2478,8 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
           }
         }
       };
-      for (const surf of SURFACES) {
+      for (let surfIdx = 0; surfIdx < SURFACES.length; surfIdx++) {
+        const surf = SURFACES[surfIdx];
         if (surf.type !== T_FAIRWAY && surf.type !== T_GREEN) continue;
         const bb = surf.shape._bbox;
         if (!bb) continue;
@@ -2493,14 +2494,32 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         // chevrons (24 px) so the V actually reads as an arrow.
         const P = hasSlope ? 24 : 14;
         const half = P / 2;
+        // Only paint where THIS surface is the topmost one — any
+        // surface defined after it in the SURFACES array (sand,
+        // fringe, green, tee, water, etc.) hides the layers below.
+        // Stops fairway stripes from showing through greens / sand /
+        // hazards and stops green chevrons from bleeding onto the
+        // tee box.
+        const toplayerShapes = [];
+        for (let i = surfIdx + 1; i < SURFACES.length; i++) {
+          toplayerShapes.push(SURFACES[i].shape);
+        }
+        const isTopHere = (x, y) => {
+          for (let i = 0; i < toplayerShapes.length; i++) {
+            if (pointInShape(x + 0.5, y + 0.5, toplayerShapes[i])) return false;
+          }
+          return true;
+        };
         const stripeFn = hasSlope
           ? (x, y) => {
+              if (!isTopHere(x, y)) return -1;
               const u = gx * x + gy * y;
               const v = -gy * x + gx * y;
               const phase = ((u + Math.abs(v)) % P + P) % P;
               return phase < half ? 0 : 1;
             }
           : (x, y) => {
+              if (!isTopHere(x, y)) return -1;
               const u = gx * x + gy * y;
               const phase = ((u % P) + P) % P;
               return phase < half ? 0 : 1;
