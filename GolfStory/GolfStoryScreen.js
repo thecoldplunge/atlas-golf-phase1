@@ -2523,14 +2523,34 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         // sees only one side of the V — reading as diagonals.
         const cx0 = (bb[0] + bb[2]) * 0.5;
         const cy0 = (bb[1] + bb[3]) * 0.5;
+        // Limit chevron paint to a centred sub-region so only the
+        // sloped SECTION of the fairway wears arrows — the rest still
+        // shows the flat diagonal lawn stripes. Radius is ~38% of the
+        // shorter bbox dimension. Outside the zone we fall through to
+        // the flat stripe function so both patterns coexist on the
+        // same fairway (matches how real greens often have 2+ slopes).
+        const bbW = bb[2] - bb[0];
+        const bbH = bb[3] - bb[1];
+        const zoneR = Math.max(24, Math.min(bbW, bbH) * 0.38);
+        const zoneR2 = zoneR * zoneR;
+        const flatGx = Math.cos(Math.PI * 0.18);
+        const flatGy = Math.sin(Math.PI * 0.18);
+        const flatP = 14;
+        const flatHalf = 7;
         const stripeFn = hasSlope
           ? (x, y) => {
               if (!isTopHere(x, y)) return -1;
               const lx = x - cx0, ly = y - cy0;
-              const u = gx * lx + gy * ly;
-              const v = -gy * lx + gx * ly;
-              const phase = ((u + Math.abs(v)) % P + P) % P;
-              return phase < half ? 0 : 1;
+              const inZone = (lx * lx + ly * ly) < zoneR2;
+              if (inZone) {
+                const u = gx * lx + gy * ly;
+                const v = -gy * lx + gx * ly;
+                const phase = ((u + Math.abs(v)) % P + P) % P;
+                return phase < half ? 0 : 1;
+              }
+              const u = flatGx * x + flatGy * y;
+              const phase = ((u % flatP) + flatP) % flatP;
+              return phase < flatHalf ? 0 : 1;
             }
           : (x, y) => {
               if (!isTopHere(x, y)) return -1;
@@ -3204,10 +3224,11 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
 
     const joystickCenter = () => {
       const dpr = window.devicePixelRatio || 1;
-      // During walking mode the stick sits where the SWING button
-      // normally lives so the right thumb can steer. The swing button
-      // is hidden in SW.IDLE so there's no overlap.
-      return { cx: canvas.width - 80 * dpr, cy: canvas.height - 80 * dpr, radius: 70 * dpr };
+      // Shared control-pad slot shared by Walk / Aim / Swing. 130 css
+      // px diameter, bottom: 116, right: 14 — so the pad centre sits
+      // at (cssW − 79, cssH − 181). Radius 60 leaves ~5 px of frame
+      // around the joystick knob.
+      return { cx: canvas.width - 79 * dpr, cy: canvas.height - 181 * dpr, radius: 60 * dpr };
     };
 
     const isInJoystick = (canvasX, canvasY) => {
@@ -3780,16 +3801,23 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
             anchorOffsetX = 0;
             anchorOffsetY = 0;
           } else {
-            // Human VIEW=AIM framing: frame the MIDPOINT between ball
-            // and projected landing so the aim line + ball both sit
-            // close to centre, instead of dumping the aim reticle at
-            // the edge of a clamped view.
+            // Human VIEW=AIM framing: follow the projected LANDING
+            // spot, and push it toward the top of the frame so the
+            // player always sees where the shot will land. On long
+            // clubs the ball may slide off the bottom edge, but the
+            // aim crosshair stays clearly visible — that's the whole
+            // point of the AIM view. (The v0.68 midpoint experiment
+            // lost the crosshair on a H2 driver carry.)
             const lx = ball.x + Math.sin(sw.aimAngle) * clubCarryPx;
             const ly = ball.y - Math.cos(sw.aimAngle) * clubCarryPx;
-            followX = (ball.x + lx) * 0.5;
-            followY = (ball.y + ly) * 0.5;
-            anchorOffsetX = 0;
-            anchorOffsetY = 0;
+            // Bias the followed point slightly back toward the ball so
+            // short shots keep both endpoints in frame, but heavily
+            // toward the landing so long drives don't push the
+            // crosshair off the top of the screen.
+            followX = lx * 0.9 + ball.x * 0.1;
+            followY = ly * 0.9 + ball.y * 0.1;
+            anchorOffsetX = isTabletGS ? (viewW * 0.18) / scale : 0;
+            anchorOffsetY = isTabletGS ? 0 : -(viewH * 0.22) / scale;
           }
         } else if (isBallMoving) {
           // Flight framing: lead the ball aggressively and push it toward
@@ -4203,41 +4231,61 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       ) : null}
 
       {showAimPad ? (
-        <AimPad
-          aimDelta={(() => {
-            const sw = swingRef.current;
-            let d = (sw.aimAngle || 0) - (sw.aimBaseAngle || 0);
-            while (d > Math.PI) d -= 2 * Math.PI;
-            while (d < -Math.PI) d += 2 * Math.PI;
-            return Math.max(-AIM_PAD_MAX_RAD, Math.min(AIM_PAD_MAX_RAD, d));
-          })()}
-          powerCap={hud.prePowerCap ?? 1}
-          clubShort={hud.clubShort}
-          onChange={(aim, cap) => {
-            const sw = swingRef.current;
-            sw.aimAngle = (sw.aimBaseAngle || 0) + aim;
-            sw.prePowerCap = cap;
-            setHud((h) => ({ ...h, prePowerCap: cap }));
-          }}
-          onOK={() => {
-            const sw = swingRef.current;
-            sw.aimLocked = true;
-            setHud((h) => ({ ...h, aimLocked: true }));
-          }}
-        />
+        <>
+          <AimPad
+            aimDelta={(() => {
+              const sw = swingRef.current;
+              let d = (sw.aimAngle || 0) - (sw.aimBaseAngle || 0);
+              while (d > Math.PI) d -= 2 * Math.PI;
+              while (d < -Math.PI) d += 2 * Math.PI;
+              return Math.max(-AIM_PAD_MAX_RAD, Math.min(AIM_PAD_MAX_RAD, d));
+            })()}
+            powerCap={hud.prePowerCap ?? 1}
+            clubShort={hud.clubShort}
+            onChange={(aim, cap) => {
+              const sw = swingRef.current;
+              sw.aimAngle = (sw.aimBaseAngle || 0) + aim;
+              sw.prePowerCap = cap;
+              setHud((h) => ({ ...h, prePowerCap: cap }));
+            }}
+          />
+          <View style={styles.controlLabel} pointerEvents="none">
+            <Text style={styles.controlLabelText}>AIM</Text>
+          </View>
+          <Pressable
+            style={styles.aimOkBtn}
+            onPress={() => {
+              const sw = swingRef.current;
+              sw.aimLocked = true;
+              setHud((h) => ({ ...h, aimLocked: true }));
+            }}
+          >
+            <Text style={styles.aimOkBtnText}>OK ▸</Text>
+          </Pressable>
+        </>
       ) : null}
 
       {showSwingPad ? (
-        <View
-          style={[styles.swingBtn, !canSwing && styles.swingBtnDisabled]}
-          onPointerDown={canSwing ? onSwingPointerDown : undefined}
-          onPointerMove={onSwingPointerMove}
-          onPointerUp={onSwingPointerUp}
-          onPointerCancel={onSwingPointerUp}
-        >
-          <View style={styles.swingBtnGlow} pointerEvents="none" />
-          <Text style={styles.swingBtnLabel}>SWING</Text>
-          <Text style={styles.swingBtnHint}>pull ↓ then swipe ↑</Text>
+        <>
+          <View
+            style={[styles.controlPad, !canSwing && styles.controlPadDisabled]}
+            onPointerDown={canSwing ? onSwingPointerDown : undefined}
+            onPointerMove={onSwingPointerMove}
+            onPointerUp={onSwingPointerUp}
+            onPointerCancel={onSwingPointerUp}
+          >
+            <View style={styles.controlPadInner} pointerEvents="none" />
+            <Text style={styles.controlPadCenter}>SWING</Text>
+          </View>
+          <View style={styles.controlLabel} pointerEvents="none">
+            <Text style={styles.controlLabelText}>SWING</Text>
+          </View>
+        </>
+      ) : null}
+
+      {hud.state === SW.IDLE && !turnHud.isNPC ? (
+        <View style={styles.controlLabel} pointerEvents="none">
+          <Text style={styles.controlLabelText}>WALK</Text>
         </View>
       ) : null}
 
@@ -4809,7 +4857,7 @@ function GSScorecardOverlay({ players, activeHoleIdx, holeCount, finishedThisHol
 // hand the slot over to the swing swipe pad.
 const AIM_PAD_MAX_RAD = 0.35;   // ≈ ±20°
 const MIN_PRE_POWER = 0.3;
-function AimPad({ aimDelta, powerCap, clubShort, onChange, onOK }) {
+function AimPad({ aimDelta, powerCap, clubShort, onChange }) {
   const padRef = useRef(null);
   const [dragging, setDragging] = useState(false);
   const capPct = Math.round((powerCap ?? 1) * 100);
@@ -4819,42 +4867,31 @@ function AimPad({ aimDelta, powerCap, clubShort, onChange, onOK }) {
     const ny = (e.nativeEvent.clientY - rect.top - rect.height / 2) / (rect.height / 2);
     const cx = Math.max(-1, Math.min(1, nx));
     const cy = Math.max(-1, Math.min(1, ny));
-    // X axis → aim delta (−1 = left 20°, +1 = right 20°).
-    // Y axis → power cap. Pulling DOWN (positive cy) reduces the cap.
-    // Pulling UP has no upward effect — cap is already 100% max.
     const aim = cx * AIM_PAD_MAX_RAD;
     const downFrac = Math.max(0, cy);
     const cap = 1 - downFrac * (1 - MIN_PRE_POWER);
     onChange(aim, cap);
   };
-  // Knob position — X follows aim delta, Y follows the cap.
-  const knobX = (aimDelta / AIM_PAD_MAX_RAD) * 78 + 82;
-  const knobY = ((1 - powerCap) / (1 - MIN_PRE_POWER)) * 78 + 82;
+  // Knob position inside a 130 px circular pad: centre = (65, 65);
+  // usable radius ≈ 50.
+  const knobX = (aimDelta / AIM_PAD_MAX_RAD) * 50 + 65;
+  const knobY = ((1 - powerCap) / (1 - MIN_PRE_POWER)) * 50 + 65;
   return (
-    <View style={aimPadStyles.wrap} pointerEvents="box-none">
-      <View
-        ref={padRef}
-        style={aimPadStyles.pad}
-        onPointerDown={(e) => { setDragging(true); handle(e); padRef.current?.setPointerCapture?.(e.nativeEvent.pointerId); }}
-        onPointerMove={(e) => { if (dragging) handle(e); }}
-        onPointerUp={() => setDragging(false)}
-        onPointerCancel={() => setDragging(false)}
-      >
-        <View style={aimPadStyles.crossH} />
-        <View style={aimPadStyles.crossV} />
-        <View style={aimPadStyles.ring} />
-        <View style={[aimPadStyles.knob, { left: knobX - 10, top: knobY - 10 }]} />
-        <Text style={[aimPadStyles.axisLabel, { top: 4, left: 0, right: 0, textAlign: 'center' }]}>100%</Text>
-        <Text style={[aimPadStyles.axisLabel, { bottom: 4, left: 0, right: 0, textAlign: 'center' }]}>{`${Math.round(MIN_PRE_POWER * 100)}%`}</Text>
-        <Text style={[aimPadStyles.axisLabel, { left: 4, top: 0, bottom: 0, textAlignVertical: 'center', lineHeight: 180 }]}>L</Text>
-        <Text style={[aimPadStyles.axisLabel, { right: 4, top: 0, bottom: 0, textAlignVertical: 'center', lineHeight: 180 }]}>R</Text>
-      </View>
+    <View
+      ref={padRef}
+      style={aimPadStyles.pad}
+      onPointerDown={(e) => { setDragging(true); handle(e); padRef.current?.setPointerCapture?.(e.nativeEvent.pointerId); }}
+      onPointerMove={(e) => { if (dragging) handle(e); }}
+      onPointerUp={() => setDragging(false)}
+      onPointerCancel={() => setDragging(false)}
+    >
+      <View style={aimPadStyles.innerRing} pointerEvents="none" />
+      <View style={aimPadStyles.crossH} pointerEvents="none" />
+      <View style={aimPadStyles.crossV} pointerEvents="none" />
+      <View style={[aimPadStyles.knob, { left: knobX - 11, top: knobY - 11 }]} pointerEvents="none" />
       <Text style={aimPadStyles.capLabel}>
         {(clubShort || '').toString().toUpperCase()} · {capPct}%
       </Text>
-      <Pressable style={aimPadStyles.okBtn} onPress={onOK}>
-        <Text style={aimPadStyles.okBtnText}>OK ▸</Text>
-      </Pressable>
     </View>
   );
 }
@@ -4926,51 +4963,39 @@ const pickerStyles = StyleSheet.create({
 });
 
 const aimPadStyles = StyleSheet.create({
-  wrap: {
-    position: 'absolute', bottom: 24, right: 10,
-    alignItems: 'center', gap: 6,
-  },
+  // AimPad shares the unified 130-circle frame slot with Walk/Swing.
   pad: {
-    width: 164, height: 164,
-    backgroundColor: 'rgba(5, 18, 10, 0.82)',
-    borderWidth: 2, borderColor: '#f5f5ec',
-    position: 'relative',
+    position: 'absolute', bottom: 116, right: 14,
+    width: 130, height: 130, borderRadius: 65,
+    backgroundColor: 'rgba(7, 11, 9, 0.88)',
+    borderWidth: 2, borderColor: '#88F8BB',
+    alignItems: 'center', justifyContent: 'flex-end',
     overflow: 'hidden',
+    paddingBottom: 12,
+    shadowColor: '#88F8BB', shadowOpacity: 0.35, shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
+    touchAction: 'none',
+  },
+  innerRing: {
+    position: 'absolute', left: 6, right: 6, top: 6, bottom: 6,
+    borderRadius: 59,
+    borderWidth: 1, borderColor: 'rgba(136, 248, 187, 0.3)',
   },
   crossH: {
-    position: 'absolute', left: 8, right: 8, top: 81,
-    height: 2, backgroundColor: 'rgba(255,255,255,0.18)',
+    position: 'absolute', left: 15, right: 15, top: 64,
+    height: 2, backgroundColor: 'rgba(255,255,255,0.12)',
   },
   crossV: {
-    position: 'absolute', top: 8, bottom: 8, left: 81,
-    width: 2, backgroundColor: 'rgba(255,255,255,0.18)',
-  },
-  ring: {
-    position: 'absolute', left: 32, top: 32,
-    width: 100, height: 100, borderRadius: 50,
-    borderWidth: 1, borderColor: 'rgba(136,248,187,0.45)',
+    position: 'absolute', top: 15, bottom: 15, left: 64,
+    width: 2, backgroundColor: 'rgba(255,255,255,0.12)',
   },
   knob: {
-    position: 'absolute', width: 20, height: 20, borderRadius: 10,
+    position: 'absolute', width: 22, height: 22, borderRadius: 11,
     backgroundColor: '#88f8bb', borderWidth: 2, borderColor: '#f5f5ec',
   },
-  axisLabel: {
-    position: 'absolute',
-    color: 'rgba(245,245,236,0.7)',
-    fontSize: 9, letterSpacing: 1, fontWeight: '800',
-    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
-  },
   capLabel: {
-    color: '#fff6d8', fontSize: 12, letterSpacing: 2, fontWeight: '900',
-    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
-  },
-  okBtn: {
-    paddingHorizontal: 28, paddingVertical: 10,
-    backgroundColor: '#88f8bb',
-    borderWidth: 2, borderColor: '#f5f5ec',
-  },
-  okBtnText: {
-    color: '#04180c', fontSize: 14, fontWeight: '900', letterSpacing: 3,
+    color: '#fff6d8', fontSize: 11, letterSpacing: 1.5, fontWeight: '900',
     fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
   },
 });
@@ -5588,23 +5613,57 @@ const styles = StyleSheet.create({
   // Keeps the Pressable big (90×90+) and easy to thumb, adds a subtle
   // mint-teal border that mirrors the `HUD_BORDER` accent used by zoom
   // and club cards. A faint inner glow hints it's the primary action.
-  swingBtn: {
-    position: 'absolute', bottom: 116, right: 10,
+  // Unified control pad — Walk / Aim / Swing all share this 130 css
+  // px circular frame in the same bottom-right slot. The content
+  // inside changes per mode (joystick, aim stick, or swing label)
+  // but the outer shell + placement stay consistent.
+  controlPad: {
+    position: 'absolute', bottom: 116, right: 14,
+    width: 130, height: 130, borderRadius: 65,
     backgroundColor: 'rgba(7, 11, 9, 0.88)',
     borderWidth: 2, borderColor: '#88F8BB',
-    width: 96, height: 96, borderRadius: 48,
     alignItems: 'center', justifyContent: 'center',
-    // Small outer glow so the pad reads as the primary action without
-    // going Red Plastic Button.
-    shadowColor: '#88F8BB', shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 0 },
+    shadowColor: '#88F8BB', shadowOpacity: 0.35, shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
     elevation: 4,
     touchAction: 'none',
   },
-  swingBtnGlow: {
-    position: 'absolute', left: 4, right: 4, top: 4, bottom: 4,
-    borderRadius: 44,
-    borderWidth: 1, borderColor: 'rgba(136, 248, 187, 0.35)',
+  controlPadDisabled: {
+    backgroundColor: 'rgba(7, 11, 9, 0.55)',
+    borderColor: 'rgba(136, 248, 187, 0.3)',
+    shadowOpacity: 0,
+    opacity: 0.6,
+  },
+  controlPadInner: {
+    position: 'absolute', left: 6, right: 6, top: 6, bottom: 6,
+    borderRadius: 59,
+    borderWidth: 1, borderColor: 'rgba(136, 248, 187, 0.3)',
     backgroundColor: 'transparent',
+  },
+  controlPadCenter: {
+    color: '#fff6d8', fontSize: 18, fontWeight: '900', letterSpacing: 2,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  controlLabel: {
+    position: 'absolute', bottom: 92, right: 14, width: 130,
+    alignItems: 'center',
+  },
+  controlLabelText: {
+    color: '#88f8bb', fontSize: 11, fontWeight: '900', letterSpacing: 4,
+    textTransform: 'uppercase',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  // AIM mode's OK button — sits just to the left of the pad so it
+  // stays reachable without overlapping the pad's joystick surface.
+  aimOkBtn: {
+    position: 'absolute', bottom: 150, right: 156,
+    paddingHorizontal: 14, paddingVertical: 8,
+    backgroundColor: '#88f8bb', borderWidth: 2, borderColor: '#f5f5ec',
+    borderRadius: 8,
+  },
+  aimOkBtnText: {
+    color: '#04180c', fontSize: 13, fontWeight: '900', letterSpacing: 3,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
   },
   swingBtnDisabled: {
     backgroundColor: 'rgba(7, 11, 9, 0.55)',
