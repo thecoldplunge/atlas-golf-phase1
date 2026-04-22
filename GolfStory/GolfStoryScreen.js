@@ -3740,17 +3740,25 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
           anchorOffsetX = 0;
           anchorOffsetY = 0;
         } else if (isSetupPhase) {
-          // VIEW=AIM framing: centre on the projected landing spot so
-          // the player sees where the shot will come down, then push
-          // that point toward the TOP of the frame so the ball / golfer
-          // stays visible at the bottom. Tap-to-aim still works because
-          // setAimFromCanvas converts a tap to a world coord via the
-          // live camera (camX + canvasX / scale), independent of where
-          // the camera happens to be looking.
-          followX = ball.x + Math.sin(sw.aimAngle) * clubCarryPx;
-          followY = ball.y - Math.cos(sw.aimAngle) * clubCarryPx;
-          anchorOffsetX = isTabletGS ? (viewW * 0.22) / scale : 0;
-          anchorOffsetY = isTabletGS ? 0 : -(viewH * 0.28) / scale;
+          const activePlayer = playersRef.current[currentPlayerIdxRef.current];
+          const isNPCTurn = activePlayer && activePlayer.isNPC;
+          if (isNPCTurn) {
+            // NPC setup: frame the golfer (sprite) so the player sees
+            // WHO is about to hit. When the NPC swings (state →
+            // FLYING) the ballMoving branch below takes over and
+            // tracks the ball.
+            followX = p.x;
+            followY = p.y;
+            anchorOffsetX = 0;
+            anchorOffsetY = 0;
+          } else {
+            // Human VIEW=AIM framing: centre on the projected landing
+            // spot so the player sees where the shot will come down.
+            followX = ball.x + Math.sin(sw.aimAngle) * clubCarryPx;
+            followY = ball.y - Math.cos(sw.aimAngle) * clubCarryPx;
+            anchorOffsetX = isTabletGS ? (viewW * 0.22) / scale : 0;
+            anchorOffsetY = isTabletGS ? 0 : -(viewH * 0.28) / scale;
+          }
         } else if (isBallMoving) {
           // Flight framing: lead the ball aggressively and push it toward
           // the BOTTOM of the frame so the arc/apex/landing fills the top
@@ -3794,11 +3802,18 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       drawWaterSparkles(ctx, now);
 
       if (sw.state === SW.AIMING || sw.state === SW.SWIPING) {
-        const club = CLUBS[sw.clubIdx];
-        const pts = club.angle === 0
-          ? simulatePutt(ball.x, ball.y, sw.aimAngle, 0, (sw.prePowerCap ?? 1), club, sw.spinX, sw.shotType || 'normal')
-          : simulateFlight(ball.x, ball.y, sw.aimAngle, 0, (sw.prePowerCap ?? 1), sw.spinX, sw.spinY, club, w.x, w.y, true, sw.shotType || 'normal');
-        drawShotPredict(ctx, pts);
+        // Hide the aim tracer while it's a CPU's turn — the player
+        // shouldn't see the NPC's intended line, and the camera is
+        // framed on the NPC so the trace would overlap the sprite.
+        const activePlayer = playersRef.current[currentPlayerIdxRef.current];
+        const isNPCTurn = activePlayer && activePlayer.isNPC;
+        if (!isNPCTurn) {
+          const club = CLUBS[sw.clubIdx];
+          const pts = club.angle === 0
+            ? simulatePutt(ball.x, ball.y, sw.aimAngle, 0, (sw.prePowerCap ?? 1), club, sw.spinX, sw.shotType || 'normal')
+            : simulateFlight(ball.x, ball.y, sw.aimAngle, 0, (sw.prePowerCap ?? 1), sw.spinX, sw.spinY, club, w.x, w.y, true, sw.shotType || 'normal');
+          drawShotPredict(ctx, pts);
+        }
       }
 
       if (sw.state === SW.FLYING && ball.trail.length > 1) {
