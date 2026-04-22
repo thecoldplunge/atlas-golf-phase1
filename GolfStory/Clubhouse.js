@@ -83,12 +83,21 @@ export const CLUBHOUSE_WORLD = {
     { x: 6, y: 19 },
     { x: 8, y: 19 },
   ],
-  // Signs — proximity-triggered interactions. `target` matches a
-  // gameMode key in the screen.
+  // Signs — interaction triggers with a big rectangular zone so the
+  // player can enter by walking anywhere in the corridor, not just
+  // next to the post. `zone` is in tile units; point (x, y) is where
+  // the placard draws. `target` matches a gameMode key in the screen.
+  //
+  //   driving range  — entire WEST strip, north of the building row
+  //   1st tee        — entire EAST side of the world
+  //   putting green  — entire WEST strip, south of the building row
   signs: [
-    { id: 'sign_range',  x: 4,  y: 3,  label: 'DRIVING RANGE',  target: 'range',     dir: 'N' },
-    { id: 'sign_tee',    x: 21, y: 13, label: '1ST TEE',        target: 'roundSetup', dir: 'E' },
-    { id: 'sign_putting',x: 4,  y: 30, label: 'PUTTING GREEN',  target: 'putting',   dir: 'W' },
+    { id: 'sign_range',   x: 4,  y: 3,  label: 'DRIVING RANGE',  target: 'range',      dir: 'N',
+      zone: { x: 0, y: 0, w: 11, h: 14 } },
+    { id: 'sign_tee',     x: 21, y: 13, label: '1ST TEE',        target: 'roundSetup', dir: 'E',
+      zone: { x: 15, y: 0, w: 9, h: 36 } },
+    { id: 'sign_putting', x: 4,  y: 23, label: 'PUTTING GREEN',  target: 'putting',    dir: 'W',
+      zone: { x: 0, y: 15, w: 11, h: 14 } },
   ],
   // NPC roster — avatars are picked from the human roster at load
   // time, indexed by `golferIdx` modulo the roster length so the

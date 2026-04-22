@@ -1614,61 +1614,184 @@ function drawGolfer(ctx, px, py, facing, phase, swingInfo) {
   }
 }
 
-// v0.75 — clubhouse building. A chunky pixel structure with a peaked
-// roof, two windows, and a doorway facing south. Drawn at the bbox
-// passed in (already in canvas pixels). The footprint shadow sits a
-// few pixels south for grounding.
+// v0.75 — clubhouse building. Peaked-roof lodge inspired by the
+// reference photo: dark green shingled roof rising to a point, stone
+// speckled base walls, small chimney on the left shoulder, a pair of
+// white-framed windows flanking a brown double door, and a yellow
+// placard over the entrance. Drawn at the bbox passed in (already in
+// canvas pixels).
 function drawClubhouseBuilding(ctx, x, y, w, h, label) {
-  // Ground shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  const fx = Math.floor, fy = Math.floor;
+  const cx = x + fx(w / 2);
+
+  // Ground shadow + flower-bed strip around the base.
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
   ctx.fillRect(x + 2, y + h - 2, w - 4, 4);
-  // Wall body
-  ctx.fillStyle = '#7a4a2e';
-  ctx.fillRect(x, y + 8, w, h - 8);
-  // Wall darker stripe at base
-  ctx.fillStyle = '#5a3520';
-  ctx.fillRect(x, y + h - 4, w, 4);
-  // Roof — triangular pixel approximation. Two trapezoidal bands.
-  ctx.fillStyle = '#3a1a0e';
-  for (let i = 0; i < 8; i++) {
-    const inset = i * 2;
-    if (inset >= w / 2) break;
-    ctx.fillRect(x + inset, y + i, w - inset * 2, 1);
+  ctx.fillRect(x + 4, y + h, w - 8, 2);
+
+  // Wall begins ~45% down from the top — the rest is peaked roof.
+  const wallTop = y + fy(h * 0.46);
+  const wallH = h - (wallTop - y);
+
+  // ── Stone base walls ────────────────────────────────────────────
+  ctx.fillStyle = '#a5a59f';
+  ctx.fillRect(x, wallTop, w, wallH);
+  // Mortar seams — horizontal bands every 4 px
+  ctx.fillStyle = '#6a6a65';
+  for (let sy = wallTop + 3; sy < y + h; sy += 4) {
+    ctx.fillRect(x, sy, w, 1);
   }
-  ctx.fillStyle = '#5a2a16';
-  ctx.fillRect(x + 2, y + 8, w - 4, 1);
-  // Windows — two square panels.
-  const winY = y + 14;
-  const winH = 6;
-  const winW = 6;
-  const winS = (w - winW * 2) / 3;
-  ctx.fillStyle = '#1a1a0e';
-  ctx.fillRect(x + winS, winY, winW, winH);
-  ctx.fillRect(x + winS * 2 + winW, winY, winW, winH);
+  // Speckle of darker / lighter stones
+  for (let sy = wallTop; sy < y + h; sy++) {
+    for (let sx = x; sx < x + w; sx++) {
+      const h1 = ((sx * 1747 + sy * 2903) | 0) & 15;
+      if (h1 === 0) { ctx.fillStyle = '#828280'; ctx.fillRect(sx, sy, 1, 1); }
+      else if (h1 === 5) { ctx.fillStyle = '#c7c7c2'; ctx.fillRect(sx, sy, 1, 1); }
+    }
+  }
+  // Foundation band (darker bottom row)
+  ctx.fillStyle = '#6e6e6a';
+  ctx.fillRect(x, y + h - 3, w, 3);
+
+  // ── Peaked roof ─────────────────────────────────────────────────
+  const roofH = wallTop - y;
+  const GREEN_D = '#1a3828';
+  const GREEN_M = '#2a5038';
+  const GREEN_L = '#3a6e48';
+  for (let sy = y; sy < wallTop; sy++) {
+    const t = (sy - y) / Math.max(1, roofH);
+    const halfW = fy(t * (w / 2));
+    const rx = cx - halfW;
+    const rw = halfW * 2;
+    if (rw <= 0) continue;
+    // base shingle colour
+    ctx.fillStyle = GREEN_M;
+    ctx.fillRect(rx, sy, rw, 1);
+    // shingle ridge line every 3 rows
+    if (((sy - y) % 3) === 0) {
+      ctx.fillStyle = GREEN_D;
+      ctx.fillRect(rx, sy, rw, 1);
+    }
+    // highlight on the upper-left third of each band
+    if (((sy - y) % 3) === 1 && rw > 4) {
+      ctx.fillStyle = GREEN_L;
+      ctx.fillRect(rx, sy, Math.max(2, fy(rw * 0.28)), 1);
+    }
+  }
+  // Eaves overhang — the roof sticks out past the walls
+  ctx.fillStyle = GREEN_D;
+  ctx.fillRect(x - 2, wallTop - 1, w + 4, 2);
+  ctx.fillStyle = GREEN_L;
+  ctx.fillRect(x - 2, wallTop - 1, w + 4, 1);
+
+  // ── Chimney ────────────────────────────────────────────────────
+  const chX = x + fy(w * 0.22);
+  const chW = 4;
+  const chTopY = y + 3;
+  const chH = fy(roofH * 0.55);
+  ctx.fillStyle = '#7a5040';
+  ctx.fillRect(chX, chTopY, chW, chH);
+  ctx.fillStyle = '#4a2818';
+  ctx.fillRect(chX, chTopY + 1, 1, chH - 1);
+  ctx.fillStyle = '#2a1810';
+  ctx.fillRect(chX - 1, chTopY - 1, chW + 2, 1); // cap
+
+  // Gable vent — small diamond on the upper gable face
+  const ventY = y + fy(roofH * 0.62);
+  ctx.fillStyle = '#2a1810';
+  ctx.fillRect(cx - 1, ventY,     2, 1);
+  ctx.fillRect(cx - 2, ventY + 1, 4, 1);
+  ctx.fillRect(cx - 1, ventY + 2, 2, 1);
+
+  // ── Windows (two, flanking the door, upper wall band) ──────────
+  const winY = wallTop + 5;
+  const winH = 10;
+  const winW = 12;
+  const winLX = x + 5;
+  const winRX = x + w - winW - 5;
+  for (const wx of [winLX, winRX]) {
+    // White frame
+    ctx.fillStyle = '#e8e5d8';
+    ctx.fillRect(wx - 1, winY - 1, winW + 2, winH + 2);
+    // Glass
+    ctx.fillStyle = '#3e5468';
+    ctx.fillRect(wx, winY, winW, winH);
+    // Mullions — plus-shaped grid → four panes
+    ctx.fillStyle = '#e8e5d8';
+    ctx.fillRect(wx + fy(winW / 2) - 1, winY, 2, winH);
+    ctx.fillRect(wx, winY + fy(winH / 2) - 1, winW, 2);
+    // Sill
+    ctx.fillStyle = '#6a6a62';
+    ctx.fillRect(wx - 2, winY + winH + 1, winW + 4, 1);
+    // Glint
+    ctx.fillStyle = '#98b4c8';
+    ctx.fillRect(wx + 2, winY + 1, 3, 1);
+    ctx.fillRect(wx + winW - 4, winY + winH / 2 + 1, 2, 1);
+  }
+
+  // ── Double door (centered) ─────────────────────────────────────
+  const doorW = 14;
+  const doorH = 18;
+  const doorX = cx - fy(doorW / 2);
+  const doorY = y + h - doorH - 2;
+  // Door frame (dark)
+  ctx.fillStyle = '#1a0e06';
+  ctx.fillRect(doorX - 1, doorY - 1, doorW + 2, doorH + 1);
+  // Left + right leaf
+  const leafW = fy(doorW / 2) - 1;
+  ctx.fillStyle = '#6a3818';
+  ctx.fillRect(doorX, doorY, leafW, doorH);
+  ctx.fillStyle = '#8a4a22';
+  ctx.fillRect(doorX + doorW - leafW, doorY, leafW, doorH);
+  // Door panels (small inset rects)
+  ctx.fillStyle = '#3a1a0a';
+  ctx.fillRect(doorX + 1, doorY + 2, leafW - 2, 4);
+  ctx.fillRect(doorX + 1, doorY + 8, leafW - 2, 4);
+  ctx.fillRect(doorX + doorW - leafW + 1, doorY + 2, leafW - 2, 4);
+  ctx.fillRect(doorX + doorW - leafW + 1, doorY + 8, leafW - 2, 4);
+  // Glass window at top of each leaf
+  ctx.fillStyle = '#3e5468';
+  ctx.fillRect(doorX + 2, doorY + 2, leafW - 4, 3);
+  ctx.fillRect(doorX + doorW - leafW + 2, doorY + 2, leafW - 4, 3);
+  // Brass handles
   ctx.fillStyle = '#fbe043';
-  ctx.fillRect(x + winS + 1, winY + 1, 2, 2);
-  ctx.fillRect(x + winS + winW - 3, winY + winH - 3, 2, 2);
-  ctx.fillRect(x + winS * 2 + winW + 1, winY + 1, 2, 2);
-  ctx.fillRect(x + winS * 2 + winW * 2 - 3, winY + winH - 3, 2, 2);
-  // Door — centered, opens south.
-  const doorW = 8;
-  const doorH = 12;
-  const doorX = x + (w - doorW) / 2;
-  const doorY = y + h - doorH;
-  ctx.fillStyle = '#241008';
-  ctx.fillRect(doorX, doorY, doorW, doorH);
+  ctx.fillRect(doorX + leafW - 2, doorY + fy(doorH / 2), 1, 2);
+  ctx.fillRect(doorX + doorW - leafW + 1, doorY + fy(doorH / 2), 1, 2);
+  // Doormat
+  ctx.fillStyle = '#3a1a0a';
+  ctx.fillRect(doorX - 2, doorY + doorH - 1, doorW + 4, 1);
+
+  // ── Placard above the door ─────────────────────────────────────
+  const plW = 36;
+  const plH = 6;
+  const plX = cx - fy(plW / 2);
+  const plY = wallTop - 7;
+  ctx.fillStyle = '#3a1a0a';
+  ctx.fillRect(plX - 1, plY - 1, plW + 2, plH + 2);
   ctx.fillStyle = '#fbe043';
-  ctx.fillRect(doorX + doorW - 2, doorY + doorH / 2, 1, 2); // doorknob
-  // Sign placard above door
-  ctx.fillStyle = '#0e1a12';
-  ctx.fillRect(x + w / 2 - 18, y + 7, 36, 4);
-  ctx.fillStyle = '#fbe043';
-  ctx.font = '4px ui-monospace, monospace';
+  ctx.fillRect(plX, plY, plW, plH);
+  ctx.fillStyle = '#caa427';
+  ctx.fillRect(plX, plY + plH - 1, plW, 1);
+  ctx.fillStyle = '#3a1a0a';
+  ctx.font = 'bold 5px ui-monospace, monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(label || 'CLUBHOUSE', x + w / 2, y + 9);
+  ctx.fillText(label || 'CLUBHOUSE', cx, plY + plH / 2 + 0.5);
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
+
+  // ── Flower bed dots at the base (colour pops, photo vibes) ─────
+  const bedY = y + h - 2;
+  const bedColors = ['#c33054', '#e8a030', '#f5d63c', '#a74d8f', '#c33054'];
+  for (let i = 0; i < 6; i++) {
+    const bx = x + 4 + fy(i * (w - 10) / 5);
+    if (bx > doorX - 4 && bx < doorX + doorW + 4) continue; // keep path clear
+    ctx.fillStyle = bedColors[i % bedColors.length];
+    ctx.fillRect(bx, bedY, 2, 2);
+    ctx.fillStyle = '#2a4a28';
+    ctx.fillRect(bx - 1, bedY + 1, 1, 1);
+    ctx.fillRect(bx + 2, bedY + 1, 1, 1);
+  }
 }
 
 // Sign post — wooden plank with yellow lettering pointing in `dir`.
@@ -3525,6 +3648,14 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       // 3. Per-mode entity setup.
       gameModeRef.current = mode;
       setGameMode(mode);
+      // Reset zoom + clubIdx on every mode change. Previously exiting
+      // putting left clubIdx=PT, which kept `isPutting` true and locked
+      // the camera onto the ball+flag midpoint at 1.5× zoom — and
+      // since the clubhouse parks its ball at (-100, -100), that
+      // midpoint sat off-screen.
+      zoomRef.current = 1.0;
+      zoomUserOverrideRef.current = false;
+      swingRef.current.clubIdx = 0; // driver default; range/putting override below
       if (mode === 'clubhouse') {
         placePlayerAtSpawn();
       } else if (mode === 'range') {
@@ -4187,21 +4318,50 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
             }
           }
           // Proximity to signs / NPCs → surface the floating TALK or
-          // ENTER button.
+          // ENTER button. Signs use a big rectangular `zone` so the
+          // player can trigger by walking anywhere in the corridor,
+          // not just right next to the post. NPCs stay on a tight
+          // 26-px circle so you actually have to walk up to them.
           let nearest = null;
-          let bestDist = 26; // px proximity threshold
+          let bestDist = 26; // px proximity threshold for NPCs
+          // Signs: zone hit wins over NPC circle since the zones are
+          // much larger. Pick the sign whose zone centre is nearest
+          // to the player for tie-break when zones overlap.
+          let bestSignDist = Infinity;
           for (const sg of SIGNS) {
-            const d = Math.hypot(p.x - sg.x * TILE, p.y - sg.y * TILE);
-            if (d < bestDist) {
-              bestDist = d;
-              nearest = { kind: 'sign', id: sg.id, target: sg.target, label: sg.label };
+            const zone = sg.zone;
+            if (zone) {
+              const x0 = zone.x * TILE;
+              const y0 = zone.y * TILE;
+              const x1 = (zone.x + zone.w) * TILE;
+              const y1 = (zone.y + zone.h) * TILE;
+              if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1) {
+                const cx = (x0 + x1) * 0.5;
+                const cy = (y0 + y1) * 0.5;
+                const d = Math.hypot(p.x - cx, p.y - cy);
+                if (d < bestSignDist) {
+                  bestSignDist = d;
+                  nearest = { kind: 'sign', id: sg.id, target: sg.target, label: sg.label };
+                }
+              }
+            } else {
+              const d = Math.hypot(p.x - sg.x * TILE, p.y - sg.y * TILE);
+              if (d < bestDist) {
+                bestDist = d;
+                nearest = { kind: 'sign', id: sg.id, target: sg.target, label: sg.label };
+              }
             }
           }
-          for (const npc of NPCS) {
-            const d = Math.hypot(p.x - npc.x * TILE, p.y - npc.y * TILE);
-            if (d < bestDist) {
-              bestDist = d;
-              nearest = { kind: 'npc', id: npc.id, label: npc.name };
+          // NPC talk only shows when NO sign zone is active — avoids
+          // the TALK button fighting the ENTER button on adjacent
+          // characters.
+          if (!nearest) {
+            for (const npc of NPCS) {
+              const d = Math.hypot(p.x - npc.x * TILE, p.y - npc.y * TILE);
+              if (d < bestDist) {
+                bestDist = d;
+                nearest = { kind: 'npc', id: npc.id, label: npc.name };
+              }
             }
           }
           const prev = interactionRef.current;
@@ -4427,7 +4587,13 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       // and putting.
       const ballMoving =
         sw.state === SW.FLYING || sw.state === SW.ROLLING || sw.state === SW.DROPPING;
-      if (ballMoving) {
+      // v0.75 bugfix — clubhouse always follows the player. Prevents
+      // the putting camera (ball-flag midpoint at 1.5× zoom) from
+      // carrying over when EXIT drops back to the clubhouse.
+      if (gameModeRef.current === 'clubhouse') {
+        followX = p.x;
+        followY = p.y;
+      } else if (ballMoving) {
         const lead = sw.state === SW.FLYING ? 0.6 : 0.3;
         followX = ball.x + (ball.vx || 0) * lead;
         followY = ball.y + (ball.vy || 0) * lead;
@@ -4883,15 +5049,15 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
           </>
         ) : gameMode === 'range' ? (
           <>
-            <Text style={styles.hudLabel}>RANGE</Text>
-            <Text style={styles.hudValue}>DRIVING RANGE</Text>
-            <Text style={styles.hudSub}>practice — no score</Text>
+            <Text style={styles.hudLabel}>DRIVING RANGE</Text>
+            <Text style={styles.hudValue}>SHOTS {practiceHud.shots}</Text>
+            <Text style={styles.hudSub}>LAST {practiceHud.lastYd}yd  ·  BEST {practiceHud.bestYd}yd</Text>
           </>
         ) : gameMode === 'putting' ? (
           <>
-            <Text style={styles.hudLabel}>PUTTING</Text>
-            <Text style={styles.hudValue}>PRACTICE GREEN</Text>
-            <Text style={styles.hudSub}>roll some balls</Text>
+            <Text style={styles.hudLabel}>PRACTICE GREEN</Text>
+            <Text style={styles.hudValue}>PUTTS {practiceHud.shots}</Text>
+            <Text style={styles.hudSub}>LAST {practiceHud.lastYd}yd</Text>
           </>
         ) : (
           <>
@@ -5252,19 +5418,8 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         </View>
       ) : null}
 
-      {/* Range / putting practice HUD — small card top-center showing
-           shot count + last carry + best carry. */}
-      {(gameMode === 'range' || gameMode === 'putting') ? (
-        <View style={styles.practiceCard} pointerEvents="none">
-          <Text style={styles.hudLabel}>{gameMode === 'range' ? 'RANGE' : 'PUTTING'}</Text>
-          <Text style={styles.practiceCardLine}>
-            SHOTS {practiceHud.shots}  ·  LAST {practiceHud.lastYd}yd
-          </Text>
-          {gameMode === 'range' ? (
-            <Text style={styles.practiceCardLine}>BEST {practiceHud.bestYd}yd</Text>
-          ) : null}
-        </View>
-      ) : null}
+      {/* (v0.75 bugfix) practice shots HUD was consolidated into the
+           top-left card to avoid overlapping with hudTopLeft. */}
 
       <Pressable
         style={styles.exitBtn}

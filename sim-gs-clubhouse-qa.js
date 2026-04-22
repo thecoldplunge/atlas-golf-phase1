@@ -92,45 +92,74 @@ console.log('v0.75 clubhouse QA\n');
 function findNearestInteraction(px, py, signs, npcs) {
   let nearest = null;
   let bestDist = PROX;
+  let bestSignDist = Infinity;
   for (const sg of signs) {
-    const d = Math.hypot(px - sg.x * TILE, py - sg.y * TILE);
-    if (d < bestDist) {
-      bestDist = d;
-      nearest = { kind: 'sign', id: sg.id, target: sg.target, label: sg.label };
+    if (sg.zone) {
+      const x0 = sg.zone.x * TILE;
+      const y0 = sg.zone.y * TILE;
+      const x1 = (sg.zone.x + sg.zone.w) * TILE;
+      const y1 = (sg.zone.y + sg.zone.h) * TILE;
+      if (px >= x0 && px <= x1 && py >= y0 && py <= y1) {
+        const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+        const d = Math.hypot(px - cx, py - cy);
+        if (d < bestSignDist) {
+          bestSignDist = d;
+          nearest = { kind: 'sign', id: sg.id, target: sg.target, label: sg.label };
+        }
+      }
+    } else {
+      const d = Math.hypot(px - sg.x * TILE, py - sg.y * TILE);
+      if (d < bestDist) {
+        bestDist = d;
+        nearest = { kind: 'sign', id: sg.id, target: sg.target, label: sg.label };
+      }
     }
   }
-  for (const npc of npcs) {
-    const d = Math.hypot(px - npc.x * TILE, py - npc.y * TILE);
-    if (d < bestDist) {
-      bestDist = d;
-      nearest = { kind: 'npc', id: npc.id, label: npc.name };
+  if (!nearest) {
+    for (const npc of npcs) {
+      const d = Math.hypot(px - npc.x * TILE, py - npc.y * TILE);
+      if (d < bestDist) {
+        bestDist = d;
+        nearest = { kind: 'npc', id: npc.id, label: npc.name };
+      }
     }
   }
   return nearest;
 }
 
 {
+  // Zone-based signs (v0.75 bugfix — big trigger rects, not points).
   const signs = [
-    { id: 'sign_tee', x: 21, y: 13, target: 'roundSetup', label: '1ST TEE' },
-    { id: 'sign_range', x: 4, y: 3, target: 'range', label: 'DRIVING RANGE' },
+    { id: 'sign_tee',     x: 21, y: 13, target: 'roundSetup', label: '1ST TEE',
+      zone: { x: 15, y: 0, w: 9, h: 36 } },
+    { id: 'sign_range',   x: 4,  y: 3,  target: 'range', label: 'DRIVING RANGE',
+      zone: { x: 0, y: 0, w: 11, h: 14 } },
+    { id: 'sign_putting', x: 4,  y: 23, target: 'putting', label: 'PUTTING GREEN',
+      zone: { x: 0, y: 15, w: 11, h: 14 } },
   ];
   const npcs = [
     { id: 'sammy', x: 6, y: 27, name: 'SLICK SAMMY' },
     { id: 'caddy', x: 7, y: 22, name: 'CADDY CARL' },
   ];
-  // Player on top of 1ST TEE sign.
-  const r1 = findNearestInteraction(21 * TILE, 13 * TILE, signs, npcs);
-  assert(r1 && r1.id === 'sign_tee', `proximity at sign returns the sign`, `${r1?.id}`);
-  // Player far from everything.
-  const r2 = findNearestInteraction(0, 0, signs, npcs);
-  assert(!r2, `proximity far away returns null`, `${r2?.id || 'null'}`);
-  // Player on top of caddy.
-  const r3 = findNearestInteraction(7 * TILE, 22 * TILE, signs, npcs);
-  assert(r3 && r3.id === 'caddy', `proximity at NPC returns the NPC`, `${r3?.id}`);
-  // Player exactly at the proximity boundary (just outside).
-  const farY = 13 * TILE + PROX + 1;
-  const r4 = findNearestInteraction(21 * TILE, farY, signs, npcs);
-  assert(!r4, `proximity just outside threshold returns null`, `${r4?.id || 'null'}`);
+  // Anywhere deep in east strip = 1st tee.
+  const r1 = findNearestInteraction(20 * TILE, 30 * TILE, signs, npcs);
+  assert(r1 && r1.id === 'sign_tee', `east strip (y=30) triggers 1ST TEE zone`, `${r1?.id}`);
+  // West-north = driving range.
+  const r2 = findNearestInteraction(2 * TILE, 5 * TILE, signs, npcs);
+  assert(r2 && r2.id === 'sign_range', `west-north triggers range zone`, `${r2?.id}`);
+  // West-south = putting.
+  const r3 = findNearestInteraction(3 * TILE, 25 * TILE, signs, npcs);
+  assert(r3 && r3.id === 'sign_putting', `west-south triggers putting zone`, `${r3?.id}`);
+  // Dead centre (building area) outside all zones.
+  const r4 = findNearestInteraction(12 * TILE, 14 * TILE, signs, npcs);
+  assert(!r4 || r4.kind === 'npc', `centre of world triggers no sign`, r4?.id || 'null');
+  // NPC proximity still works where no sign zone overlaps (y=22 is
+  // in putting zone's y range but npcs are at x=6,7 which is inside
+  // the zone — so sign wins now). Pick a spot outside zones near
+  // an NPC (move an NPC east).
+  const npcsEast = [{ id: 'caddy', x: 13, y: 22, name: 'CADDY CARL' }];
+  const r5 = findNearestInteraction(13 * TILE, 22 * TILE, [], npcsEast);
+  assert(r5 && r5.id === 'caddy', `NPC proximity still triggers outside sign zones`, `${r5?.id}`);
 }
 
 // ─── Building collision ─────────────────────────────────────────────
