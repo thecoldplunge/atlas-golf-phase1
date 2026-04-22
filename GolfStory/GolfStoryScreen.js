@@ -3164,6 +3164,12 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
   // Shop grid overlay — open fixture kind or null.
   const [shopOverlayKind, setShopOverlayKind] = useState(null);
   const [shopCounterLine, setShopCounterLine] = useState(0);
+  // v0.78.5 — aim joystick. The AimPad now emits a continuous joyX
+  // in [-1, 1] while the finger is on the pad (springs back to 0 on
+  // release). The tick loop integrates it into sw.aimAngle every
+  // frame so holding left/right rotates the aim at a constant rate —
+  // no more absolute-position clamp at ±20°.
+  const aimJoystickRef = useRef(0);
   // Tracks the original CLUBS[].v values so we can restore when a
   // club set is unequipped (or when a different set replaces it).
   const clubBaselineRef = useRef(null);
@@ -5010,6 +5016,22 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         }
       } else if (sw.state === SW.AIMING || sw.state === SW.SWIPING) {
         p.moving = false;
+        // v0.78.5 — joystick aim rotation. aimJoystickRef holds the
+        // current pad x-deflection (−1 ↔ +1). Deadzone 0.1 so a
+        // finger resting dead-centre doesn't slowly creep. Full
+        // deflection rotates AIM_ROT_SPEED rad/s (~86°/s), so full-
+        // circle aim takes ~4.3s.
+        const AIM_ROT_SPEED = 1.5;
+        const AIM_DEADZONE = 0.1;
+        if (sw.state === SW.AIMING && !sw.aimLocked) {
+          const joyX = aimJoystickRef.current || 0;
+          if (Math.abs(joyX) > AIM_DEADZONE) {
+            sw.aimAngle += joyX * AIM_ROT_SPEED * dt;
+            // Keep aimAngle in (−π, π] so long sessions don't drift.
+            while (sw.aimAngle > Math.PI)  sw.aimAngle -= 2 * Math.PI;
+            while (sw.aimAngle < -Math.PI) sw.aimAngle += 2 * Math.PI;
+          }
+        }
         {
           const pose = addressPose(ball, sw.aimAngle);
           p.x = pose.px; p.y = pose.py;
@@ -5854,18 +5876,17 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       {showAimPad ? (
         <>
           <AimPad
-            aimDelta={(() => {
-              const sw = swingRef.current;
-              let d = (sw.aimAngle || 0) - (sw.aimBaseAngle || 0);
-              while (d > Math.PI) d -= 2 * Math.PI;
-              while (d < -Math.PI) d += 2 * Math.PI;
-              return Math.max(-AIM_PAD_MAX_RAD, Math.min(AIM_PAD_MAX_RAD, d));
-            })()}
             powerCap={hud.prePowerCap ?? 1}
             clubShort={hud.clubShort}
-            onChange={(aim, cap) => {
+            onChange={(joyX, cap) => {
+              // v0.78.5 — joyX is a continuous [-1, 1] stick value.
+              // The tick loop reads aimJoystickRef and integrates it
+              // into sw.aimAngle every frame, so the stick rotates
+              // the aim at a steady rate. On pointer release, AimPad
+              // snaps joyX back to 0 and aim stops rotating — but
+              // the accumulated angle persists.
+              aimJoystickRef.current = joyX;
               const sw = swingRef.current;
-              sw.aimAngle = (sw.aimBaseAngle || 0) + aim;
               sw.prePowerCap = cap;
               setHud((h) => ({ ...h, prePowerCap: cap }));
             }}
@@ -6693,16 +6714,18 @@ function GSScorecardOverlay({ players, activeHoleIdx, holeCount, finishedThisHol
   );
 }
 
-// AimPad — 2-axis joystick that lives in the SWING-button slot during
-// the AIMING phase. Horizontal drag rotates the aim around the flag
-// line (±AIM_PAD_MAX_RAD); vertical DOWN drag pulls the club's
-// pre-power cap from 1.0 down to MIN_PRE_POWER, so the player can
-// dial a "90% 9I" before the swing fires. Tap OK to lock both and
-// hand the slot over to the swing swipe pad.
-const AIM_PAD_MAX_RAD = 0.35;   // ≈ ±20°
+// AimPad — v0.78.5 true joystick. Horizontal deflection emits a
+// continuous joyX in [-1, 1] which the tick loop integrates into
+// sw.aimAngle over time (holding left / right keeps rotating the
+// aim, like a gamepad thumbstick). Release returns joyX to 0 but
+// aimAngle persists where it was last rotated to. Vertical DOWN
+// still controls the pre-power cap — that axis is absolute-position
+// (releasing doesn't change the locked cap), since "how much power"
+// is a destination, not a rate.
 const MIN_PRE_POWER = 0.3;
-function AimPad({ aimDelta, powerCap, clubShort, onChange }) {
+function AimPad({ powerCap, clubShort, onChange }) {
   const padRef = useRef(null);
+  const [joyX, setJoyX] = useState(0);
   const [dragging, setDragging] = useState(false);
   const capPct = Math.round((powerCap ?? 1) * 100);
   const handle = (e) => {
@@ -6711,23 +6734,30 @@ function AimPad({ aimDelta, powerCap, clubShort, onChange }) {
     const ny = (e.nativeEvent.clientY - rect.top - rect.height / 2) / (rect.height / 2);
     const cx = Math.max(-1, Math.min(1, nx));
     const cy = Math.max(-1, Math.min(1, ny));
-    const aim = cx * AIM_PAD_MAX_RAD;
+    setJoyX(cx);
     const downFrac = Math.max(0, cy);
     const cap = 1 - downFrac * (1 - MIN_PRE_POWER);
-    onChange(aim, cap);
+    onChange(cx, cap);
+  };
+  const release = () => {
+    setDragging(false);
+    setJoyX(0);
+    // Stop rotating aim; keep the current cap.
+    onChange(0, powerCap ?? 1);
   };
   // Knob position inside a 130 px circular pad: centre = (65, 65);
-  // usable radius ≈ 50.
-  const knobX = (aimDelta / AIM_PAD_MAX_RAD) * 50 + 65;
-  const knobY = ((1 - powerCap) / (1 - MIN_PRE_POWER)) * 50 + 65;
+  // usable radius ≈ 50. Horizontal = live joystick position (springs
+  // back on release). Vertical = power-cap absolute position.
+  const knobX = joyX * 50 + 65;
+  const knobY = ((1 - (powerCap ?? 1)) / (1 - MIN_PRE_POWER)) * 50 + 65;
   return (
     <View
       ref={padRef}
       style={aimPadStyles.pad}
       onPointerDown={(e) => { setDragging(true); handle(e); padRef.current?.setPointerCapture?.(e.nativeEvent.pointerId); }}
       onPointerMove={(e) => { if (dragging) handle(e); }}
-      onPointerUp={() => setDragging(false)}
-      onPointerCancel={() => setDragging(false)}
+      onPointerUp={release}
+      onPointerCancel={release}
     >
       <View style={aimPadStyles.innerRing} pointerEvents="none" />
       <View style={aimPadStyles.crossH} pointerEvents="none" />
