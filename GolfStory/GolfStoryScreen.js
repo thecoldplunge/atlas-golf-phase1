@@ -2377,6 +2377,12 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
     strokeCount: 0,
     messageTimer: 0,
     shotType: 'normal',
+    // Aim-lock flow: before the swing fires the player rotates aim +
+    // dials a pre-power cap via the AimPad; tapping OK flips
+    // aimLocked = true and the SWING button takes over.
+    aimLocked: false,
+    prePowerCap: 1.0,
+    aimBaseAngle: 0,
   });
   const windRef = useRef({ x: 0, y: 0, angle: 0, speed: 0, mph: 0 });
   const leavesRef = useRef([]);
@@ -2411,6 +2417,7 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
     spinX: 0, spinY: 0, shape: 'PURE',
     holeName: HOLES[0].name, holePar: HOLES[0].par, holeIdx: 0,
     zoom: 1.0,
+    aimLocked: false, prePowerCap: 1.0,
   });
 
   const [shapeOverlay, setShapeOverlay] = useState(false);
@@ -2613,8 +2620,11 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       swingRef.current.spinX = 0;
       swingRef.current.spinY = 0;
       swingRef.current.state = SW.AIMING;
+      swingRef.current.aimLocked = false;
+      swingRef.current.prePowerCap = 1.0;
       aimAtFlag();
       autoPickClubAndZoom();
+      swingRef.current.aimBaseAngle = swingRef.current.aimAngle;
       // Pose the golfer AFTER aim is resolved so stance orients to the
       // actual target line, not a stale cardinal.
       const pose = addressPose(b, swingRef.current.aimAngle);
@@ -2728,6 +2738,9 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         p.walkPhase = 0;
       } else {
         sw.state = SW.AIMING;
+        sw.aimLocked = false;
+        sw.prePowerCap = 1.0;
+        sw.aimBaseAngle = sw.aimAngle;
         const pose = addressPose(b, sw.aimAngle);
         p.x = pose.px; p.y = pose.py; p.facing = pose.facing; p.moving = false;
       }
@@ -2993,6 +3006,9 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       const sw = swingRef.current;
       if (sw.state !== SW.IDLE) return;
       sw.state = SW.AIMING;
+      sw.aimLocked = false;
+      sw.prePowerCap = 1.0;
+      sw.aimBaseAngle = sw.aimAngle;
       aimAtFlag();
       autoPickClubAndZoom();
       const pose = addressPose(b, sw.aimAngle);
@@ -3038,6 +3054,7 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         spinX: sw.spinX, spinY: sw.spinY, shape: shapeLabel(sw.spinX, sw.spinY),
         holeName: CURRENT_HOLE.name, holePar: CURRENT_HOLE.par, holeIdx: holeIdxRef.current,
         zoom: zoomRef.current,
+        aimLocked: !!sw.aimLocked, prePowerCap: sw.prePowerCap ?? 1.0,
       });
     };
     flushHud();
@@ -3248,7 +3265,12 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         flushHud();
         return;
       }
-      const power = Math.max(0.1, Math.min(1, s.peakDy / (80 * dpr)));
+      const swipePower = Math.max(0.1, Math.min(1, s.peakDy / (80 * dpr)));
+      // Pre-power cap set during the AimPad phase multiplies the final
+      // launched power, so a 100% swipe on a 90%-capped club lands at
+      // 90% of full carry.
+      const cap = Math.max(0.3, Math.min(1, sw.prePowerCap ?? 1));
+      const power = swipePower * cap;
       // Accuracy = forward peak deviation + a small backswing-drift contribution
       // (~25% weight, same blend as App.js).
       const backDev = Math.max(-1, Math.min(1, (s.peakX - s.startX) / (45 * dpr)));
@@ -3598,6 +3620,9 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
           aimAtFlag();
           autoPickClubAndZoom();
           sw.state = SW.AIMING;
+          sw.aimLocked = false;
+          sw.prePowerCap = 1.0;
+          sw.aimBaseAngle = sw.aimAngle;
           // Persist current-player lie for the match bookkeeping.
           saveActivePlayer();
           // If the player whose ball just got penalised is an NPC,
@@ -3771,8 +3796,8 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       if (sw.state === SW.AIMING || sw.state === SW.SWIPING) {
         const club = CLUBS[sw.clubIdx];
         const pts = club.angle === 0
-          ? simulatePutt(ball.x, ball.y, sw.aimAngle, 0, 1.0, club, sw.spinX, sw.shotType || 'normal')
-          : simulateFlight(ball.x, ball.y, sw.aimAngle, 0, 1.0, sw.spinX, sw.spinY, club, w.x, w.y, true, sw.shotType || 'normal');
+          ? simulatePutt(ball.x, ball.y, sw.aimAngle, 0, (sw.prePowerCap ?? 1), club, sw.spinX, sw.shotType || 'normal')
+          : simulateFlight(ball.x, ball.y, sw.aimAngle, 0, (sw.prePowerCap ?? 1), sw.spinX, sw.spinY, club, w.x, w.y, true, sw.shotType || 'normal');
         drawShotPredict(ctx, pts);
       }
 
@@ -3973,13 +3998,17 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
     );
   }
 
-  const canSwing = hud.state === SW.AIMING && !shapeOverlay && !clubPicker && !turnHud.isNPC;
+  // canSwing requires the aim to already be locked via the AimPad.
+  // Before that, the swing pad slot hosts the AimPad + OK button.
+  const canSwing = hud.state === SW.AIMING && hud.aimLocked && !shapeOverlay && !clubPicker && !turnHud.isNPC;
+  const showAimPad = hud.state === SW.AIMING && !hud.aimLocked && !shapeOverlay && !clubPicker && !turnHud.isNPC;
   // Hide the swing pad while the player is mid-swipe, the ball is in
   // motion, the hole is done, or an overlay is open — otherwise the pad
   // sits on top of the swipe feedback UI drawn on the canvas.
   const showSwingPad =
     !shapeOverlay &&
     !clubPicker &&
+    hud.aimLocked &&
     hud.state !== SW.IDLE &&
     hud.state !== SW.SWIPING &&
     hud.state !== SW.FLYING &&
@@ -4105,6 +4134,31 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
             );
           })}
         </View>
+      ) : null}
+
+      {showAimPad ? (
+        <AimPad
+          aimDelta={(() => {
+            const sw = swingRef.current;
+            let d = (sw.aimAngle || 0) - (sw.aimBaseAngle || 0);
+            while (d > Math.PI) d -= 2 * Math.PI;
+            while (d < -Math.PI) d += 2 * Math.PI;
+            return Math.max(-AIM_PAD_MAX_RAD, Math.min(AIM_PAD_MAX_RAD, d));
+          })()}
+          powerCap={hud.prePowerCap ?? 1}
+          clubShort={hud.clubShort}
+          onChange={(aim, cap) => {
+            const sw = swingRef.current;
+            sw.aimAngle = (sw.aimBaseAngle || 0) + aim;
+            sw.prePowerCap = cap;
+            setHud((h) => ({ ...h, prePowerCap: cap }));
+          }}
+          onOK={() => {
+            const sw = swingRef.current;
+            sw.aimLocked = true;
+            setHud((h) => ({ ...h, aimLocked: true }));
+          }}
+        />
       ) : null}
 
       {showSwingPad ? (
@@ -4681,6 +4735,64 @@ function GSScorecardOverlay({ players, activeHoleIdx, holeCount, finishedThisHol
   );
 }
 
+// AimPad — 2-axis joystick that lives in the SWING-button slot during
+// the AIMING phase. Horizontal drag rotates the aim around the flag
+// line (±AIM_PAD_MAX_RAD); vertical DOWN drag pulls the club's
+// pre-power cap from 1.0 down to MIN_PRE_POWER, so the player can
+// dial a "90% 9I" before the swing fires. Tap OK to lock both and
+// hand the slot over to the swing swipe pad.
+const AIM_PAD_MAX_RAD = 0.35;   // ≈ ±20°
+const MIN_PRE_POWER = 0.3;
+function AimPad({ aimDelta, powerCap, clubShort, onChange, onOK }) {
+  const padRef = useRef(null);
+  const [dragging, setDragging] = useState(false);
+  const capPct = Math.round((powerCap ?? 1) * 100);
+  const handle = (e) => {
+    const rect = padRef.current.getBoundingClientRect();
+    const nx = (e.nativeEvent.clientX - rect.left - rect.width / 2) / (rect.width / 2);
+    const ny = (e.nativeEvent.clientY - rect.top - rect.height / 2) / (rect.height / 2);
+    const cx = Math.max(-1, Math.min(1, nx));
+    const cy = Math.max(-1, Math.min(1, ny));
+    // X axis → aim delta (−1 = left 20°, +1 = right 20°).
+    // Y axis → power cap. Pulling DOWN (positive cy) reduces the cap.
+    // Pulling UP has no upward effect — cap is already 100% max.
+    const aim = cx * AIM_PAD_MAX_RAD;
+    const downFrac = Math.max(0, cy);
+    const cap = 1 - downFrac * (1 - MIN_PRE_POWER);
+    onChange(aim, cap);
+  };
+  // Knob position — X follows aim delta, Y follows the cap.
+  const knobX = (aimDelta / AIM_PAD_MAX_RAD) * 78 + 82;
+  const knobY = ((1 - powerCap) / (1 - MIN_PRE_POWER)) * 78 + 82;
+  return (
+    <View style={aimPadStyles.wrap} pointerEvents="box-none">
+      <View
+        ref={padRef}
+        style={aimPadStyles.pad}
+        onPointerDown={(e) => { setDragging(true); handle(e); padRef.current?.setPointerCapture?.(e.nativeEvent.pointerId); }}
+        onPointerMove={(e) => { if (dragging) handle(e); }}
+        onPointerUp={() => setDragging(false)}
+        onPointerCancel={() => setDragging(false)}
+      >
+        <View style={aimPadStyles.crossH} />
+        <View style={aimPadStyles.crossV} />
+        <View style={aimPadStyles.ring} />
+        <View style={[aimPadStyles.knob, { left: knobX - 10, top: knobY - 10 }]} />
+        <Text style={[aimPadStyles.axisLabel, { top: 4, left: 0, right: 0, textAlign: 'center' }]}>100%</Text>
+        <Text style={[aimPadStyles.axisLabel, { bottom: 4, left: 0, right: 0, textAlign: 'center' }]}>{`${Math.round(MIN_PRE_POWER * 100)}%`}</Text>
+        <Text style={[aimPadStyles.axisLabel, { left: 4, top: 0, bottom: 0, textAlignVertical: 'center', lineHeight: 180 }]}>L</Text>
+        <Text style={[aimPadStyles.axisLabel, { right: 4, top: 0, bottom: 0, textAlignVertical: 'center', lineHeight: 180 }]}>R</Text>
+      </View>
+      <Text style={aimPadStyles.capLabel}>
+        {(clubShort || '').toString().toUpperCase()} · {capPct}%
+      </Text>
+      <Pressable style={aimPadStyles.okBtn} onPress={onOK}>
+        <Text style={aimPadStyles.okBtnText}>OK ▸</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function ShapePad({ spinX, spinY, onChange }) {
   const padRef = useRef(null);
   const [dragging, setDragging] = useState(false);
@@ -4745,6 +4857,56 @@ const pickerStyles = StyleSheet.create({
   },
   back: { marginTop: 12, paddingVertical: 8, paddingHorizontal: 16 },
   backText: { color: '#a9d4a9', fontSize: 13 },
+});
+
+const aimPadStyles = StyleSheet.create({
+  wrap: {
+    position: 'absolute', bottom: 24, right: 10,
+    alignItems: 'center', gap: 6,
+  },
+  pad: {
+    width: 164, height: 164,
+    backgroundColor: 'rgba(5, 18, 10, 0.82)',
+    borderWidth: 2, borderColor: '#f5f5ec',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  crossH: {
+    position: 'absolute', left: 8, right: 8, top: 81,
+    height: 2, backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  crossV: {
+    position: 'absolute', top: 8, bottom: 8, left: 81,
+    width: 2, backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  ring: {
+    position: 'absolute', left: 32, top: 32,
+    width: 100, height: 100, borderRadius: 50,
+    borderWidth: 1, borderColor: 'rgba(136,248,187,0.45)',
+  },
+  knob: {
+    position: 'absolute', width: 20, height: 20, borderRadius: 10,
+    backgroundColor: '#88f8bb', borderWidth: 2, borderColor: '#f5f5ec',
+  },
+  axisLabel: {
+    position: 'absolute',
+    color: 'rgba(245,245,236,0.7)',
+    fontSize: 9, letterSpacing: 1, fontWeight: '800',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  capLabel: {
+    color: '#fff6d8', fontSize: 12, letterSpacing: 2, fontWeight: '900',
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  okBtn: {
+    paddingHorizontal: 28, paddingVertical: 10,
+    backgroundColor: '#88f8bb',
+    borderWidth: 2, borderColor: '#f5f5ec',
+  },
+  okBtnText: {
+    color: '#04180c', fontSize: 14, fontWeight: '900', letterSpacing: 3,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
 });
 
 const shapePadStyles = StyleSheet.create({
