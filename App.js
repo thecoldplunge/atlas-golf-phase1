@@ -1844,7 +1844,7 @@ const SHOT_SHAPE_HINTS = {
   '3W': 'Penetrating',
   DR: 'Power fade'
 };
-const BUILD_VERSION = 'IGT v3.40 · GS spike v0.64';
+const BUILD_VERSION = 'IGT v3.40 · GS spike v0.65';
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -4718,7 +4718,7 @@ export default function App() {
 
               <Pressable
                 style={styles.spaceMenuBtnActive}
-                onPress={() => { setSelectionTarget('golf-story'); setGameScreen('golfer-select'); }}
+                onPress={() => { setSelectionTarget('golf-story'); setGameScreen('golf-story'); }}
               >
                 <Text style={styles.spaceMenuBtnLeft}>GOLF STORY</Text>
                 <Text style={styles.spaceMenuBtnRight}>TOUCH v0.11 &gt;</Text>
