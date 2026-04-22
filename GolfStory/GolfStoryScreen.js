@@ -1619,9 +1619,21 @@ function drawWaterSparkles(ctx, time) {
 }
 
 function shotParams(club, power, spinY, accuracyOffset) {
-  const v0 = club.v * power;
+  const v0Raw = club.v * power;
   const launchMod = 1 - spinY * 0.32;
   const effAngleDeg = club.angle * Math.max(0.35, launchMod);
+  // A "high" shot trades carry for apex: energy goes vertical, so
+  // v0 dips as spinY goes negative. Scaled down for high-angle clubs
+  // (wedges already launch near 45°, so adding more angle past that
+  // loses range even without a penalty, and the penalty would over-
+  // whiff). Flat-faced clubs feel the hit hardest.
+  //   DR / 3W / 5W / 5I / 7I (≤ 39°):  k = 1 + spinY · 0.18  → 0.82 at BIG HIGH
+  //   9I / PW / SW       (> 39°):      k = 1 + spinY · 0.08  → 0.92 at BIG HIGH
+  // Positive spinY (LOW / stinger) keeps full v0 — the flatter launch
+  // angle already cuts carry on a sub-45° club, no extra penalty.
+  const highBite = club.angle <= 39 ? 0.18 : 0.08;
+  const highPenalty = spinY < 0 ? (1 + spinY * highBite) : 1;
+  const v0 = v0Raw * highPenalty;
   const angleRad = (effAngleDeg * Math.PI) / 180;
   const curveDeg = accuracyOffset * 18 * club.accMult;
   return { v0, angleRad, effAngleDeg, curveDeg };
