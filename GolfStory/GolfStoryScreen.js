@@ -3841,9 +3841,28 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         const isNPCTurn = activePlayer && activePlayer.isNPC;
         if (!isNPCTurn) {
           const club = CLUBS[sw.clubIdx];
+          // Mirror launchBall's v0 multipliers so the tracer predicts
+          // where the ball ACTUALLY lands, not where a raw
+          // club.v × power shot would. Previously the aim line was
+          // ignoring golfer powerFactor / clubStats.distanceFactor /
+          // lie powerPenalty, so a high-power player saw a short
+          // tracer and a much longer real shot.
+          const gf = golferFactorsRef.current || {};
+          const cm = clubStatMultipliers(bagStatsRef.current[club.key] || null);
+          const liePhys = surfacePropsAt(ball.x, ball.y);
+          const lp = liePhys?.powerPenalty || [1.0, 1.0];
+          const liePowerMid = (lp[0] + lp[1]) * 0.5;
+          const badLie = liePhys?.label === 'Rough' || liePhys?.label === 'Bunker' || liePhys?.label === 'Dirt';
+          const recoveryBoost = badLie ? (2 - (gf.recoveryFactor ?? 1)) : 1;
+          const powerMul = (gf.powerFactor ?? 1)
+            * (gf.touchFactor ?? 1)
+            * (cm.distanceFactor ?? 1)
+            * liePowerMid
+            * recoveryBoost;
+          const effPower = Math.min(1.6, (sw.prePowerCap ?? 1) * powerMul);
           const pts = club.angle === 0
-            ? simulatePutt(ball.x, ball.y, sw.aimAngle, 0, (sw.prePowerCap ?? 1), club, sw.spinX, sw.shotType || 'normal')
-            : simulateFlight(ball.x, ball.y, sw.aimAngle, 0, (sw.prePowerCap ?? 1), sw.spinX, sw.spinY, club, w.x, w.y, true, sw.shotType || 'normal');
+            ? simulatePutt(ball.x, ball.y, sw.aimAngle, 0, effPower, club, sw.spinX, sw.shotType || 'normal')
+            : simulateFlight(ball.x, ball.y, sw.aimAngle, 0, effPower, sw.spinX, sw.spinY, club, w.x, w.y, true, sw.shotType || 'normal');
           drawShotPredict(ctx, pts);
         }
       }
