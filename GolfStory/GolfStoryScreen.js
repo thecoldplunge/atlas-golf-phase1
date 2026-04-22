@@ -11,14 +11,15 @@ import {
   translateSurfaceType,
 } from './Clubhouse';
 import golferAtlas from './golfer-atlas.json';
-// v0.78 — let Metro / Expo Web bundle the sprite sheet so its URL
-// survives the production build. What `require()` returns here
-// varies by platform:
-//   • native RN: a numeric module id (for use with <Image />)
-//   • react-native-web ≥ 0.19: either a string URL OR an object with
-//     { uri, width, height }. resolveAssetSource isn't exposed as a
-//     static on RNW's Image, so we read .uri directly.
-const GOLFER_SHEET_SRC = require('../assets/golfer-sprites.png');
+// v0.80 — multi-sheet support. Each atlas animation picks a sheet by
+// name from this map (populated at runtime once require() resolves).
+// The bundler needs literal require() strings to fingerprint assets,
+// so we can't dynamically build these from atlas.sheets.path.
+const GOLFER_SHEET_SOURCES = {
+  main:  require('../assets/golfer-sprites.png'),
+  walk:  require('../assets/golfer-walk-v2.png'),
+  swing: require('../assets/golfer-swing-v2.png'),
+};
 
 // Simple on-screen error boundary. When any child throws during
 // render / effect, we fall back to a dark screen with the exact
@@ -1558,7 +1559,7 @@ function lightenHex(hex, amt) { const [r, g, b] = _hexParse(hex); return _hexFmt
 // via buildTintedSpriteSheet() the first time the player equips a
 // new colour combo. Building costs ~40ms; result is a canvas cached
 // in memory for the rest of the session.
-const SPRITE_DRAW_H = 38;         // target height of the player sprite in world px
+const SPRITE_DRAW_H = 32;         // v0.80 — shrank 15% from 38 per user feedback
 const SPRITE_SHIRT_RGB = { r: 96,  g: 62,  b: 160 };  // default purple polo (sampled)
 const SPRITE_PANTS_RGB = { r: 188, g: 159, b: 120 };  // default khaki pants (sampled)
 const SPRITE_COLOR_TOLERANCE = 32;  // per-channel average ceiling (× 3 summed)
@@ -1567,7 +1568,14 @@ const SPRITE_COLOR_TOLERANCE = 32;  // per-channel average ceiling (× 3 summed)
 // finishes loading. drawSpriteGolfer falls back to the procedural
 // drawGolfer when this is null — so the game still renders during
 // the brief load window (and in environments where fetch blocks).
-const _sheetState = { img: null, ready: false, tintCache: new Map() };
+// v0.80 — multi-sheet state. Keyed by the sheet name ('main', 'walk',
+// 'swing', ...). Each entry tracks its own Image + per-(shirt|pants)
+// tint cache. `ready` flips true once EVERY sheet the atlas references
+// has loaded. drawGolfer falls back to procedural until then.
+const _sheetState = {
+  ready: false,
+  sheets: new Map(),   // name → { img, tintCache: Map }
+};
 
 function _hexToRgb(hex) {
   const [r, g, b] = _hexParse(hex || '#000000');
@@ -1628,15 +1636,13 @@ function buildTintedSpriteSheet(sourceImg, shirtHex, pantsHex) {
   return c;
 }
 
-function getTintedSheet(shirtHex, pantsHex) {
-  if (!_sheetState.img) return null;
+function getTintedSheet(sheetName, shirtHex, pantsHex) {
+  const entry = _sheetState.sheets.get(sheetName);
+  if (!entry || !entry.img) return null;
   const key = `${shirtHex || ''}|${pantsHex || ''}`;
-  // v0.78.3 — cache ALL variants (including the base "no tint") since
-  // every variant now has the black background chroma-keyed away.
-  const cache = _sheetState.tintCache;
-  if (cache.has(key)) return cache.get(key);
-  const c = buildTintedSpriteSheet(_sheetState.img, shirtHex, pantsHex);
-  cache.set(key, c);
+  if (entry.tintCache.has(key)) return entry.tintCache.get(key);
+  const c = buildTintedSpriteSheet(entry.img, shirtHex, pantsHex);
+  entry.tintCache.set(key, c);
   return c;
 }
 
@@ -1667,23 +1673,30 @@ function aimAngleToCompass8(aim) {
 // v0.78.6 — now tries direction-specific keys first (diagonal walk,
 // back/front-facing swing) and gracefully falls back to generic keys
 // so older atlases keep working.
+// v0.80 — atlas animation entries can be either:
+//   (old)  frames array
+//   (new)  { sheet, frames, flipX? }
+// Returns a uniform { sheet, frames, flipX } normalisation.
+function _animEntry(a, key) {
+  const v = a[key];
+  if (!v) return null;
+  if (Array.isArray(v)) return { sheet: 'main', frames: v, flipX: false };
+  return { sheet: v.sheet || 'main', frames: v.frames || [], flipX: !!v.flipX };
+}
+
 function pickSpriteAnimation(atlas, facing, phase, swingInfo, state, facing8 = null) {
   const a = atlas && atlas.animations;
   if (!a) return null;
   // Celebration — unchanged.
   if (swingInfo && swingInfo.phase === 'celebrate') {
-    const frames = a.CELEBRATIONS_MISC || a.CELEBRATIONS || a.IDLE;
-    if (!frames || !frames.length) return null;
-    const idx = Math.max(0, Math.min(frames.length - 1, swingInfo.celebIdx || 0));
-    return { frames, frameIdx: idx };
+    const e = _animEntry(a, 'CELEBRATIONS_MISC') || _animEntry(a, 'CELEBRATIONS') || _animEntry(a, 'IDLE');
+    if (!e || !e.frames.length) return null;
+    const idx = Math.max(0, Math.min(e.frames.length - 1, swingInfo.celebIdx || 0));
+    return { ...e, frameIdx: idx };
   }
   // Swinging / striking.
   if (swingInfo && (swingInfo.phase === 'back' || swingInfo.phase === 'forward')) {
     const cat = swingInfo.clubCategory;
-    // Compass direction from aim — we ship back-facing sprites for
-    // north-aimed shots (most of the time: player's camera looks
-    // over the shoulder toward the pin). South-aimed uses front-
-    // facing. East / west fall back to whichever is available.
     const compass = aimAngleToCompass8(swingInfo.aimAngle);
     const isNorthish = compass === 'N' || compass === 'NE' || compass === 'NW';
     const isSouthish = compass === 'S' || compass === 'SE' || compass === 'SW';
@@ -1692,52 +1705,47 @@ function pickSpriteAnimation(atlas, facing, phase, swingInfo, state, facing8 = n
       cat === 'wedge'  ? 'CHIPPING' :
       cat === 'wood'   ? 'WOODS' :
                          'IRONS';
-    // Try direction-specific key first.
     const tryKeys = isNorthish
       ? [`${base}_N`, `${base}_BACK`, base]
       : isSouthish
       ? [`${base}_S`, base]
       : [`${base}_E`, `${base}_W`, base];
-    let frames = null;
-    for (const k of tryKeys) { if (a[k] && a[k].length) { frames = a[k]; break; } }
-    if (!frames) frames = a[base] || a.IDLE;
-    if (!frames || !frames.length) return null;
-    const mid = Math.floor(frames.length / 2);
+    let e = null;
+    for (const k of tryKeys) { const cand = _animEntry(a, k); if (cand && cand.frames.length) { e = cand; break; } }
+    if (!e) e = _animEntry(a, base) || _animEntry(a, 'IDLE');
+    if (!e || !e.frames.length) return null;
+    const mid = Math.floor(e.frames.length / 2);
     let idx;
     if (swingInfo.phase === 'back') {
       const p = Math.max(0, Math.min(1, swingInfo.power || 0));
       idx = Math.min(mid, Math.floor(p * (mid + 1)));
     } else {
       const t = Math.max(0, Math.min(1, swingInfo.forwardT || 0));
-      idx = mid + Math.floor(t * (frames.length - mid - 1));
+      idx = mid + Math.floor(t * (e.frames.length - mid - 1));
     }
-    return { frames, frameIdx: Math.max(0, Math.min(frames.length - 1, idx)) };
+    return { ...e, frameIdx: Math.max(0, Math.min(e.frames.length - 1, idx)) };
   }
-  // Walking — phase ticks at 8 rad/s in the IDLE branch.
-  // v0.78.6 — prefer diagonal walk keys (WALK_NW / NE / SW / SE)
-  // when the atlas has them; fall back to the cardinal keys from
-  // the original sheet (WALK_UP / DOWN / LEFT / RIGHT).
+  // Walking. v0.80 — the new walk sheet's row order is DOWN / RIGHT /
+  // UP; WALK_LEFT is declared in the atlas as a flipX of WALK_RIGHT.
   if (typeof phase === 'number') {
     const tryKeys = [];
     if (facing8) tryKeys.push(`WALK_${facing8}`);
-    // Cardinal fallbacks. Sheet's UP/DOWN are symmetric; L/R were
-    // originally swapped relative to the joystick direction.
     if (facing === 'N') tryKeys.push('WALK_UP', 'WALK_NW', 'WALK_NE');
     else if (facing === 'S') tryKeys.push('WALK_DOWN', 'WALK_SW', 'WALK_SE');
-    else if (facing === 'W') tryKeys.push('WALK_RIGHT', 'WALK_NW', 'WALK_SW');
-    else if (facing === 'E') tryKeys.push('WALK_LEFT', 'WALK_NE', 'WALK_SE');
-    let frames = null;
-    for (const k of tryKeys) { if (a[k] && a[k].length) { frames = a[k]; break; } }
-    if (!frames) frames = a.IDLE;
-    if (!frames || !frames.length) return null;
-    const idx = Math.floor(phase / (Math.PI / 2)) % frames.length;
-    return { frames, frameIdx: idx };
+    else if (facing === 'W') tryKeys.push('WALK_LEFT', 'WALK_NW', 'WALK_SW');
+    else if (facing === 'E') tryKeys.push('WALK_RIGHT', 'WALK_NE', 'WALK_SE');
+    let e = null;
+    for (const k of tryKeys) { const cand = _animEntry(a, k); if (cand && cand.frames.length) { e = cand; break; } }
+    if (!e) e = _animEntry(a, 'IDLE');
+    if (!e || !e.frames.length) return null;
+    const idx = Math.floor(phase / (Math.PI / 2)) % e.frames.length;
+    return { ...e, frameIdx: idx };
   }
   // Idle — gentle breathing cycle.
-  const frames = a.IDLE || a.DEFAULT;
-  if (!frames || !frames.length) return null;
-  const idx = Math.floor(Date.now() / 220) % frames.length;
-  return { frames, frameIdx: idx };
+  const e = _animEntry(a, 'IDLE') || _animEntry(a, 'DEFAULT');
+  if (!e || !e.frames.length) return null;
+  const idx = Math.floor(Date.now() / 220) % e.frames.length;
+  return { ...e, frameIdx: idx };
 }
 
 // Blit a sprite frame to the canvas at (px, py), anchored at the
@@ -1752,18 +1760,33 @@ function drawSpriteGolfer(ctx, px, py, facing, phase, swingInfo, palette, facing
   if (!f) return false;
   const shirtHex = palette && palette.shirt || null;
   const pantsHex = palette && palette.pants || null;
-  const sheet = getTintedSheet(shirtHex, pantsHex);
-  if (!sheet) return false;
+  // v0.80 — pick the correct sheet (main / walk / swing) for this
+  // animation. getTintedSheet caches the recoloured canvas per
+  // (sheet, shirt, pants) combo.
+  const sheetCanvas = getTintedSheet(pick.sheet || 'main', shirtHex, pantsHex);
+  if (!sheetCanvas) return false;
   const drawH = SPRITE_DRAW_H;
   const drawW = Math.round(f.w * (drawH / f.h));
   const dx = Math.round(px - drawW / 2);
-  const dy = Math.round(py - drawH + 2); // +2 so the feet sit right on py
+  const dy = Math.round(py - drawH + 2); // +2 so feet sit on py
   // Shadow under the sprite so it reads as grounded.
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.beginPath();
   ctx.ellipse(px, py, drawW * 0.35, drawH * 0.08, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.drawImage(sheet, f.x, f.y, f.w, f.h, dx, dy, drawW, drawH);
+  if (pick.flipX) {
+    // Flip horizontally around the sprite's centre (used for WALK_LEFT
+    // which reuses WALK_RIGHT's frames with a mirror). ctx.save / scale
+    // / drawImage / restore is tight enough that per-frame cost is
+    // negligible.
+    ctx.save();
+    ctx.translate(px, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(sheetCanvas, f.x, f.y, f.w, f.h, -drawW / 2, dy, drawW, drawH);
+    ctx.restore();
+  } else {
+    ctx.drawImage(sheetCanvas, f.x, f.y, f.w, f.h, dx, dy, drawW, drawH);
+  }
   return true;
 }
 
@@ -3371,35 +3394,42 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
     gameModeRef.current = 'clubhouse';
     holeIdxRef.current = 0;
 
-    // v0.78 — load the golfer sprite sheet once. drawGolfer falls
-    // back to the procedural sprite until this resolves so the canvas
-    // never paints blank during the brief load window. The URL comes
-    // from require() (bundled by Metro) so the file is reachable at
-    // its hashed path inside Vercel's dist/ output.
-    if (!_sheetState.img && typeof Image !== 'undefined') {
-      // RNW may return either a string URL or an object { uri, ... }.
-      // Node / native RN return a module id (not useful here — we
-      // only render on web).
-      const src = GOLFER_SHEET_SRC;
-      let uri = null;
-      if (typeof src === 'string') uri = src;
-      else if (src && typeof src === 'object') {
-        uri = src.uri || (src.default && (src.default.uri || src.default)) || null;
-      }
-      if (uri) {
+    // v0.80 — multi-sheet loader. Walks every entry in the atlas's
+    // sheets[] (main / walk / swing) and fires off a load for each.
+    // _sheetState.ready only flips true once ALL sheets have landed,
+    // so drawGolfer stays on the procedural fallback until the whole
+    // atlas is usable (avoids half-loaded sprite pop-in).
+    if (!_sheetState.ready && typeof Image !== 'undefined') {
+      const needed = Object.keys(golferAtlas.sheets || { main: true });
+      let remaining = needed.length;
+      for (const name of needed) {
+        if (_sheetState.sheets.has(name)) { remaining--; continue; }
+        const src = GOLFER_SHEET_SOURCES[name];
+        let uri = null;
+        if (typeof src === 'string') uri = src;
+        else if (src && typeof src === 'object') {
+          uri = src.uri || (src.default && (src.default.uri || src.default)) || null;
+        }
+        if (!uri) {
+          console.warn('[GS] sprite sheet', name, 'produced no uri', src);
+          remaining--;
+          continue;
+        }
         const img = new Image();
-        img.crossOrigin = 'anonymous';   // allow getImageData for palette swap
+        img.crossOrigin = 'anonymous';
         img.onload = () => {
-          _sheetState.img = img;
-          _sheetState.ready = true;
+          _sheetState.sheets.set(name, { img, tintCache: new Map() });
+          remaining--;
+          if (remaining <= 0) _sheetState.ready = true;
         };
         img.onerror = () => {
-          console.warn('[GS] golfer sprite sheet failed to load from', uri);
+          console.warn('[GS] golfer sheet', name, 'failed to load from', uri);
+          remaining--;
+          if (remaining <= 0) _sheetState.ready = true;
         };
         img.src = uri;
-      } else {
-        console.warn('[GS] sprite sheet require() produced no uri', GOLFER_SHEET_SRC);
       }
+      if (remaining <= 0) _sheetState.ready = true;
     }
 
     staticRef.current = document.createElement('canvas');
