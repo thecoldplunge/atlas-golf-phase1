@@ -1,5 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  CLUBHOUSE_WORLD,
+  RANGE_WORLD,
+  PUTTING_WORLD,
+  NpcDialogOverlay,
+  translateSurfaceType,
+} from './Clubhouse';
 
 // Simple on-screen error boundary. When any child throws during
 // render / effect, we fall back to a dark screen with the exact
@@ -568,6 +575,17 @@ let BUSHES = null;
 let PROPS = null;
 let WATER_PIXELS = null;
 let CURRENT_HOLE = null;
+// v0.75 clubhouse / range / putting world extras. Populated by the
+// matching loadClubhouse() / loadRange() / loadPutting() functions
+// and consumed by the tick + render loops when gameModeRef.current is
+// set to 'clubhouse' | 'range' | 'putting'. Round mode leaves these
+// empty so the existing draw paths see [].
+let BUILDING = null;            // { x, y, w, h } in tile units, or null
+let SIGNS = [];                 // [{ id, x, y, label, target, dir }]
+let NPCS = [];                  // see Clubhouse.js npcs[] schema
+let DISTANCE_MARKERS = [];      // [50, 100, 150, ...] yards (range mode)
+let PRACTICE_CUPS = [];         // [{ x, y }] extra holes (putting mode)
+let WORLD_KIND = 'round';       // 'round' | 'clubhouse' | 'range' | 'putting'
 
 // Shift every coordinate-bearing field on a surface shape by (dx, dy)
 // tile units. Used by loadHole to CENTER each hole's original features
@@ -956,8 +974,61 @@ function loadHole(idx, orientation) {
   WATER_PIXELS = computeWaterPixels();
   BUSHES = computeBushes();
   PROPS = computeProps();
+  // Round mode — clear clubhouse-only entities so the renderer skips them.
+  WORLD_KIND = 'round';
+  BUILDING = null;
+  SIGNS = [];
+  NPCS = [];
+  DISTANCE_MARKERS = [];
+  PRACTICE_CUPS = [];
   return h;
 }
+
+// v0.75 — load any of the bespoke "non-round" worlds (clubhouse, range,
+// putting). Mirrors loadHole's contract (rewrites the same module-scope
+// globals) so the existing renderer + camera + physics keep working.
+// Differences:
+//   • No WORLD_PAD_FACTOR padding — these worlds are sized as authored.
+//   • TREES is empty and FLAG/CURRENT_HOLE are stubbed for the renderer.
+//   • Clubhouse extras (BUILDING, SIGNS, NPCS) populate from the def.
+const T_CONSTANTS = {
+  ROUGH: 0, FAIRWAY: 1, GREEN: 2, SAND: 3, WATER: 4,
+  FRINGE: 5, TEE: 6, SHORE: 7,
+};
+
+function loadNonRoundWorld(def, kind, orientation) {
+  ORIENTATION = orientation || ORIENTATION || 'portrait';
+  MAP_W = def.width;
+  MAP_H = def.height;
+  WORLD_W = MAP_W * TILE;
+  WORLD_H = MAP_H * TILE;
+  CURRENT_HOLE = { name: def.id.toUpperCase(), par: 0, padDx: 0, padDy: 0, idxBase: -1 };
+  SURFACES = (def.surfaces || []).map((surf) => addBbox({
+    type: translateSurfaceType(surf.type, T_CONSTANTS),
+    shape: shiftShape(surf.shape, 0, 0),
+    slope: surf.slope || null,
+  }));
+  TREES = [];
+  FLAG = def.flag ? { x: def.flag.x, y: def.flag.y } : { x: def.tee.x, y: def.tee.y };
+  TEE = { x: def.tee.x, y: def.tee.y };
+  GREEN_SLOPE = def.greenSlope || { angle: 0, mag: 0 };
+  SURFACE_PROPS[T_GREEN].slopeAng = GREEN_SLOPE.angle;
+  SURFACE_PROPS[T_GREEN].slopeMag = GREEN_SLOPE.mag;
+  WATER_PIXELS = computeWaterPixels();
+  BUSHES = computeBushes();
+  PROPS = computeProps();
+  WORLD_KIND = kind;
+  BUILDING = def.building || null;
+  SIGNS = (def.signs || []).map((s) => ({ ...s }));
+  NPCS = (def.npcs || []).map((n) => ({ ...n, walkPhase: 0, idleT: 0, dir: 1 }));
+  DISTANCE_MARKERS = def.distanceMarkers || [];
+  PRACTICE_CUPS = def.cups || [];
+  return def;
+}
+
+function loadClubhouse(orientation) { return loadNonRoundWorld(CLUBHOUSE_WORLD, 'clubhouse', orientation); }
+function loadRange(orientation)     { return loadNonRoundWorld(RANGE_WORLD,     'range',     orientation); }
+function loadPutting(orientation)   { return loadNonRoundWorld(PUTTING_WORLD,   'putting',   orientation); }
 
 loadHole(0, 'portrait');
 
@@ -1541,6 +1612,140 @@ function drawGolfer(ctx, px, py, facing, phase, swingInfo) {
     const hx = x + 4, hy = y - 9;
     drawClub(ctx, hx, hy, swingAngleDeg(swingInfo), swingInfo.clubCategory || 'iron');
   }
+}
+
+// v0.75 — clubhouse building. A chunky pixel structure with a peaked
+// roof, two windows, and a doorway facing south. Drawn at the bbox
+// passed in (already in canvas pixels). The footprint shadow sits a
+// few pixels south for grounding.
+function drawClubhouseBuilding(ctx, x, y, w, h, label) {
+  // Ground shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fillRect(x + 2, y + h - 2, w - 4, 4);
+  // Wall body
+  ctx.fillStyle = '#7a4a2e';
+  ctx.fillRect(x, y + 8, w, h - 8);
+  // Wall darker stripe at base
+  ctx.fillStyle = '#5a3520';
+  ctx.fillRect(x, y + h - 4, w, 4);
+  // Roof — triangular pixel approximation. Two trapezoidal bands.
+  ctx.fillStyle = '#3a1a0e';
+  for (let i = 0; i < 8; i++) {
+    const inset = i * 2;
+    if (inset >= w / 2) break;
+    ctx.fillRect(x + inset, y + i, w - inset * 2, 1);
+  }
+  ctx.fillStyle = '#5a2a16';
+  ctx.fillRect(x + 2, y + 8, w - 4, 1);
+  // Windows — two square panels.
+  const winY = y + 14;
+  const winH = 6;
+  const winW = 6;
+  const winS = (w - winW * 2) / 3;
+  ctx.fillStyle = '#1a1a0e';
+  ctx.fillRect(x + winS, winY, winW, winH);
+  ctx.fillRect(x + winS * 2 + winW, winY, winW, winH);
+  ctx.fillStyle = '#fbe043';
+  ctx.fillRect(x + winS + 1, winY + 1, 2, 2);
+  ctx.fillRect(x + winS + winW - 3, winY + winH - 3, 2, 2);
+  ctx.fillRect(x + winS * 2 + winW + 1, winY + 1, 2, 2);
+  ctx.fillRect(x + winS * 2 + winW * 2 - 3, winY + winH - 3, 2, 2);
+  // Door — centered, opens south.
+  const doorW = 8;
+  const doorH = 12;
+  const doorX = x + (w - doorW) / 2;
+  const doorY = y + h - doorH;
+  ctx.fillStyle = '#241008';
+  ctx.fillRect(doorX, doorY, doorW, doorH);
+  ctx.fillStyle = '#fbe043';
+  ctx.fillRect(doorX + doorW - 2, doorY + doorH / 2, 1, 2); // doorknob
+  // Sign placard above door
+  ctx.fillStyle = '#0e1a12';
+  ctx.fillRect(x + w / 2 - 18, y + 7, 36, 4);
+  ctx.fillStyle = '#fbe043';
+  ctx.font = '4px ui-monospace, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label || 'CLUBHOUSE', x + w / 2, y + 9);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+}
+
+// Sign post — wooden plank with yellow lettering pointing in `dir`.
+// Renders a small post + a horizontal placard that sticks out in the
+// pointing direction so the player can tell which way it sends them.
+function drawSign(ctx, x, y, label, dir) {
+  // Post (vertical 2×8 brown stake)
+  ctx.fillStyle = '#3a1a0e';
+  ctx.fillRect(x - 1, y - 8, 2, 8);
+  ctx.fillStyle = '#5a2a16';
+  ctx.fillRect(x, y - 8, 1, 8);
+  // Placard — horizontal yellow board
+  const plW = Math.max(28, label.length * 4 + 6);
+  const plH = 8;
+  let plX, plY = y - 16;
+  const arrow = dir === 'E' ? '→' : dir === 'W' ? '←' : dir === 'S' ? '↓' : '↑';
+  if (dir === 'W') plX = x - plW + 2;
+  else if (dir === 'E') plX = x - 2;
+  else plX = x - plW / 2;
+  // Plank body
+  ctx.fillStyle = '#fbe043';
+  ctx.fillRect(plX, plY, plW, plH);
+  ctx.fillStyle = '#caa427';
+  ctx.fillRect(plX, plY + plH - 1, plW, 1);
+  ctx.fillRect(plX, plY, 1, plH);
+  // Text
+  ctx.fillStyle = '#0e1a12';
+  ctx.font = 'bold 5px ui-monospace, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`${label} ${arrow}`, plX + plW / 2, plY + plH / 2);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+}
+
+// Tiny dark dot for a putting practice cup — the "real" flag/cup is
+// already drawn elsewhere; this just marks the supplementary holes.
+function drawPracticeCup(ctx, x, y) {
+  ctx.fillStyle = '#0e1a12';
+  ctx.fillRect(x - 2, y - 1, 4, 2);
+  ctx.fillRect(x - 1, y - 2, 2, 4);
+  ctx.fillStyle = '#3a4a3a';
+  ctx.fillRect(x - 1, y - 1, 1, 1);
+}
+
+// Range distance markers — short faint horizontal lines spaced
+// every 50yd north of the tee, with a small numeric label on the
+// right. Painted on the fairway so the player can read carry.
+function drawRangeMarkers(ctx, yards, tee) {
+  if (!tee) return;
+  const teePxY = tee.y * TILE;
+  const yardsToPx = TILE / 10; // 10 yd per tile (YARDS_PER_TILE = 10)
+  for (const yd of yards) {
+    const yPx = teePxY - yd * yardsToPx;
+    if (yPx < 4) continue;
+    ctx.fillStyle = 'rgba(14, 26, 18, 0.35)';
+    ctx.fillRect(4 * TILE, yPx, 16 * TILE, 1);
+    ctx.font = 'bold 6px ui-monospace, monospace';
+    ctx.fillStyle = '#fff6d8';
+    ctx.fillText(`${yd}YD`, 4 * TILE + 2, yPx - 2);
+  }
+}
+
+// Floating name tag above an NPC — drawn after sprites so it sits on
+// top. Yellow on dark band so it pops against any surface.
+function drawNpcLabel(ctx, x, y, name) {
+  if (!name) return;
+  const w = name.length * 3 + 6;
+  ctx.fillStyle = 'rgba(14, 26, 18, 0.85)';
+  ctx.fillRect(x - w / 2, y - 22, w, 7);
+  ctx.font = 'bold 5px ui-monospace, monospace';
+  ctx.fillStyle = '#fbe043';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(name, x, y - 18);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
 }
 
 function drawBall(ctx, px, py, z) {
@@ -2331,9 +2536,47 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
     if (typeof window === 'undefined') return 'portrait';
     return window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
   });
-  // matchConfig === null  →  show match-setup picker before any play.
-  // Otherwise: { players: [{ id, name, isNPC, golfer }, ...] }
+  // matchConfig === null  →  the clubhouse / range / putting modes
+  // are still happily playable. Once the player walks to the 1ST TEE
+  // sign (or accepts a 1V1 challenger), MatchSetupOverlay populates
+  // it and enterMode('round') swaps the world to hole 1.
+  // Shape: { players: [{ id, name, isNPC, golfer }, ...] }
   const [matchConfig, setMatchConfig] = useState(null);
+  // Mirror of matchConfig for the tick-loop closure — the main effect
+  // runs once at mount so it can't read the latest React state value
+  // directly.
+  const matchConfigRef = useRef(null);
+  // v0.75 game mode: 'clubhouse' (the default landing area) | 'range'
+  // (driving-range practice) | 'putting' (practice green) | 'round'
+  // (real match on a HOLES[] hole). The ref is what the tick loop
+  // reads; the React state mirror drives HUD reactivity.
+  const [gameMode, setGameMode] = useState('clubhouse');
+  const gameModeRef = useRef('clubhouse');
+  // MatchSetupOverlay visibility — gated by user action (1ST TEE sign
+  // tap or challenger accept) instead of "matchConfig === null" so the
+  // clubhouse loads first.
+  const [matchSetupOpen, setMatchSetupOpen] = useState(false);
+  // When opening match setup from a challenger, the opponent slot is
+  // pre-filled with that NPC's golfer; we skip the human + cpu picker
+  // and commit straight away.
+  const matchSetupSeedRef = useRef(null);
+  // NPC dialog overlay state — null when no NPC is being talked to.
+  // Shape: { npcId, lineIdx } — the screen looks up NPCS[id] to draw.
+  const [npcDialog, setNpcDialog] = useState(null);
+  // Active proximity interaction surfaced to the HUD (sign or NPC).
+  // Shape: { kind: 'sign' | 'npc', id, label } | null.
+  const [interaction, setInteraction] = useState(null);
+  const interactionRef = useRef(null);
+  // Mode-switch entry point exposed to React handlers (sign tap, EXIT
+  // button, challenger accept). Wired inside the main effect.
+  const enterModeRef = useRef(null);
+  // Range / putting practice telemetry — shot count this session and
+  // a small auto-reset timer so the ball settles for a beat before
+  // returning to the mat.
+  const practiceShotCountRef = useRef(0);
+  const practiceResetTimerRef = useRef(0);
+  const bestRangeShotRef = useRef(0);
+  const [practiceHud, setPracticeHud] = useState({ shots: 0, lastYd: 0, bestYd: 0 });
   // playersRef carries per-player ball/stroke/scores state once a match
   // is active. Populated from matchConfig the first time loadHole runs.
   const playersRef = useRef([]);
@@ -2485,7 +2728,11 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
     `;
     document.head.appendChild(bodyStyle);
 
-    loadHole(0, orientation);
+    // v0.75 — boot into the clubhouse instead of straight onto hole 1.
+    // The match config arrives later when the player walks to the
+    // 1ST TEE sign or accepts a 1V1 challenger.
+    loadClubhouse(orientation);
+    gameModeRef.current = 'clubhouse';
     holeIdxRef.current = 0;
 
     staticRef.current = document.createElement('canvas');
@@ -2739,7 +2986,11 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
     // so existing physics / HUD / input work unchanged.
 
     const initPlayersFromMatch = () => {
-      const list = (matchConfig?.players || []).map((slot, i) => ({
+      // v0.75 — read from matchConfigRef so the function can be called
+      // from enterMode('round') after match setup commits without
+      // tearing down the whole effect.
+      const cfg = matchConfigRef.current || matchConfig;
+      const list = (cfg?.players || []).map((slot, i) => ({
         id: slot.id,
         name: slot.name,
         isNPC: slot.isNPC,
@@ -3164,12 +3415,126 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
     };
     flushHud();
 
-    // All helpers are defined now — it's safe to init the players
-    // array and place the first player's ball. (loadActivePlayer
-    // calls flushHud internally, so this block has to run AFTER
-    // flushHud's declaration — otherwise TDZ.)
-    initPlayersFromMatch();
-    loadActivePlayer(true);
+    // v0.75 — boot scene is the clubhouse, not a hole. Place the
+    // player at the clubhouse spawn (TEE field of the clubhouse def)
+    // and skip match/player init until the round actually starts via
+    // enterMode('round'). The ball is parked off-canvas so the
+    // existing draw paths happily ignore it in clubhouse mode.
+    const placePlayerAtSpawn = () => {
+      const p = posRef.current;
+      const b = ballRef.current;
+      p.x = TEE.x * TILE;
+      p.y = TEE.y * TILE;
+      p.facing = 'N';
+      p.moving = false;
+      p.walkPhase = 0;
+      b.x = -100; b.y = -100; b.z = 0;
+      b.vx = 0; b.vy = 0; b.vz = 0;
+      b.state = 'rest';
+      b.lastGoodX = b.x; b.lastGoodY = b.y;
+      b.trail = [];
+      swingRef.current.state = SW.IDLE;
+      swingRef.current.aimLocked = false;
+      swingRef.current.prePowerCap = 1.0;
+    };
+    placePlayerAtSpawn();
+
+    // Place the ball on the practice tee (range / putting modes) and
+    // park the golfer at the address pose, ready to swing. No score,
+    // no players list — these modes are stateless practice loops.
+    const placeBallForPractice = () => {
+      const b = ballRef.current;
+      const sw = swingRef.current;
+      b.x = TEE.x * TILE;
+      b.y = TEE.y * TILE;
+      b.z = 0; b.vx = 0; b.vy = 0; b.vz = 0;
+      b.state = 'rest';
+      b.lastGoodX = b.x; b.lastGoodY = b.y;
+      b.trail = [];
+      b.spinX = 0; b.spinY = 0; b.dropT = 0;
+      sw.spinX = 0; sw.spinY = 0;
+      sw.shotType = 'normal';
+      sw.strokeCount = 1;
+      sw.aimLocked = false;
+      sw.prePowerCap = 1.0;
+      aimAtFlag();
+      sw.aimBaseAngle = sw.aimAngle;
+      sw.state = SW.AIMING;
+      const pose = addressPose(b, sw.aimAngle);
+      const p = posRef.current;
+      p.x = pose.px; p.y = pose.py; p.facing = pose.facing; p.moving = false;
+      // Range counter — incremented each swing for the HUD.
+      practiceShotCountRef.current = 0;
+      practiceResetTimerRef.current = 0;
+    };
+
+    // Mode entry — swap the world, reset transient state, place
+    // entities. The single source of truth for "what game mode are
+    // we in" lives in gameModeRef.current; the React state mirror
+    // (gameMode) drives HUD reactivity.
+    const enterMode = (mode, opts = {}) => {
+      // 1. Cancel any in-flight transient state from the previous mode.
+      walkOutRef.current.active = false;
+      walkOutRef.current.fading = false;
+      walkOutRef.current.fadeT = 0;
+      walkOutHudRef.current = { active: false, dir: 0, fadeAlpha: 0 };
+      setWalkOutHud({ active: false, dir: 0, fadeAlpha: 0 });
+      npcPendingRef.current = false;
+      npcCooldownRef.current = 0;
+      setNpcDialog(null);
+      setInteraction(null);
+      interactionRef.current = null;
+      setMatchSetupOpen(false);
+      setScorecardOpen(false);
+      setLastShotHud(null);
+      lastShotRef.current = null;
+      canTeeOffRef.current = false;
+      setCanTeeOff(false);
+
+      // 2. Load the new world.
+      if (mode === 'clubhouse')      loadClubhouse(orientation);
+      else if (mode === 'range')     loadRange(orientation);
+      else if (mode === 'putting')   loadPutting(orientation);
+      else if (mode === 'round') {
+        holeIdxRef.current = 0;
+        loadHole(0, orientation);
+      }
+      rebuildStatic();
+      randomizeWind();
+      leavesRef.current = [];
+      burstLeaves.length = 0;
+      pinShake.t = 999;
+      pinShake.intensity = 0;
+      for (let i = 0; i < MAX_LEAVES; i++) {
+        const l = spawnLeaf(windRef.current.x, windRef.current.y);
+        l.age = Math.random() * l.maxAge;
+        l.x = Math.random() * WORLD_W;
+        l.y = Math.random() * WORLD_H;
+        leavesRef.current.push(l);
+      }
+
+      // 3. Per-mode entity setup.
+      gameModeRef.current = mode;
+      setGameMode(mode);
+      if (mode === 'clubhouse') {
+        placePlayerAtSpawn();
+      } else if (mode === 'range') {
+        // Driver default — what most folks practice with at a range.
+        swingRef.current.clubIdx = 0;
+        placeBallForPractice();
+      } else if (mode === 'putting') {
+        // Putter — find by key so a CLUBS reorder doesn't break this.
+        const ptIdx = CLUBS.findIndex((c) => c.key === 'PT');
+        swingRef.current.clubIdx = ptIdx >= 0 ? ptIdx : (CLUBS.length - 1);
+        placeBallForPractice();
+      } else if (mode === 'round') {
+        initPlayersFromMatch();
+        loadActivePlayer(true);
+      }
+
+      flushHud();
+    };
+    enterModeRef.current = enterMode;
 
     const advanceHole = () => {
       const wrapping = (holeIdxRef.current + 1) >= HOLES.length;
@@ -3199,6 +3564,45 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       resetPlayersForHole();
       loadActivePlayer(true);
       flushHud();
+    };
+
+    // v0.75 — practice-mode rest handler. Replaces the round
+    // settleBallTransitions for range / putting since there are no
+    // players, no scorecard, and no hazard penalty pause to honour.
+    // When the ball stops we record the carry, update the practice
+    // HUD, then arm a short timer so the ball auto-resets onto the
+    // mat for the next swing.
+    const settlePracticeBall = () => {
+      const ball = ballRef.current;
+      const sw = swingRef.current;
+      if (ball.state === 'rolling') sw.state = SW.ROLLING;
+      else if (ball.state === 'dropping') sw.state = SW.DROPPING;
+      else if (ball.state === 'stopped' || ball.state === 'holed' || ball.state === 'hazard' || ball.state === 'ob') {
+        if (lastShotRef.current && lastShotRef.current.carryYd === null) {
+          const ls = lastShotRef.current;
+          const distPx = Math.hypot(ball.x - ls.startX, ball.y - ls.startY);
+          ls.carryYd = Math.round(distPx / TILE * YARDS_PER_TILE);
+          ls.endLie = ball.state === 'holed'
+            ? 'Holed'
+            : (surfacePropsAt(ball.x, ball.y)?.label || '—');
+          ls.holed = ball.state === 'holed';
+          setLastShotHud({ ...ls });
+        }
+        practiceShotCountRef.current++;
+        const ls = lastShotRef.current;
+        const yd = ls?.carryYd || 0;
+        if (yd > bestRangeShotRef.current) bestRangeShotRef.current = yd;
+        setPracticeHud({
+          shots: practiceShotCountRef.current,
+          lastYd: yd,
+          bestYd: bestRangeShotRef.current,
+        });
+        sw.state = SW.STOPPED;
+        // Hazard / OB resets faster so the player isn't waiting on a
+        // splash they don't care about in practice.
+        practiceResetTimerRef.current =
+          (ball.state === 'hazard' || ball.state === 'ob') ? 0.6 : 1.4;
+      }
     };
 
     const settleBallTransitions = () => {
@@ -3706,18 +4110,99 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         p.moving = (vx !== 0 || vy !== 0);
         if (Math.abs(vx) > Math.abs(vy)) p.facing = vx > 0 ? 'E' : 'W';
         else if (vy !== 0) p.facing = vy > 0 ? 'S' : 'N';
+        const oldX = p.x, oldY = p.y;
         p.x = Math.max(8, Math.min(WORLD_W - 8, p.x + vx * speed * dt));
         p.y = Math.max(8, Math.min(WORLD_H - 8, p.y + vy * speed * dt));
+        // v0.75 — clubhouse building collision. Block movement that
+        // would push the player into the building footprint. Inflate
+        // by 4 px so the sprite doesn't overlap the wall edge.
+        if (BUILDING) {
+          const bx = BUILDING.x * TILE - 4;
+          const by = BUILDING.y * TILE - 4;
+          const bw = BUILDING.w * TILE + 8;
+          const bh = BUILDING.h * TILE + 8;
+          if (p.x > bx && p.x < bx + bw && p.y > by && p.y < by + bh) {
+            p.x = oldX; p.y = oldY;
+            p.moving = false;
+          }
+        }
         if (p.moving) p.walkPhase += dt * 8; else p.walkPhase = 0;
         // Surface the TEE OFF button when the golfer walks into the
-        // tee box proximity. Auto-proximity aim was removed — tap
-        // the button to commit. Suppressed during walk-to-next-hole so
-        // the just-holed cup doesn't re-arm the tee-off prompt.
-        if (!walkOutRef.current.active) {
+        // tee box proximity. Suppressed during walk-to-next-hole AND
+        // in clubhouse mode (no playable ball there).
+        if (!walkOutRef.current.active && gameModeRef.current !== 'clubhouse') {
           const near = Math.hypot(p.x - ball.x, p.y - ball.y) < 22;
           if (near !== canTeeOffRef.current) {
             canTeeOffRef.current = near;
             setCanTeeOff(near);
+          }
+        }
+        // v0.75 clubhouse — walker NPCs patrol between waypoints with
+        // a brief idle pause at each end. Proximity probe surfaces the
+        // TALK / ENTER button via interactionRef + setInteraction.
+        if (gameModeRef.current === 'clubhouse') {
+          for (const npc of NPCS) {
+            if (npc.type === 'walker') {
+              npc.idleT = (npc.idleT || 0) + dt;
+              if (!npc.walking && npc.idleT >= (npc.pauseAt || 1.5)) {
+                npc.walking = true;
+                npc.idleT = 0;
+              }
+              if (npc.walking) {
+                const tgt = npc.dir > 0 ? (npc.wpB || npc) : (npc.wpA || npc);
+                const dx = tgt.x - npc.x;
+                const dy = tgt.y - npc.y;
+                const dist = Math.hypot(dx, dy);
+                if (dist < 0.2) {
+                  npc.dir = -npc.dir;
+                  npc.walking = false;
+                  npc.idleT = 0;
+                } else {
+                  const step = ((npc.speed || 20) / TILE) * dt;
+                  const stepClamped = Math.min(step, dist);
+                  npc.x += (dx / dist) * stepClamped;
+                  npc.y += (dy / dist) * stepClamped;
+                  npc.walkPhase = (npc.walkPhase || 0) + dt * 8;
+                  if (Math.abs(dx) > Math.abs(dy)) npc.facing = dx > 0 ? 'E' : 'W';
+                  else npc.facing = dy > 0 ? 'S' : 'N';
+                }
+              }
+            } else if (npc.type === 'putter') {
+              // Subtle facing-flip every few seconds so the putter
+              // doesn't read as completely frozen on the green.
+              npc.idleT = (npc.idleT || 0) + dt;
+              if (npc.idleT > 3.2) {
+                npc.idleT = 0;
+                npc.facing = npc.facing === 'N' ? 'W' : 'N';
+              }
+            }
+          }
+          // Proximity to signs / NPCs → surface the floating TALK or
+          // ENTER button.
+          let nearest = null;
+          let bestDist = 26; // px proximity threshold
+          for (const sg of SIGNS) {
+            const d = Math.hypot(p.x - sg.x * TILE, p.y - sg.y * TILE);
+            if (d < bestDist) {
+              bestDist = d;
+              nearest = { kind: 'sign', id: sg.id, target: sg.target, label: sg.label };
+            }
+          }
+          for (const npc of NPCS) {
+            const d = Math.hypot(p.x - npc.x * TILE, p.y - npc.y * TILE);
+            if (d < bestDist) {
+              bestDist = d;
+              nearest = { kind: 'npc', id: npc.id, label: npc.name };
+            }
+          }
+          const prev = interactionRef.current;
+          const changed =
+            (!prev && nearest) ||
+            (prev && !nearest) ||
+            (prev && nearest && (prev.kind !== nearest.kind || prev.id !== nearest.id));
+          if (changed) {
+            interactionRef.current = nearest;
+            setInteraction(nearest);
           }
         }
         // v0.74 walk-to-next-hole tick: drive the waypoint proximity
@@ -3779,7 +4264,22 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
           ball.trail.push({ x: ball.x, y: ball.y, z: ball.z });
           if (ball.trail.length > 40) ball.trail.shift();
         }
-        settleBallTransitions();
+        if (gameModeRef.current === 'round') {
+          settleBallTransitions();
+        } else {
+          settlePracticeBall();
+        }
+      } else if (sw.state === SW.STOPPED) {
+        // Practice modes — wait out a short beat after the ball comes
+        // to rest, then re-spawn on the mat for the next swing. Round
+        // mode never sits in SW.STOPPED (settleBallTransitions hands
+        // off to the next player or scorecard immediately).
+        if (gameModeRef.current === 'range' || gameModeRef.current === 'putting') {
+          practiceResetTimerRef.current -= dt;
+          if (practiceResetTimerRef.current <= 0) {
+            placeBallForPractice();
+          }
+        }
       } else if (sw.state === SW.SPLASHING) {
         sw.messageTimer -= dt;
         splashFx.t += dt;
@@ -4071,15 +4571,52 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       const drawables = [];
       for (const t of TREES) drawables.push({ kind: 'tree', x: t.x * TILE, y: t.y * TILE, variant: t.variant });
       for (const b of BUSHES) drawables.push({ kind: 'bush', x: b.x * TILE, y: b.y * TILE, variant: b.variant });
+      // v0.75 — clubhouse / range / putting world extras. The
+      // building draws as a chunky pixel structure with a roof
+      // overhang. Signs are short posts with a yellow plank. NPCs
+      // re-use drawGolfer with their walk phase + facing.
+      if (BUILDING) {
+        drawables.push({
+          kind: 'building',
+          x: BUILDING.x * TILE, y: BUILDING.y * TILE,
+          w: BUILDING.w * TILE, h: BUILDING.h * TILE,
+          label: BUILDING.label || 'CLUBHOUSE',
+        });
+      }
+      for (const sg of SIGNS) {
+        drawables.push({
+          kind: 'sign',
+          x: sg.x * TILE, y: sg.y * TILE,
+          label: sg.label, target: sg.target, dir: sg.dir,
+        });
+      }
+      for (const cup of PRACTICE_CUPS) {
+        drawables.push({
+          kind: 'practiceCup',
+          x: cup.x * TILE, y: cup.y * TILE,
+        });
+      }
+      for (const npc of NPCS) {
+        drawables.push({
+          kind: 'npc',
+          npc,
+          x: npc.x * TILE, y: npc.y * TILE,
+          facing: npc.facing,
+          phase: npc.type === 'walker' && npc.walking ? npc.walkPhase : null,
+        });
+      }
       // Pull the flag pole whenever the putter is equipped — the tall
       // red pin is what a caddie would remove for a real putt. Applies
       // across every swing state so the pin doesn't reappear mid-putt.
-      drawables.push({
-        kind: 'flag',
-        x: FLAG.x * TILE,
-        y: FLAG.y * TILE,
-        showPole: !isPutting,
-      });
+      // Skip the flag entirely in clubhouse mode (no cup there).
+      if (WORLD_KIND !== 'clubhouse') {
+        drawables.push({
+          kind: 'flag',
+          x: FLAG.x * TILE,
+          y: FLAG.y * TILE,
+          showPole: !isPutting,
+        });
+      }
       if (ball.state === 'dropping') {
         drawables.push({ kind: 'balldrop', x: ball.x, y: ball.y, t: ball.dropT / 0.75 });
       } else if (sw.state !== SW.HOLED && sw.state !== SW.SPLASHING) {
@@ -4131,6 +4668,21 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         else if (d.kind === 'ball') drawBall(ctx, d.x, d.y, d.z || 0);
         else if (d.kind === 'balldrop') drawBallDropping(ctx, d.x, d.y, d.t);
         else if (d.kind === 'golfer') drawGolfer(ctx, d.x, d.y, d.facing, d.phase, d.swingInfo);
+        else if (d.kind === 'building') drawClubhouseBuilding(ctx, d.x, d.y, d.w, d.h, d.label);
+        else if (d.kind === 'sign') drawSign(ctx, d.x, d.y, d.label, d.dir);
+        else if (d.kind === 'practiceCup') drawPracticeCup(ctx, d.x, d.y);
+        else if (d.kind === 'npc') drawGolfer(ctx, d.x, d.y, d.facing, d.phase, null);
+      }
+      // Range mode — distance markers along the fairway. Drawn AFTER
+      // sprites so the text reads on top of mowing patterns.
+      if (WORLD_KIND === 'range' && DISTANCE_MARKERS.length) {
+        drawRangeMarkers(ctx, DISTANCE_MARKERS, TEE);
+      }
+      // NPC name tags — drawn after sprites so the labels float above
+      // the heads. Skipped during a swing pose so they don't fight the
+      // golfer's own card.
+      if (WORLD_KIND === 'clubhouse') {
+        for (const npc of NPCS) drawNpcLabel(ctx, npc.x * TILE, npc.y * TILE, npc.name);
       }
 
       for (const leaf of leavesRef.current) drawLeaf(ctx, leaf, now);
@@ -4191,7 +4743,16 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       canvas.removeEventListener('pointercancel', pu);
       if (bodyStyle.parentNode) bodyStyle.parentNode.removeChild(bodyStyle);
     };
-  }, [orientation, matchConfig]);
+    // Effect deps intentionally do NOT include matchConfig — the
+    // match data lives in matchConfigRef and feeds enterMode('round')
+    // when the player commits at the 1ST TEE sign. Tearing the canvas
+    // down whenever the match changes would lose the clubhouse state
+    // and reload the world from scratch.
+  }, [orientation]);
+
+  // Mirror matchConfig into the ref so the tick / enterMode closures
+  // always read the latest value.
+  useEffect(() => { matchConfigRef.current = matchConfig; }, [matchConfig]);
 
   const swingButtonCapture = useRef({});
   const zoomActions = useRef({});
@@ -4248,16 +4809,13 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
     );
   }
 
-  if (!matchConfig) {
-    return (
-      <MatchSetupOverlay
-        allGolfers={allGolfers}
-        defaultHuman={selectedGolfer}
-        onStart={(config) => setMatchConfig(config)}
-        onBack={onExit}
-      />
-    );
-  }
+  // v0.75 — MatchSetupOverlay is no longer the entry-screen gate.
+  // It opens as a transient overlay when the player walks into the
+  // 1ST TEE sign in the clubhouse (matchSetupOpen flips true). The
+  // canvas underneath stays mounted in clubhouse mode while setup is
+  // shown so cancelling drops them back where they were.
+  // The overlay itself is rendered further down alongside the other
+  // floating UI so it can sit on top of the canvas.
 
   // canSwing requires the aim to already be locked via the AimPad.
   // Before that, the swing pad slot hosts the AimPad + OK button.
@@ -4283,7 +4841,11 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
   // in the cup, there's nothing to tee off) and the club/shape/type
   // cards (nothing to aim with until the new tee loads).
   const walkingOut = !!walkOutHud.active;
-  const showWalkPrompt = hud.state === SW.IDLE && !turnHud.isNPC && !walkingOut;
+  // v0.75 — clubhouse hides the round HUD (CLUB / SHAPE / TYPE, walk
+  // prompt, hole-par card). Range / putting still need clubs + shape
+  // since the player is taking real shots.
+  const inClubhouse = gameMode === 'clubhouse';
+  const showWalkPrompt = hud.state === SW.IDLE && !turnHud.isNPC && !walkingOut && !inClubhouse;
   const shapeDotLeft = 22 + hud.spinX * 18;
   const shapeDotTop = 22 + hud.spinY * 18;
 
@@ -4304,15 +4866,37 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       </View>
 
       <View style={styles.hudTopLeft} pointerEvents="none">
-        <Text style={styles.hudLabel}>HOLE</Text>
-        <Text style={styles.hudValue}>{hud.holeName}</Text>
-        <Text style={styles.hudSub}>PAR {hud.holePar}  ·  {hud.pinYd} yd</Text>
-        <Text style={styles.hudSub}>Stroke {hud.strokes}  ·  {hud.lie}</Text>
-        {playersHud.length > 1 ? (
-          <Text style={[styles.hudSub, turnHud.isNPC ? styles.hudTurnCpu : styles.hudTurnYou]}>
-            TURN · {(turnHud.name || '').toUpperCase()}{turnHud.isNPC ? ' ·CPU' : ''}
-          </Text>
-        ) : null}
+        {gameMode === 'clubhouse' ? (
+          <>
+            <Text style={styles.hudLabel}>CLUBHOUSE</Text>
+            <Text style={styles.hudValue}>ATLAS GOLF</Text>
+            <Text style={styles.hudSub}>walk around — talk to anyone</Text>
+          </>
+        ) : gameMode === 'range' ? (
+          <>
+            <Text style={styles.hudLabel}>RANGE</Text>
+            <Text style={styles.hudValue}>DRIVING RANGE</Text>
+            <Text style={styles.hudSub}>practice — no score</Text>
+          </>
+        ) : gameMode === 'putting' ? (
+          <>
+            <Text style={styles.hudLabel}>PUTTING</Text>
+            <Text style={styles.hudValue}>PRACTICE GREEN</Text>
+            <Text style={styles.hudSub}>roll some balls</Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.hudLabel}>HOLE</Text>
+            <Text style={styles.hudValue}>{hud.holeName}</Text>
+            <Text style={styles.hudSub}>PAR {hud.holePar}  ·  {hud.pinYd} yd</Text>
+            <Text style={styles.hudSub}>Stroke {hud.strokes}  ·  {hud.lie}</Text>
+            {playersHud.length > 1 ? (
+              <Text style={[styles.hudSub, turnHud.isNPC ? styles.hudTurnCpu : styles.hudTurnYou]}>
+                TURN · {(turnHud.name || '').toUpperCase()}{turnHud.isNPC ? ' ·CPU' : ''}
+              </Text>
+            ) : null}
+          </>
+        )}
       </View>
 
       <View style={styles.hudTopRight} pointerEvents="none">
@@ -4337,7 +4921,7 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
           all three fit left of the SWING button on a 390+ viewport. VIEW
           now lives in the right-side zoom column (above). Hidden during
           walk-to-next-hole — nothing to aim with until the new tee loads. */}
-      {!walkingOut ? (
+      {!walkingOut && !inClubhouse ? (
         <>
           <Pressable style={styles.clubCard} onPress={() => setClubPicker(true)}>
             <Text style={styles.hudLabel}>CLUB</Text>
@@ -4575,8 +5159,114 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         />
       ) : null}
 
-      <Pressable style={styles.exitBtn} onPress={onExit}>
-        <Text style={styles.exitText}>✕</Text>
+      {/* v0.75 — TALK / ENTER floating button. Surfaces when the
+           player walks within ~26 px of a sign or NPC in the
+           clubhouse. Tapping a sign enters the corresponding mode (or
+           opens match setup for the 1ST TEE); tapping an NPC opens
+           the dialog overlay. */}
+      {gameMode === 'clubhouse' && interaction && !npcDialog && !matchSetupOpen ? (
+        <View pointerEvents="box-none" style={styles.interactionWrap}>
+          <View style={styles.interactionLabel} pointerEvents="none">
+            <Text style={styles.interactionLabelText}>{interaction.label}</Text>
+          </View>
+          <Pressable
+            style={styles.interactionBtn}
+            onPress={() => {
+              if (interaction.kind === 'sign') {
+                if (interaction.target === 'roundSetup') {
+                  matchSetupSeedRef.current = null;
+                  setMatchSetupOpen(true);
+                } else if (enterModeRef.current) {
+                  enterModeRef.current(interaction.target);
+                }
+              } else if (interaction.kind === 'npc') {
+                const npc = NPCS.find((n) => n.id === interaction.id);
+                if (npc) setNpcDialog({ npcId: npc.id, lineIdx: 0 });
+              }
+            }}
+          >
+            <Text style={styles.interactionBtnText}>
+              {interaction.kind === 'sign' ? 'ENTER ▸' : 'TALK ▸'}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {/* NPC dialog overlay — closes on LEAVE or fires the challenger
+           1V1 path on the PLAY 1V1 button. */}
+      {npcDialog ? (() => {
+        const npc = NPCS.find((n) => n.id === npcDialog.npcId);
+        if (!npc) { setNpcDialog(null); return null; }
+        return (
+          <NpcDialogOverlay
+            npc={npc}
+            lineIdx={npcDialog.lineIdx}
+            onAdvance={() => setNpcDialog((d) => ({ ...d, lineIdx: d.lineIdx + 1 }))}
+            onClose={() => setNpcDialog(null)}
+            onChallenge={() => {
+              // Build the opponent slot from the NPC's golfer (cycle
+              // through allGolfers if the index is out of range).
+              const roster = Array.isArray(allGolfers) ? allGolfers : [];
+              const golfer = roster.length
+                ? roster[Math.abs((npc.golferIdx || 0)) % roster.length]
+                : null;
+              matchSetupSeedRef.current = [golfer];
+              setNpcDialog(null);
+              setMatchSetupOpen(true);
+            }}
+          />
+        );
+      })() : null}
+
+      {/* MatchSetupOverlay — floats over the clubhouse canvas. Once
+           the player commits, we sync the matchConfigRef + state and
+           hand off to enterMode('round'). */}
+      {matchSetupOpen ? (
+        <View style={styles.setupOverlay} pointerEvents="auto">
+          <MatchSetupOverlay
+            allGolfers={allGolfers}
+            defaultHuman={selectedGolfer}
+            lockHuman={true}
+            seedCpu={matchSetupSeedRef.current}
+            onStart={(config) => {
+              matchConfigRef.current = config;
+              setMatchConfig(config);
+              setMatchSetupOpen(false);
+              matchSetupSeedRef.current = null;
+              if (enterModeRef.current) enterModeRef.current('round');
+            }}
+            onBack={() => {
+              setMatchSetupOpen(false);
+              matchSetupSeedRef.current = null;
+            }}
+          />
+        </View>
+      ) : null}
+
+      {/* Range / putting practice HUD — small card top-center showing
+           shot count + last carry + best carry. */}
+      {(gameMode === 'range' || gameMode === 'putting') ? (
+        <View style={styles.practiceCard} pointerEvents="none">
+          <Text style={styles.hudLabel}>{gameMode === 'range' ? 'RANGE' : 'PUTTING'}</Text>
+          <Text style={styles.practiceCardLine}>
+            SHOTS {practiceHud.shots}  ·  LAST {practiceHud.lastYd}yd
+          </Text>
+          {gameMode === 'range' ? (
+            <Text style={styles.practiceCardLine}>BEST {practiceHud.bestYd}yd</Text>
+          ) : null}
+        </View>
+      ) : null}
+
+      <Pressable
+        style={styles.exitBtn}
+        onPress={() => {
+          // v0.75 EXIT routing — round / range / putting return to
+          // the clubhouse first; clubhouse exits to the main menu.
+          if (gameMode === 'clubhouse') onExit();
+          else if (enterModeRef.current) enterModeRef.current('clubhouse');
+        }}
+      >
+        <Text style={styles.exitText}>{gameMode === 'clubhouse' ? '✕' : '←'}</Text>
       </Pressable>
 
       {scorecardOpen ? (
@@ -4780,13 +5470,13 @@ function MatchCountPicker({ initial = 2, onConfirm, onBack }) {
 
 // Top-level match setup coordinator. Walks the player through
 // count → human → (CPU ×N) and emits the final players payload.
-function MatchSetupOverlay({ allGolfers, defaultHuman, onStart, onBack }) {
+function MatchSetupOverlay({ allGolfers, defaultHuman, onStart, onBack, lockHuman = false, seedCpu = null }) {
   const safeRoster = Array.isArray(allGolfers) && allGolfers.length ? allGolfers : [];
-  // step: 'count' | 'human' | 'cpu'
+  // step: 'count' | 'human' | 'cpu'  (skipped: 'human' if lockHuman)
   const [step, setStep] = useState('count');
-  const [playerCount, setPlayerCount] = useState(2);
+  const [playerCount, setPlayerCount] = useState(seedCpu && seedCpu.length ? (1 + seedCpu.length) : 2);
   const [humanGolfer, setHumanGolfer] = useState(defaultHuman || safeRoster[0] || null);
-  const [cpuGolfers, setCpuGolfers] = useState([]);
+  const [cpuGolfers, setCpuGolfers] = useState(seedCpu || []);
 
   const commit = (count, human, cpus) => {
     const players = [];
@@ -4804,6 +5494,16 @@ function MatchSetupOverlay({ allGolfers, defaultHuman, onStart, onBack }) {
     onStart({ players });
   };
 
+  // v0.75 — challenger flow: seedCpu is pre-filled, just commit on
+  // mount and skip the entire picker chain.
+  useEffect(() => {
+    if (seedCpu && seedCpu.length) {
+      commit(1 + seedCpu.length, humanGolfer, seedCpu);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  if (seedCpu && seedCpu.length) return null;
+
   if (step === 'count') {
     return (
       <MatchCountPicker
@@ -4813,7 +5513,11 @@ function MatchSetupOverlay({ allGolfers, defaultHuman, onStart, onBack }) {
           if (n === 1) {
             commit(1, humanGolfer, []);
           } else {
-            setStep('human');
+            // v0.75 — when entering from the clubhouse 1ST TEE sign,
+            // the human golfer was already chosen on the main menu.
+            // Skip the redundant human-picker step and jump to CPU.
+            setStep(lockHuman ? 'cpu' : 'human');
+            if (lockHuman) setCpuGolfers([]);
           }
         }}
         onBack={onBack}
@@ -5643,6 +6347,53 @@ const styles = StyleSheet.create({
     width: 38, height: 38, alignItems: 'center', justifyContent: 'center',
   },
   exitText: { color: '#f5f5ec', fontSize: 18, lineHeight: 20 },
+  // v0.75 — clubhouse interaction button. Floats above the HUD pad
+  // when the player walks within range of a sign or NPC. Yellow ring
+  // for "ENTER" (signs) and mint ring for "TALK" (NPCs).
+  interactionWrap: {
+    position: 'absolute',
+    left: 0, right: 0, bottom: 270,
+    alignItems: 'center',
+  },
+  interactionLabel: {
+    backgroundColor: 'rgba(14, 26, 18, 0.92)',
+    borderWidth: 2, borderColor: '#fbe043',
+    paddingHorizontal: 12, paddingVertical: 4,
+    marginBottom: 8,
+  },
+  interactionLabelText: {
+    color: '#fbe043', fontSize: 12, fontWeight: '900', letterSpacing: 3,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  interactionBtn: {
+    backgroundColor: '#88f8bb',
+    borderWidth: 3, borderColor: '#f5f5ec',
+    paddingHorizontal: 22, paddingVertical: 10,
+  },
+  interactionBtnText: {
+    color: '#04180c', fontSize: 14, fontWeight: '900', letterSpacing: 4,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  // Match-setup overlay container — fills the screen with a dim
+  // backdrop so the underlying clubhouse canvas isn't distracting.
+  setupOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    zIndex: 100,
+  },
+  // Range / putting practice card — top-center small panel showing
+  // shot count + last carry + best carry.
+  practiceCard: {
+    position: 'absolute', top: 16, alignSelf: 'center',
+    backgroundColor: HUD_BG, borderWidth: 2, borderColor: HUD_BORDER,
+    paddingHorizontal: 12, paddingVertical: 6, minWidth: 160,
+    alignItems: 'center',
+  },
+  practiceCardLine: {
+    color: '#fff6d8', fontSize: 11, letterSpacing: 1, marginTop: 2,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
 
   hudTopLeft: {
     position: 'absolute', top: 16, left: 16,
