@@ -1647,6 +1647,15 @@ function getTintedSheet(shirtHex, pantsHex) {
 function pickSpriteAnimation(atlas, facing, phase, swingInfo, state) {
   const a = atlas && atlas.animations;
   if (!a) return null;
+  // v0.78.4 — celebration (hole-out) frame lookup. celebIdx is
+  // selected by the caller based on score-vs-par. Clamped to the
+  // available celebration block.
+  if (swingInfo && swingInfo.phase === 'celebrate') {
+    const frames = a.CELEBRATIONS_MISC || a.CELEBRATIONS || a.IDLE;
+    if (!frames || !frames.length) return null;
+    const idx = Math.max(0, Math.min(frames.length - 1, swingInfo.celebIdx || 0));
+    return { frames, frameIdx: idx };
+  }
   // Swinging / striking.
   if (swingInfo && (swingInfo.phase === 'back' || swingInfo.phase === 'forward')) {
     const cat = swingInfo.clubCategory;
@@ -5416,7 +5425,10 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       // watching the shot unfold, not vanish at impact. Hidden only
       // briefly during the HOLED celebration so the ball drop is the
       // only focal point.
-      const showGolfer = sw.state !== SW.HOLED;
+      // v0.78.4 — show the golfer during HOLED too, so a celebration
+      // frame plays (fist pump / club raise / dance). The walk-out
+      // flow still hides the sprite via walkOutRef (fade overlay).
+      const showGolfer = true;
       if (showGolfer) {
         // Compute live swing info so drawGolfer can animate the club:
         //   back   while swiping (power = current swipe magnitude / max)
@@ -5443,6 +5455,19 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
           if (elapsed < 0.22) {
             swingInfo = { phase: 'forward', forwardT: elapsed / 0.22, clubCategory: clubCatForAnim };
           }
+        } else if (sw.state === SW.HOLED) {
+          // v0.78.4 — pick a celebration frame based on how the
+          // player did vs par. Birdies/eagles get the showy poses
+          // (fist pump, club raise), pars get a thumbs-up, bogeys
+          // get a wave. frameIdx wraps inside the celebration block.
+          const par = CURRENT_HOLE?.par || 3;
+          const vs = (sw.strokeCount || 0) - par;
+          let celebIdx = 0;
+          if (vs <= -2) celebIdx = 3;      // eagle+ → club raise
+          else if (vs === -1) celebIdx = 0; // birdie → fist pump
+          else if (vs === 0) celebIdx = 6;  // par → thumbs up
+          else celebIdx = 11;               // bogey+ → wave
+          swingInfo = { phase: 'celebrate', celebIdx, clubCategory: clubCatForAnim };
         } else {
           swingInfo = { phase: 'address', clubCategory: clubCatForAnim };
         }
