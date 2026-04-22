@@ -4,7 +4,10 @@ import {
   CLUBHOUSE_WORLD,
   RANGE_WORLD,
   PUTTING_WORLD,
+  SHOP_WORLD,
+  SHOP_CATALOG,
   NpcDialogOverlay,
+  ShopGridOverlay,
   translateSurfaceType,
 } from './Clubhouse';
 
@@ -585,7 +588,12 @@ let SIGNS = [];                 // [{ id, x, y, label, target, dir }]
 let NPCS = [];                  // see Clubhouse.js npcs[] schema
 let DISTANCE_MARKERS = [];      // [50, 100, 150, ...] yards (range mode)
 let PRACTICE_CUPS = [];         // [{ x, y }] extra holes (putting mode)
-let WORLD_KIND = 'round';       // 'round' | 'clubhouse' | 'range' | 'putting'
+let WORLD_KIND = 'round';       // 'round' | 'clubhouse' | 'range' | 'putting' | 'shop'
+// v0.77 pro-shop interior. Populated by loadShop() with fixtures
+// (racks + counter) and a doormat rectangle that routes back to the
+// outdoor clubhouse when the player walks onto it.
+let FIXTURES = [];              // [{ id, kind, label, x, y, w, h, zone }]
+let DOORMAT = null;             // { x, y, w, h } in tile units
 
 // Shift every coordinate-bearing field on a surface shape by (dx, dy)
 // tile units. Used by loadHole to CENTER each hole's original features
@@ -984,6 +992,8 @@ function loadHole(idx, orientation) {
   NPCS = [];
   DISTANCE_MARKERS = [];
   PRACTICE_CUPS = [];
+  FIXTURES = [];
+  DOORMAT = null;
   return h;
 }
 
@@ -1026,12 +1036,15 @@ function loadNonRoundWorld(def, kind, orientation) {
   NPCS = (def.npcs || []).map((n) => ({ ...n, walkPhase: 0, idleT: 0, dir: 1 }));
   DISTANCE_MARKERS = def.distanceMarkers || [];
   PRACTICE_CUPS = def.cups || [];
+  FIXTURES = (def.fixtures || []).map((f) => ({ ...f }));
+  DOORMAT = def.doormat || null;
   return def;
 }
 
 function loadClubhouse(orientation) { return loadNonRoundWorld(CLUBHOUSE_WORLD, 'clubhouse', orientation); }
 function loadRange(orientation)     { return loadNonRoundWorld(RANGE_WORLD,     'range',     orientation); }
 function loadPutting(orientation)   { return loadNonRoundWorld(PUTTING_WORLD,   'putting',   orientation); }
+function loadShop(orientation)      { return loadNonRoundWorld(SHOP_WORLD,      'shop',      orientation); }
 
 loadHole(0, 'portrait');
 
@@ -1508,10 +1521,37 @@ function drawClub(ctx, hx, hy, angleDeg, category) {
   }
 }
 
-function drawGolfer(ctx, px, py, facing, phase, swingInfo) {
+// v0.77 — tiny hex-shade helpers for the custom-avatar path. Accepts
+// a #rrggbb string and returns a clamped lighter / darker variant
+// expressed the same way. Used by drawGolfer when the player has
+// equipped shop clothing so we don't need to ship per-item sprites.
+function _hexParse(hex) {
+  const s = (hex || '').replace('#', '');
+  const r = parseInt(s.slice(0, 2), 16);
+  const g = parseInt(s.slice(2, 4), 16);
+  const b = parseInt(s.slice(4, 6), 16);
+  return [isFinite(r) ? r : 0, isFinite(g) ? g : 0, isFinite(b) ? b : 0];
+}
+function _hexFmt(r, g, b) {
+  const h = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+  return `#${h(r)}${h(g)}${h(b)}`;
+}
+function darkenHex(hex, amt) { const [r, g, b] = _hexParse(hex); return _hexFmt(r * (1 - amt), g * (1 - amt), b * (1 - amt)); }
+function lightenHex(hex, amt) { const [r, g, b] = _hexParse(hex); return _hexFmt(r + (255 - r) * amt, g + (255 - g) * amt, b + (255 - b) * amt); }
+
+function drawGolfer(ctx, px, py, facing, phase, swingInfo, palette = null) {
   const x = Math.floor(px), y = Math.floor(py);
   const moving = phase !== null;
   const step = moving ? (Math.sin(phase) > 0 ? 1 : 0) : 0;
+  // Equipment palette override — any of shirt / pants / hat can be a
+  // custom #rrggbb from the shop. Missing slots fall back to the
+  // module-default COLORS used by everyone else.
+  const shirtBase = (palette && palette.shirt) || COLORS.shirt;
+  const shirtHi   = palette && palette.shirt ? lightenHex(shirtBase, 0.25) : COLORS.shirtHi;
+  const shirtDark = palette && palette.shirt ? darkenHex(shirtBase, 0.3)   : COLORS.shirtDark;
+  const pantsBase = (palette && palette.pants) || COLORS.pants;
+  const hatBase   = (palette && palette.hat)   || COLORS.hat;
+  const hatDark   = palette && palette.hat   ? darkenHex(hatBase, 0.3)   : COLORS.hatDark;
   ctx.fillStyle = COLORS.shadow;
   ctx.beginPath(); ctx.ellipse(x, y, 5, 2, 0, 0, Math.PI * 2); ctx.fill();
   const lfX = x - 3 + (moving && step ? -1 : 0);
@@ -1522,23 +1562,24 @@ function drawGolfer(ctx, px, py, facing, phase, swingInfo) {
   ctx.fillStyle = COLORS.shoeHi;
   ctx.fillRect(lfX, y - 1, 1, 1);
   ctx.fillRect(rfX, y - 1, 1, 1);
-  ctx.fillStyle = COLORS.pants;
+  const pantsDarkColor = palette && palette.pants ? darkenHex(pantsBase, 0.3) : COLORS.pantsDark;
+  ctx.fillStyle = pantsBase;
   ctx.fillRect(x - 3, y - 4, 2, 3);
   ctx.fillRect(x + 1, y - 4, 2, 3);
-  ctx.fillStyle = COLORS.pantsDark;
+  ctx.fillStyle = pantsDarkColor;
   ctx.fillRect(x - 3, y - 4, 1, 3);
   ctx.fillRect(x + 2, y - 4, 1, 3);
-  ctx.fillStyle = COLORS.pants;
+  ctx.fillStyle = pantsBase;
   ctx.fillRect(x - 3, y - 8, 6, 4);
-  ctx.fillStyle = COLORS.pantsDark;
+  ctx.fillStyle = pantsDarkColor;
   ctx.fillRect(x - 3, y - 8, 6, 1);
-  ctx.fillStyle = COLORS.shirt;
+  ctx.fillStyle = shirtBase;
   ctx.fillRect(x - 4, y - 14, 8, 6);
-  ctx.fillStyle = COLORS.shirtDark;
+  ctx.fillStyle = shirtDark;
   ctx.fillRect(x - 4, y - 9, 8, 1);
-  ctx.fillStyle = COLORS.shirtHi;
+  ctx.fillStyle = shirtHi;
   ctx.fillRect(x - 4, y - 14, 8, 1);
-  ctx.fillStyle = COLORS.shirt;
+  ctx.fillStyle = shirtBase;
   ctx.fillRect(x - 5, y - 13, 1, 3);
   ctx.fillRect(x + 4, y - 13, 1, 3);
   ctx.fillStyle = COLORS.skin;
@@ -1551,12 +1592,13 @@ function drawGolfer(ctx, px, py, facing, phase, swingInfo) {
   ctx.fillStyle = COLORS.skinShadow;
   ctx.fillRect(x + 2, y - 19, 1, 4);
   ctx.fillRect(x - 3, y - 16, 6, 1);
-  ctx.fillStyle = COLORS.hat;
+  const hatHiColor = palette && palette.hat ? lightenHex(hatBase, 0.25) : COLORS.hatHi;
+  ctx.fillStyle = hatBase;
   ctx.fillRect(x - 4, y - 21, 8, 2);
   ctx.fillRect(x - 3, y - 22, 6, 1);
-  ctx.fillStyle = COLORS.hatHi;
+  ctx.fillStyle = hatHiColor;
   ctx.fillRect(x - 3, y - 22, 3, 1);
-  ctx.fillStyle = COLORS.hatDark;
+  ctx.fillStyle = hatDark;
   ctx.fillRect(x - 4, y - 19, 8, 1);
   ctx.fillRect(x + 3, y - 21, 1, 2);
   ctx.fillStyle = COLORS.hatBand;
@@ -1856,6 +1898,143 @@ function drawRangeMarkers(ctx, yards, tee) {
     ctx.fillStyle = '#fff6d8';
     ctx.fillText(`${yd}YD`, 4 * TILE + 2, yPx - 2);
   }
+}
+
+// v0.77 — pro-shop fixture. A wooden rack (or counter) with the
+// category label painted on a small placard. Variant styles per kind:
+//   shirts  — rack with 4 coloured squares
+//   pants   — vertical hanger with 4 stripes
+//   hats    — small bumps on the shelf
+//   clubs   — vertical club shafts with heads on top
+//   counter — a wider flat counter with a till block
+function drawShopFixture(ctx, x, y, w, h, kind, label) {
+  const wood   = '#6a3c1c';
+  const woodHi = '#8a5428';
+  const woodDk = '#3a1e0c';
+  // Ground shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fillRect(x + 2, y + h - 1, w - 4, 3);
+  // Base body
+  ctx.fillStyle = wood;
+  ctx.fillRect(x, y + 4, w, h - 4);
+  ctx.fillStyle = woodHi;
+  ctx.fillRect(x, y + 4, w, 1);
+  ctx.fillStyle = woodDk;
+  ctx.fillRect(x, y + h - 2, w, 2);
+  // Top shelf
+  ctx.fillStyle = woodDk;
+  ctx.fillRect(x - 1, y, w + 2, 4);
+
+  if (kind === 'shirts') {
+    // 4 folded polos on the top shelf
+    const palette = ['#e8e2d4', '#3f76c1', '#3a7a3e', '#c03838'];
+    const slotW = Math.floor((w - 4) / 4);
+    for (let i = 0; i < 4; i++) {
+      const sx = x + 2 + i * slotW;
+      ctx.fillStyle = palette[i];
+      ctx.fillRect(sx, y + 5, slotW - 1, 6);
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(sx, y + 10, slotW - 1, 1);
+    }
+    // Bottom shelf — darker folded shirts
+    const palette2 = ['#2a2a2a', '#6a3aa2', '#ddb030', '#d88aa6'];
+    for (let i = 0; i < 4; i++) {
+      const sx = x + 2 + i * slotW;
+      ctx.fillStyle = palette2[i];
+      ctx.fillRect(sx, y + 13, slotW - 1, 5);
+    }
+  } else if (kind === 'pants') {
+    // Pants on a hanger rail — vertical stripes
+    const palette = ['#c4a470', '#1f2a4a', '#1a1a1a', '#3a3a3a', '#e8e2d4'];
+    for (let i = 0; i < palette.length; i++) {
+      const sx = x + 3 + i * 5;
+      if (sx + 3 > x + w - 2) break;
+      ctx.fillStyle = palette[i];
+      ctx.fillRect(sx, y + 6, 3, h - 10);
+    }
+  } else if (kind === 'hats') {
+    // Rows of hats
+    const palette = ['#e8e2d4', '#3f76c1', '#1a1a1a', '#3a7a3e', '#1f2a4a', '#c4a470'];
+    const slotW = Math.floor((w - 4) / 3);
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 3; col++) {
+        const hx = x + 2 + col * slotW;
+        const hy = y + 5 + row * 7;
+        const color = palette[row * 3 + col] || '#888';
+        ctx.fillStyle = color;
+        ctx.fillRect(hx + 1, hy, slotW - 3, 3);
+        ctx.fillRect(hx, hy + 3, slotW - 1, 2);  // brim
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.fillRect(hx, hy + 4, slotW - 1, 1);
+      }
+    }
+  } else if (kind === 'clubs') {
+    // Vertical club shafts + heads
+    const heads = ['#b0b0b0', '#b0b0b0', '#8a8a8a', '#8a8a8a', '#c5c5c5'];
+    const slotW = Math.floor((w - 4) / heads.length);
+    for (let i = 0; i < heads.length; i++) {
+      const sx = x + 2 + i * slotW;
+      // Shaft
+      ctx.fillStyle = '#c5c5c5';
+      ctx.fillRect(sx + 1, y + 8, 1, h - 12);
+      // Head
+      ctx.fillStyle = heads[i];
+      ctx.fillRect(sx, y + 6, 3, 3);
+    }
+  } else if (kind === 'counter') {
+    // Counter — two-tone with a green placard
+    ctx.fillStyle = '#2a5038';
+    ctx.fillRect(x + 2, y - 5, w - 4, 5);
+    ctx.fillStyle = '#fbe043';
+    ctx.font = 'bold 5px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label || 'WELCOME', x + w / 2, y - 2);
+    // Till block on the counter
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(x + 3, y + 5, 10, 6);
+    ctx.fillStyle = '#88f8bb';
+    ctx.fillRect(x + 4, y + 6, 8, 2);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+  }
+  // Category placard (below the fixture).
+  if (kind !== 'counter' && label) {
+    const plW = Math.max(32, label.length * 4 + 8);
+    const plX = x + (w - plW) / 2;
+    const plY = y + h;
+    ctx.fillStyle = '#2a5038';
+    ctx.fillRect(plX, plY, plW, 6);
+    ctx.fillStyle = '#caa427';
+    ctx.fillRect(plX, plY + 5, plW, 1);
+    ctx.fillStyle = '#fbe043';
+    ctx.font = 'bold 5px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, plX + plW / 2, plY + 3);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+  }
+}
+
+// Doormat — bricked stoop plus a green rug that the player can
+// step onto to exit the shop back to the outdoor clubhouse.
+function drawDoormat(ctx, x, y, w, h) {
+  ctx.fillStyle = '#8a8a8a';
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = '#6a6a6a';
+  for (let gy = y + 2; gy < y + h; gy += 3) {
+    ctx.fillRect(x, gy, w, 1);
+  }
+  for (let gx = x + 4; gx < x + w; gx += 8) {
+    ctx.fillRect(gx, y, 1, h);
+  }
+  // Green rug with a monogram
+  ctx.fillStyle = '#2a5038';
+  ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+  ctx.fillStyle = '#fbe043';
+  ctx.fillRect(x + w / 2 - 2, y + h / 2 - 1, 4, 1);
+  ctx.fillRect(x + w / 2 - 1, y + h / 2 - 2, 2, 4);
 }
 
 // Floating name tag above an NPC — drawn after sprites so it sits on
@@ -2744,6 +2923,47 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
   // where t is remaining seconds; tick-loop counts it down.
   const [tempoBanner, setTempoBanner] = useState(null);
   const tempoBannerRef = useRef(null);
+  // v0.77 pro-shop economy. Wallet + inventory persisted across
+  // sessions via localStorage (key: 'atlasGolfShopV1'). Seeded the
+  // first time the game is opened with $10 and no owned items.
+  // Equipped holds the currently-worn item id per kind; null means
+  // use the golfer's default avatar colour for that slot. React
+  // state drives the shop overlay; refs drive the tick-loop closures
+  // (especially drawGolfer which reads equipped colours every frame).
+  const SHOP_STORAGE_KEY = 'atlasGolfShopV1';
+  const [wallet, setWallet] = useState(() => {
+    if (typeof window === 'undefined' || !window.localStorage) return 10;
+    try {
+      const raw = window.localStorage.getItem(SHOP_STORAGE_KEY);
+      if (raw) return JSON.parse(raw).wallet ?? 10;
+    } catch {}
+    return 10;
+  });
+  const [ownedItems, setOwnedItems] = useState(() => {
+    if (typeof window === 'undefined' || !window.localStorage) return [];
+    try {
+      const raw = window.localStorage.getItem(SHOP_STORAGE_KEY);
+      if (raw) return JSON.parse(raw).ownedItems ?? [];
+    } catch {}
+    return [];
+  });
+  const [equipped, setEquipped] = useState(() => {
+    if (typeof window === 'undefined' || !window.localStorage) return { shirts: null, pants: null, hats: null, clubs: null };
+    try {
+      const raw = window.localStorage.getItem(SHOP_STORAGE_KEY);
+      if (raw) return JSON.parse(raw).equipped ?? { shirts: null, pants: null, hats: null, clubs: null };
+    } catch {}
+    return { shirts: null, pants: null, hats: null, clubs: null };
+  });
+  const walletRef = useRef(wallet);
+  const ownedItemsRef = useRef(ownedItems);
+  const equippedRef = useRef(equipped);
+  // Shop grid overlay — open fixture kind or null.
+  const [shopOverlayKind, setShopOverlayKind] = useState(null);
+  const [shopCounterLine, setShopCounterLine] = useState(0);
+  // Tracks the original CLUBS[].v values so we can restore when a
+  // club set is unequipped (or when a different set replaces it).
+  const clubBaselineRef = useRef(null);
   // playersRef carries per-player ball/stroke/scores state once a match
   // is active. Populated from matchConfig the first time loadHole runs.
   const playersRef = useRef([]);
@@ -3671,6 +3891,7 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       if (mode === 'clubhouse')      loadClubhouse(orientation);
       else if (mode === 'range')     loadRange(orientation);
       else if (mode === 'putting')   loadPutting(orientation);
+      else if (mode === 'shop')      loadShop(orientation);
       else if (mode === 'round') {
         holeIdxRef.current = 0;
         loadHole(0, orientation);
@@ -3714,6 +3935,23 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         const ptIdx = CLUBS.findIndex((c) => c.key === 'PT');
         swingRef.current.clubIdx = ptIdx >= 0 ? ptIdx : (CLUBS.length - 1);
         placeBallForPractice();
+      } else if (mode === 'shop') {
+        // Step onto the doormat just inside the doors, facing north.
+        const p = posRef.current;
+        const b = ballRef.current;
+        p.x = TEE.x * TILE;
+        p.y = TEE.y * TILE;
+        p.facing = 'N';
+        p.moving = false;
+        p.walkPhase = 0;
+        b.x = -100; b.y = -100;
+        b.vx = 0; b.vy = 0; b.vz = 0;
+        b.state = 'rest';
+        b.trail = [];
+        swingRef.current.state = SW.IDLE;
+        swingRef.current.aimLocked = false;
+        swingRef.current.prePowerCap = 1.0;
+        swingRef.current.clubIdx = 0;    // reset putter-persistence
       } else if (mode === 'round') {
         initPlayersFromMatch();
         loadActivePlayer(true);
@@ -4357,6 +4595,53 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
             setCanTeeOff(near);
           }
         }
+        // v0.77 shop — doormat auto-exit + fixture proximity.
+        if (gameModeRef.current === 'shop') {
+          if (DOORMAT) {
+            const dx0 = DOORMAT.x * TILE;
+            const dy0 = DOORMAT.y * TILE;
+            const dx1 = (DOORMAT.x + DOORMAT.w) * TILE;
+            const dy1 = (DOORMAT.y + DOORMAT.h) * TILE;
+            if (p.x >= dx0 && p.x <= dx1 && p.y >= dy0 && p.y <= dy1) {
+              // Step onto the doormat → back to the outdoor clubhouse.
+              if (enterModeRef.current) enterModeRef.current('clubhouse');
+              return;
+            }
+          }
+          // Fixture proximity — surface BROWSE button. Rack zones sit
+          // SOUTH of the fixture itself so the player walks up to the
+          // rack to trigger.
+          let nearest = null;
+          let bestSignDist = Infinity;
+          for (const f of FIXTURES) {
+            const zone = f.zone;
+            if (!zone) continue;
+            const zx0 = zone.x * TILE;
+            const zy0 = zone.y * TILE;
+            const zx1 = (zone.x + zone.w) * TILE;
+            const zy1 = (zone.y + zone.h) * TILE;
+            if (p.x >= zx0 && p.x <= zx1 && p.y >= zy0 && p.y <= zy1) {
+              const cx = (zx0 + zx1) / 2, cy = (zy0 + zy1) / 2;
+              const d = Math.hypot(p.x - cx, p.y - cy);
+              if (d < bestSignDist) {
+                bestSignDist = d;
+                nearest = {
+                  kind: f.kind === 'counter' ? 'counter' : 'fixture',
+                  id: f.id, target: f.kind, label: f.label,
+                };
+              }
+            }
+          }
+          const prev = interactionRef.current;
+          const changed =
+            (!prev && nearest) ||
+            (prev && !nearest) ||
+            (prev && nearest && (prev.kind !== nearest.kind || prev.id !== nearest.id));
+          if (changed) {
+            interactionRef.current = nearest;
+            setInteraction(nearest);
+          }
+        }
         // v0.75 clubhouse — walker NPCs patrol between waypoints with
         // a brief idle pause at each end. Proximity probe surfaces the
         // TALK / ENTER button via interactionRef + setInteraction.
@@ -4843,10 +5128,29 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         });
       }
       for (const sg of SIGNS) {
+        if (sg.hidden) continue;
         drawables.push({
           kind: 'sign',
           x: sg.x * TILE, y: sg.y * TILE,
           label: sg.label, target: sg.target, dir: sg.dir,
+        });
+      }
+      // v0.77 — pro-shop fixtures. Each draws as a wooden rack (or
+      // counter) with a category label. Drawn as drawables so they
+      // sort in with the golfer and NPCs.
+      for (const f of FIXTURES) {
+        drawables.push({
+          kind: 'fixture',
+          fixKind: f.kind, label: f.label,
+          x: f.x * TILE, y: f.y * TILE,
+          w: f.w * TILE, h: f.h * TILE,
+        });
+      }
+      if (DOORMAT) {
+        drawables.push({
+          kind: 'doormat',
+          x: DOORMAT.x * TILE, y: DOORMAT.y * TILE,
+          w: DOORMAT.w * TILE, h: DOORMAT.h * TILE,
         });
       }
       for (const cup of PRACTICE_CUPS) {
@@ -4917,7 +5221,16 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         } else {
           swingInfo = { phase: 'address', clubCategory: clubCatForAnim };
         }
-        drawables.push({ kind: 'golfer', x: p.x, y: p.y, facing: p.facing, phase: p.moving ? p.walkPhase : null, swingInfo });
+        // v0.77 — human golfer picks up equipped shop palette; NPCs
+        // keep the module-default colours.
+        const eq = equippedRef.current || {};
+        const find = (id) => id ? SHOP_CATALOG.find((it) => it.id === id) : null;
+        const playerPalette = {
+          shirt: find(eq.shirts)?.color || null,
+          pants: find(eq.pants)?.color  || null,
+          hat:   find(eq.hats)?.color   || null,
+        };
+        drawables.push({ kind: 'golfer', x: p.x, y: p.y, facing: p.facing, phase: p.moving ? p.walkPhase : null, swingInfo, palette: playerPalette });
       }
       drawables.sort((a, b2) => a.y - b2.y);
       for (const d of drawables) {
@@ -4926,11 +5239,13 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         else if (d.kind === 'flag') drawFlag(ctx, d.x, d.y, now, { showPole: d.showPole !== false });
         else if (d.kind === 'ball') drawBall(ctx, d.x, d.y, d.z || 0);
         else if (d.kind === 'balldrop') drawBallDropping(ctx, d.x, d.y, d.t);
-        else if (d.kind === 'golfer') drawGolfer(ctx, d.x, d.y, d.facing, d.phase, d.swingInfo);
+        else if (d.kind === 'golfer') drawGolfer(ctx, d.x, d.y, d.facing, d.phase, d.swingInfo, d.palette || null);
         else if (d.kind === 'building') drawClubhouseBuilding(ctx, d.x, d.y, d.w, d.h, d.label);
         else if (d.kind === 'sign') drawSign(ctx, d.x, d.y, d.label, d.dir);
         else if (d.kind === 'practiceCup') drawPracticeCup(ctx, d.x, d.y);
         else if (d.kind === 'npc') drawGolfer(ctx, d.x, d.y, d.facing, d.phase, null);
+        else if (d.kind === 'fixture') drawShopFixture(ctx, d.x, d.y, d.w, d.h, d.fixKind, d.label);
+        else if (d.kind === 'doormat') drawDoormat(ctx, d.x, d.y, d.w, d.h);
       }
       // Range mode — distance markers along the fairway. Drawn AFTER
       // sprites so the text reads on top of mowing patterns.
@@ -5012,6 +5327,43 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
   // Mirror matchConfig into the ref so the tick / enterMode closures
   // always read the latest value.
   useEffect(() => { matchConfigRef.current = matchConfig; }, [matchConfig]);
+
+  // v0.77 — mirror wallet / ownedItems / equipped into refs and
+  // persist to localStorage on every change so progression carries
+  // across browser reloads.
+  useEffect(() => {
+    walletRef.current = wallet;
+    ownedItemsRef.current = ownedItems;
+    equippedRef.current = equipped;
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    try {
+      window.localStorage.setItem(
+        SHOP_STORAGE_KEY,
+        JSON.stringify({ wallet, ownedItems, equipped }),
+      );
+    } catch {}
+  }, [wallet, ownedItems, equipped]);
+
+  // v0.77 — equipped pro-club set mutates the CLUBS[] array in place:
+  // the matching key's launch v scales by upgrade.vMul. We snapshot
+  // the baseline v values the first time we touch CLUBS so an equip
+  // → unequip cycle (or equipping a different set) restores cleanly.
+  useEffect(() => {
+    if (!clubBaselineRef.current) {
+      clubBaselineRef.current = CLUBS.map((c) => c.v);
+    }
+    // Restore baseline, then apply whichever single club set is equipped.
+    for (let i = 0; i < CLUBS.length; i++) CLUBS[i].v = clubBaselineRef.current[i];
+    const clubSetId = equipped && equipped.clubs;
+    if (clubSetId) {
+      const item = SHOP_CATALOG.find((it) => it.id === clubSetId);
+      const upg = item && item.upgrade;
+      if (upg && upg.key) {
+        const idx = CLUBS.findIndex((c) => c.key === upg.key);
+        if (idx >= 0) CLUBS[idx].v = clubBaselineRef.current[idx] * (upg.vMul || 1);
+      }
+    }
+  }, [equipped]);
 
   const swingButtonCapture = useRef({});
   const zoomActions = useRef({});
@@ -5418,12 +5770,15 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         />
       ) : null}
 
-      {/* v0.75 — TALK / ENTER floating button. Surfaces when the
-           player walks within ~26 px of a sign or NPC in the
-           clubhouse. Tapping a sign enters the corresponding mode (or
-           opens match setup for the 1ST TEE); tapping an NPC opens
-           the dialog overlay. */}
-      {gameMode === 'clubhouse' && interaction && !npcDialog && !matchSetupOpen ? (
+      {/* v0.75 + v0.77 — floating interaction button. Surfaces when
+           the player is within range of a sign / NPC (clubhouse) or
+           a fixture / counter (shop). Verb depends on the kind:
+               sign     → ENTER
+               npc      → TALK
+               fixture  → BROWSE
+               counter  → TALK
+           */}
+      {interaction && !npcDialog && !matchSetupOpen && !shopOverlayKind ? (
         <View pointerEvents="box-none" style={styles.interactionWrap}>
           <View style={styles.interactionLabel} pointerEvents="none">
             <Text style={styles.interactionLabelText}>{interaction.label}</Text>
@@ -5441,14 +5796,63 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
               } else if (interaction.kind === 'npc') {
                 const npc = NPCS.find((n) => n.id === interaction.id);
                 if (npc) setNpcDialog({ npcId: npc.id, lineIdx: 0 });
+              } else if (interaction.kind === 'fixture') {
+                setShopOverlayKind(interaction.target);
+              } else if (interaction.kind === 'counter') {
+                setShopOverlayKind('counter');
               }
             }}
           >
             <Text style={styles.interactionBtnText}>
-              {interaction.kind === 'sign' ? 'ENTER ▸' : 'TALK ▸'}
+              {interaction.kind === 'sign' ? 'ENTER ▸'
+                : interaction.kind === 'npc' ? 'TALK ▸'
+                : interaction.kind === 'fixture' ? 'BROWSE ▸'
+                : 'TALK ▸'}
             </Text>
           </Pressable>
         </View>
+      ) : null}
+
+      {/* v0.77 — shop grid overlay. Opens when the player taps BROWSE
+           on a fixture. The counter variant shows a staff greeting
+           line instead of an item grid. */}
+      {shopOverlayKind && shopOverlayKind !== 'counter' ? (
+        <ShopGridOverlay
+          kind={shopOverlayKind}
+          catalog={SHOP_CATALOG}
+          wallet={wallet}
+          ownedIds={new Set(ownedItems)}
+          equipped={equipped}
+          onClose={() => setShopOverlayKind(null)}
+          onBuy={(it) => {
+            if (wallet < it.price) return;
+            setWallet((w) => w - it.price);
+            setOwnedItems((arr) => arr.includes(it.id) ? arr : [...arr, it.id]);
+            // Auto-equip the just-bought item if nothing in that slot.
+            setEquipped((e) => (e && e[it.kind]) ? e : { ...e, [it.kind]: it.id });
+          }}
+          onEquip={(it) => {
+            setEquipped((e) => ({ ...e, [it.kind]: it.id }));
+          }}
+        />
+      ) : null}
+
+      {shopOverlayKind === 'counter' ? (
+        <NpcDialogOverlay
+          npc={{
+            name: 'SHOP STAFF',
+            type: 'idle',
+            lines: [
+              `Welcome to the Pro Shop! You've got $ ${wallet} to spend.`,
+              'Polos, pants, hats — we restock every match.',
+              'Need a new driver? The pro clubs hit noticeably further.',
+            ],
+          }}
+          lineIdx={shopCounterLine}
+          onAdvance={() => setShopCounterLine((n) => n + 1)}
+          onClose={() => { setShopOverlayKind(null); setShopCounterLine(0); }}
+          onChallenge={() => {}}
+        />
       ) : null}
 
       {/* NPC dialog overlay — closes on LEAVE or fires the challenger
@@ -5530,11 +5934,21 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         </View>
       ) : null}
 
+      {/* v0.77 — wallet badge (only shown outside active rounds to
+           avoid HUD clutter). Always visible in clubhouse and shop. */}
+      {(gameMode === 'clubhouse' || gameMode === 'shop') ? (
+        <View style={styles.walletBadge} pointerEvents="none">
+          <Text style={styles.walletBadgeLabel}>WALLET</Text>
+          <Text style={styles.walletBadgeValue}>$ {wallet}</Text>
+        </View>
+      ) : null}
+
       <Pressable
         style={styles.exitBtn}
         onPress={() => {
-          // v0.75 EXIT routing — round / range / putting return to
-          // the clubhouse first; clubhouse exits to the main menu.
+          // v0.75 + v0.77 EXIT routing — shop returns to clubhouse,
+          // round/range/putting also return to clubhouse, clubhouse
+          // exits to the main menu.
           if (gameMode === 'clubhouse') onExit();
           else if (enterModeRef.current) enterModeRef.current('clubhouse');
         }}
@@ -6654,6 +7068,24 @@ const styles = StyleSheet.create({
     top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.55)',
     zIndex: 100,
+  },
+  // v0.77 wallet badge — top-right, tucked just left of the EXIT
+  // button. Small mint-bordered card showing the current dollar
+  // amount. Only visible in clubhouse / shop so round HUD stays clean.
+  walletBadge: {
+    position: 'absolute', top: 60, right: 16,
+    backgroundColor: '#0e1a12', borderWidth: 2, borderColor: '#88f8bb',
+    paddingHorizontal: 10, paddingVertical: 6,
+    alignItems: 'flex-end',
+    minWidth: 66,
+  },
+  walletBadgeLabel: {
+    color: '#a9d4a9', fontSize: 9, letterSpacing: 2,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  walletBadgeValue: {
+    color: '#88f8bb', fontSize: 14, fontWeight: '900', letterSpacing: 1,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
   },
   // Tempo-feedback banner — floats center-screen just above the
   // joystick for ~1.2 s after every swing. Colour comes from the
