@@ -765,15 +765,20 @@ function computeWaterPixels() {
   return out;
 }
 
+// v0.72 rebalance — all carries scaled to the target:
+//   50 PWR + 50 TCH + 50 club distance → 250 yd driver
+//   95 PWR + 95 TCH + 100 club distance → 400 yd driver
+// Paired with tightened multiplier exponents below (max product
+// 1.27×, was 1.39×). Putter v untouched — putt physics is linear.
 const CLUBS = [
-  { key: 'DR', name: 'Driver',      short: 'DR', v: 225, angle: 20, accMult: 1.25, powerRate: 1.2 },
-  { key: '3W', name: '3-Wood',      short: '3W', v: 205, angle: 24, accMult: 1.15, powerRate: 1.2 },
-  { key: '5W', name: '5-Wood',      short: '5W', v: 190, angle: 28, accMult: 1.08, powerRate: 1.2 },
-  { key: '5I', name: '5-Iron',      short: '5I', v: 170, angle: 33, accMult: 1.0, powerRate: 1.2 },
-  { key: '7I', name: '7-Iron',      short: '7I', v: 148, angle: 39, accMult: 0.95, powerRate: 1.25 },
-  { key: '9I', name: '9-Iron',      short: '9I', v: 128, angle: 45, accMult: 0.9, powerRate: 1.3 },
-  { key: 'PW', name: 'Pitch Wedge', short: 'PW', v: 112, angle: 51, accMult: 0.85, powerRate: 1.35 },
-  { key: 'SW', name: 'Sand Wedge',  short: 'SW', v: 96,  angle: 58, accMult: 0.8, powerRate: 1.4 },
+  { key: 'DR', name: 'Driver',      short: 'DR', v: 209, angle: 20, accMult: 1.25, powerRate: 1.2 },
+  { key: '3W', name: '3-Wood',      short: '3W', v: 190, angle: 24, accMult: 1.15, powerRate: 1.2 },
+  { key: '5W', name: '5-Wood',      short: '5W', v: 176, angle: 28, accMult: 1.08, powerRate: 1.2 },
+  { key: '5I', name: '5-Iron',      short: '5I', v: 158, angle: 33, accMult: 1.0, powerRate: 1.2 },
+  { key: '7I', name: '7-Iron',      short: '7I', v: 137, angle: 39, accMult: 0.95, powerRate: 1.25 },
+  { key: '9I', name: '9-Iron',      short: '9I', v: 119, angle: 45, accMult: 0.9, powerRate: 1.3 },
+  { key: 'PW', name: 'Pitch Wedge', short: 'PW', v: 104, angle: 51, accMult: 0.85, powerRate: 1.35 },
+  { key: 'SW', name: 'Sand Wedge',  short: 'SW', v: 89,  angle: 58, accMult: 0.8, powerRate: 1.4 },
   { key: 'PT', name: 'Putter',      short: 'PT', v: 110, angle: 0,  accMult: 0.55, powerRate: 0.55 },
 ];
 
@@ -1685,8 +1690,10 @@ function simulatePutt(startX, startY, aimAngle, accuracy, power, club, spinX, sh
     const sp = surfacePropsAt(x, y);
     if (sp.hazard || sp.ob) break;
     if (sp.slopeMag) {
-      vx += Math.sin(sp.slopeAng) * sp.slopeMag * stepDt;
-      vy += -Math.cos(sp.slopeAng) * sp.slopeMag * stepDt;
+      // v0.72 — 2× the slope acceleration so pitches actually push
+      // the ball around (players reported "not noticing it").
+      vx += Math.sin(sp.slopeAng) * sp.slopeMag * 2 * stepDt;
+      vy += -Math.cos(sp.slopeAng) * sp.slopeMag * 2 * stepDt;
     }
     const speed = Math.hypot(vx, vy);
     if (speed < 4) break;
@@ -2002,8 +2009,9 @@ function stepBall(b, dt, windX, windY, flagX, flagY) {
     if (sp.hazard) { b.state = 'hazard'; return; }
     if (sp.ob) { b.state = 'ob'; return; }
     if (sp.slopeMag) {
-      b.vx += Math.sin(sp.slopeAng) * sp.slopeMag * dt;
-      b.vy += -Math.cos(sp.slopeAng) * sp.slopeMag * dt;
+      // v0.72 — 2× the slope acceleration (see stepRoll above).
+      b.vx += Math.sin(sp.slopeAng) * sp.slopeMag * 2 * dt;
+      b.vy += -Math.cos(sp.slopeAng) * sp.slopeMag * 2 * dt;
     }
     const speed = Math.hypot(b.vx, b.vy);
     if (speed < 4) {
@@ -2257,8 +2265,11 @@ function golferMultipliers(selectedGolfer) {
   const focus = m.focus ?? 50;
   const composure = m.composure ?? 50;
   const courseMgmt = m.courseManagement ?? 50;
-  const powerFactor = Math.max(0.75, Math.min(1.25, 1 + (power - 50) * 0.003));
-  const touchFactor = Math.max(0.9,  Math.min(1.1,  1 + (touch - 50) * 0.0015));
+  // v0.72 — tightened so max stats don't blow past 400 yd on driver.
+  //   powerFactor: 0.003 → 0.0022 (1.10 at 95 PWR, was 1.135)
+  //   touchFactor: 0.0015 kept (1.0675 at 95 TCH)
+  const powerFactor = Math.max(0.80, Math.min(1.20, 1 + (power - 50) * 0.0022));
+  const touchFactor = Math.max(0.92, Math.min(1.08, 1 + (touch - 50) * 0.0015));
   const effectiveSkill = accuracy * 0.34 + focus * 0.22 + composure * 0.14 + courseMgmt * 0.12 + 50 * 0.18;
   const forgivenessFactor = Math.max(0.7, Math.min(1.45, 1.18 - (effectiveSkill - 50) * 0.003));
   const recoveryFactor = Math.max(0.82, Math.min(1.18, 1.12 - (recovery - 50) * 0.003));
@@ -2285,7 +2296,9 @@ function clubStatMultipliers(clubStats) {
   const distance = clubStats?.distance ?? 50;
   const accuracy = clubStats?.accuracy ?? 50;
   const forgiveness = clubStats?.forgiveness ?? 50;
-  const distanceFactor = Math.max(0.85, Math.min(1.15, 1 + (distance - 50) * 0.003));
+  // v0.72 — distance exponent tightened 0.003 → 0.0017 so a 100-distance
+  // club bumps v0 by 1.085× instead of 1.15× (cap stays in that range).
+  const distanceFactor = Math.max(0.92, Math.min(1.09, 1 + (distance - 50) * 0.0017));
   const clubCurveFactor = Math.max(0.75, Math.min(1.25, 1 - ((accuracy - 50) * 0.003 + (forgiveness - 50) * 0.002)));
   return { distanceFactor, clubCurveFactor };
 }
