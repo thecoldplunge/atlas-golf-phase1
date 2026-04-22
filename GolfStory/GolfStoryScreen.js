@@ -1603,13 +1603,20 @@ function buildTintedSpriteSheet(sourceImg, shirtHex, pantsHex) {
   const cx = c.getContext('2d');
   cx.imageSmoothingEnabled = false;
   cx.drawImage(sourceImg, 0, 0);
-  if (!shirtHex && !pantsHex) return c;
   const data = cx.getImageData(0, 0, c.width, c.height);
   const px = data.data;
   const shirtTarget = shirtHex ? _hexToRgb(shirtHex) : null;
   const pantsTarget = pantsHex ? _hexToRgb(pantsHex) : null;
+  // v0.78.3 — also chroma-key the solid black atlas background. Every
+  // pixel whose RGB sum is under BG_THRESHOLD gets alpha=0 so the
+  // sprites aren't framed by black rectangles on the green grass.
+  const BG_THRESHOLD = 30;
   for (let i = 0; i < px.length; i += 4) {
     const r = px[i], g = px[i + 1], b = px[i + 2];
+    if (r + g + b < BG_THRESHOLD) {
+      px[i + 3] = 0;
+      continue;
+    }
     if (shirtTarget && _isNearShirt(r, g, b)) {
       const o = _shadeMatch(r, g, b, SPRITE_SHIRT_RGB, shirtTarget);
       px[i] = o.r; px[i + 1] = o.g; px[i + 2] = o.b;
@@ -1625,7 +1632,8 @@ function buildTintedSpriteSheet(sourceImg, shirtHex, pantsHex) {
 function getTintedSheet(shirtHex, pantsHex) {
   if (!_sheetState.img) return null;
   const key = `${shirtHex || ''}|${pantsHex || ''}`;
-  if (key === '|') return _sheetState.img;
+  // v0.78.3 — cache ALL variants (including the base "no tint") since
+  // every variant now has the black background chroma-keyed away.
   const cache = _sheetState.tintCache;
   if (cache.has(key)) return cache.get(key);
   const c = buildTintedSpriteSheet(_sheetState.img, shirtHex, pantsHex);
@@ -1661,11 +1669,16 @@ function pickSpriteAnimation(atlas, facing, phase, swingInfo, state) {
     return { frames, frameIdx: Math.max(0, Math.min(frames.length - 1, idx)) };
   }
   // Walking — phase ticks at 8 rad/s in the IDLE branch.
+  // v0.78.3 — the sheet's WALK_LEFT / WALK_RIGHT rows ship with the
+  // character body oriented the OPPOSITE way from the label (or the
+  // auto-detector pulled them in reverse order). Players on the
+  // joystick reported "walk left → sprite faces right", so swap the
+  // facing→key map here. UP and DOWN are symmetric and unaffected.
   if (typeof phase === 'number') {
     const key =
       facing === 'N' ? 'WALK_UP' :
       facing === 'S' ? 'WALK_DOWN' :
-      facing === 'W' ? 'WALK_LEFT' : 'WALK_RIGHT';
+      facing === 'W' ? 'WALK_RIGHT' : 'WALK_LEFT';
     const frames = a[key] || a.IDLE;
     if (!frames || !frames.length) return null;
     const idx = Math.floor(phase / (Math.PI / 2)) % frames.length;
