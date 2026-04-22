@@ -1641,15 +1641,37 @@ function getTintedSheet(shirtHex, pantsHex) {
   return c;
 }
 
+// Tack the current aimAngle onto the swing-info payload so the
+// sprite picker can choose front-facing vs back-facing swing frames
+// depending on which way the ball is headed.
+function swingInfoWithAim(info, aimAngle) {
+  if (!info) return info;
+  return { ...info, aimAngle };
+}
+
+// Convert an aim-angle (0 = north, positive = east in the game's
+// coord system where y-down = south) to one of eight compass points.
+// Used to pick direction-specific swing animations when available.
+function aimAngleToCompass8(aim) {
+  if (typeof aim !== 'number') return 'N';
+  // Normalise to [0, 2π)
+  let a = aim % (2 * Math.PI);
+  if (a < 0) a += 2 * Math.PI;
+  const sector = Math.round(a / (Math.PI / 4)) % 8;  // 0=N, 1=NE, 2=E, ...
+  return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][sector];
+}
+
 // Pick an animation + frame index for the current state/facing and
 // tick phase. Returns { frames, frameIdx } or null when the atlas
 // doesn't carry that animation (callers fall back to IDLE).
-function pickSpriteAnimation(atlas, facing, phase, swingInfo, state) {
+//
+// v0.78.6 — now tries direction-specific keys first (diagonal walk,
+// back/front-facing swing) and gracefully falls back to generic keys
+// so older atlases keep working.
+function pickSpriteAnimation(atlas, facing, phase, swingInfo, state, facing8 = null) {
   const a = atlas && atlas.animations;
   if (!a) return null;
-  // v0.78.4 — celebration (hole-out) frame lookup. celebIdx is
-  // selected by the caller based on score-vs-par. Clamped to the
-  // available celebration block.
+  // Celebration — unchanged.
   if (swingInfo && swingInfo.phase === 'celebrate') {
     const frames = a.CELEBRATIONS_MISC || a.CELEBRATIONS || a.IDLE;
     if (!frames || !frames.length) return null;
@@ -1659,13 +1681,28 @@ function pickSpriteAnimation(atlas, facing, phase, swingInfo, state) {
   // Swinging / striking.
   if (swingInfo && (swingInfo.phase === 'back' || swingInfo.phase === 'forward')) {
     const cat = swingInfo.clubCategory;
-    let key = 'IRONS';
-    if (cat === 'putter')       key = 'PUTTING';
-    else if (cat === 'wedge')   key = 'CHIPPING';
-    else if (cat === 'wood')    key = 'WOODS';
-    const frames = a[key] || a.IDLE;
+    // Compass direction from aim — we ship back-facing sprites for
+    // north-aimed shots (most of the time: player's camera looks
+    // over the shoulder toward the pin). South-aimed uses front-
+    // facing. East / west fall back to whichever is available.
+    const compass = aimAngleToCompass8(swingInfo.aimAngle);
+    const isNorthish = compass === 'N' || compass === 'NE' || compass === 'NW';
+    const isSouthish = compass === 'S' || compass === 'SE' || compass === 'SW';
+    const base =
+      cat === 'putter' ? 'PUTTING' :
+      cat === 'wedge'  ? 'CHIPPING' :
+      cat === 'wood'   ? 'WOODS' :
+                         'IRONS';
+    // Try direction-specific key first.
+    const tryKeys = isNorthish
+      ? [`${base}_N`, `${base}_BACK`, base]
+      : isSouthish
+      ? [`${base}_S`, base]
+      : [`${base}_E`, `${base}_W`, base];
+    let frames = null;
+    for (const k of tryKeys) { if (a[k] && a[k].length) { frames = a[k]; break; } }
+    if (!frames) frames = a[base] || a.IDLE;
     if (!frames || !frames.length) return null;
-    // Back phase sweeps 0 → mid-1; forward phase mid → last.
     const mid = Math.floor(frames.length / 2);
     let idx;
     if (swingInfo.phase === 'back') {
@@ -1678,17 +1715,21 @@ function pickSpriteAnimation(atlas, facing, phase, swingInfo, state) {
     return { frames, frameIdx: Math.max(0, Math.min(frames.length - 1, idx)) };
   }
   // Walking — phase ticks at 8 rad/s in the IDLE branch.
-  // v0.78.3 — the sheet's WALK_LEFT / WALK_RIGHT rows ship with the
-  // character body oriented the OPPOSITE way from the label (or the
-  // auto-detector pulled them in reverse order). Players on the
-  // joystick reported "walk left → sprite faces right", so swap the
-  // facing→key map here. UP and DOWN are symmetric and unaffected.
+  // v0.78.6 — prefer diagonal walk keys (WALK_NW / NE / SW / SE)
+  // when the atlas has them; fall back to the cardinal keys from
+  // the original sheet (WALK_UP / DOWN / LEFT / RIGHT).
   if (typeof phase === 'number') {
-    const key =
-      facing === 'N' ? 'WALK_UP' :
-      facing === 'S' ? 'WALK_DOWN' :
-      facing === 'W' ? 'WALK_RIGHT' : 'WALK_LEFT';
-    const frames = a[key] || a.IDLE;
+    const tryKeys = [];
+    if (facing8) tryKeys.push(`WALK_${facing8}`);
+    // Cardinal fallbacks. Sheet's UP/DOWN are symmetric; L/R were
+    // originally swapped relative to the joystick direction.
+    if (facing === 'N') tryKeys.push('WALK_UP', 'WALK_NW', 'WALK_NE');
+    else if (facing === 'S') tryKeys.push('WALK_DOWN', 'WALK_SW', 'WALK_SE');
+    else if (facing === 'W') tryKeys.push('WALK_RIGHT', 'WALK_NW', 'WALK_SW');
+    else if (facing === 'E') tryKeys.push('WALK_LEFT', 'WALK_NE', 'WALK_SE');
+    let frames = null;
+    for (const k of tryKeys) { if (a[k] && a[k].length) { frames = a[k]; break; } }
+    if (!frames) frames = a.IDLE;
     if (!frames || !frames.length) return null;
     const idx = Math.floor(phase / (Math.PI / 2)) % frames.length;
     return { frames, frameIdx: idx };
@@ -1704,9 +1745,9 @@ function pickSpriteAnimation(atlas, facing, phase, swingInfo, state) {
 // feet (bottom-centre). Scales to SPRITE_DRAW_H while preserving
 // aspect. flipX mirrors the frame horizontally for facings where
 // the atlas only ships a single side.
-function drawSpriteGolfer(ctx, px, py, facing, phase, swingInfo, palette) {
+function drawSpriteGolfer(ctx, px, py, facing, phase, swingInfo, palette, facing8) {
   if (!_sheetState.ready) return false;
-  const pick = pickSpriteAnimation(golferAtlas, facing, phase, swingInfo, null);
+  const pick = pickSpriteAnimation(golferAtlas, facing, phase, swingInfo, null, facing8);
   if (!pick) return false;
   const f = pick.frames[pick.frameIdx];
   if (!f) return false;
@@ -1727,11 +1768,11 @@ function drawSpriteGolfer(ctx, px, py, facing, phase, swingInfo, palette) {
   return true;
 }
 
-function drawGolfer(ctx, px, py, facing, phase, swingInfo, palette = null) {
+function drawGolfer(ctx, px, py, facing, phase, swingInfo, palette = null, facing8 = null) {
   // v0.78 — try the sprite-sheet blit first. If the sheet hasn't
   // loaded yet (first few frames after mount), fall through to the
   // procedural path below so the canvas is never blank.
-  if (_sheetState.ready && drawSpriteGolfer(ctx, px, py, facing, phase, swingInfo, palette)) {
+  if (_sheetState.ready && drawSpriteGolfer(ctx, px, py, facing, phase, swingInfo, palette, facing8)) {
     // Still overlay the swinging club indicator from the procedural
     // path when a swing is actually in progress — the atlas' IRONS /
     // WOODS frames already draw the club but the generic club-over-
@@ -4806,6 +4847,23 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         }
         const speed = 50;
         p.moving = (vx !== 0 || vy !== 0);
+        // v0.78.6 — emit an 8-way facing (NE/NW/SE/SW/N/S/E/W) so
+        // diagonal walk sprites can be picked when the atlas has
+        // them. The cardinal `facing` stays populated (E/W/N/S only)
+        // for the rest of the game code that still keys off it
+        // (address pose, aim, etc.).
+        if (p.moving) {
+          const ax = Math.abs(vx), ay = Math.abs(vy);
+          if (ax > 0.25 && ay > 0.25) {
+            p.facing8 = (vy < 0)
+              ? (vx > 0 ? 'NE' : 'NW')
+              : (vx > 0 ? 'SE' : 'SW');
+          } else if (ax >= ay) {
+            p.facing8 = vx > 0 ? 'E' : 'W';
+          } else {
+            p.facing8 = vy > 0 ? 'S' : 'N';
+          }
+        }
         if (Math.abs(vx) > Math.abs(vy)) p.facing = vx > 0 ? 'E' : 'W';
         else if (vy !== 0) p.facing = vy > 0 ? 'S' : 'N';
         const oldX = p.x, oldY = p.y;
@@ -5502,7 +5560,7 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
           pants: find(eq.pants)?.color  || null,
           hat:   find(eq.hats)?.color   || null,
         };
-        drawables.push({ kind: 'golfer', x: p.x, y: p.y, facing: p.facing, phase: p.moving ? p.walkPhase : null, swingInfo, palette: playerPalette });
+        drawables.push({ kind: 'golfer', x: p.x, y: p.y, facing: p.facing, facing8: p.facing8, phase: p.moving ? p.walkPhase : null, swingInfo: swingInfoWithAim(swingInfo, sw.aimAngle), palette: playerPalette });
       }
       drawables.sort((a, b2) => a.y - b2.y);
       for (const d of drawables) {
@@ -5511,7 +5569,7 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         else if (d.kind === 'flag') drawFlag(ctx, d.x, d.y, now, { showPole: d.showPole !== false });
         else if (d.kind === 'ball') drawBall(ctx, d.x, d.y, d.z || 0);
         else if (d.kind === 'balldrop') drawBallDropping(ctx, d.x, d.y, d.t);
-        else if (d.kind === 'golfer') drawGolfer(ctx, d.x, d.y, d.facing, d.phase, d.swingInfo, d.palette || null);
+        else if (d.kind === 'golfer') drawGolfer(ctx, d.x, d.y, d.facing, d.phase, d.swingInfo, d.palette || null, d.facing8 || null);
         else if (d.kind === 'building') drawClubhouseBuilding(ctx, d.x, d.y, d.w, d.h, d.label);
         else if (d.kind === 'sign') drawSign(ctx, d.x, d.y, d.label, d.dir);
         else if (d.kind === 'practiceCup') drawPracticeCup(ctx, d.x, d.y);
