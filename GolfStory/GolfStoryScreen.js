@@ -802,12 +802,15 @@ const CLUBS = [
 
 // Mirrors the main game (App.js v3.40). Each profile scales carry distance
 // (via v0Final) and apex (via the launch angle / vz factor in launchBall).
+// v0.76 — short-game carries roughly doubled per feedback. Chips,
+// bumps and flops all felt like half-shots; now they commit more
+// actual distance while keeping their signature apex profile.
 const SHOT_TYPE_PROFILES = {
   normal:  { carry: 1.0,  apex: 1.0,  label: 'Normal' },
-  chip:    { carry: 0.5,  apex: 0.7,  label: 'Chip' },
-  flop:    { carry: 0.33, apex: 2.0,  label: 'Flop' },
+  chip:    { carry: 1.0,  apex: 0.7,  label: 'Chip' },
+  flop:    { carry: 0.66, apex: 2.0,  label: 'Flop' },
   stinger: { carry: 1.0,  apex: 0.5,  label: 'Stinger' },
-  bump:    { carry: 0.75, apex: 0.4,  label: 'Bump & Run' },
+  bump:    { carry: 1.5,  apex: 0.4,  label: 'Bump & Run' },
   // Putter-only. 'tap' rolls a short putt; 'blast' charges past the cup.
   tap:     { carry: 0.5,  apex: 1.0,  label: 'Tap' },
   blast:   { carry: 1.5,  apex: 1.0,  label: 'Blast' },
@@ -2527,6 +2530,43 @@ function drawSwipeFeedback(ctx, swipe, dpr) {
   ctx.setLineDash([4 * dpr, 4 * dpr]);
   ctx.beginPath(); ctx.arc(sx, sy, maxRadius, 0, Math.PI * 2); ctx.stroke();
   ctx.setLineDash([]);
+
+  // v0.76 tempo ring — small inner circle that grows from 0 → maxRadius
+  // over TEMPO_DURATION_MS. The player wants to complete the swing (lift
+  // their finger) at the moment this ring meets the outer ring ("top
+  // of the circle, hits the ball"). Mint when perfectly overlapping,
+  // red once it's blown past the window. Only drawn if the tempo
+  // clock is running (it's always running during SWIPING).
+  if (typeof swipe.tempoStartT === 'number') {
+    const TEMPO_DURATION_MS = 1200;
+    const elapsed = Date.now() - swipe.tempoStartT;
+    const tempoT = Math.min(1.8, elapsed / TEMPO_DURATION_MS);
+    const tempoR = tempoT * maxRadius;
+    const overlap = Math.abs(1 - tempoT) < 0.08;
+    const past = tempoT > 1.08;
+    ctx.strokeStyle = overlap
+      ? 'rgba(136, 248, 187, 1.0)'
+      : past
+        ? 'rgba(255, 120, 120, 0.85)'
+        : 'rgba(255, 255, 255, 0.75)';
+    ctx.lineWidth = (overlap ? 3 : 1.5) * dpr;
+    ctx.beginPath();
+    ctx.arc(sx, sy, Math.min(maxRadius + 10 * dpr, tempoR), 0, Math.PI * 2);
+    ctx.stroke();
+    if (overlap) {
+      // Spark at the TOP of the outer ring — the user's "top of the
+      // circle, hits the ball" cue.
+      ctx.fillStyle = 'rgba(255, 255, 210, 1.0)';
+      ctx.beginPath();
+      ctx.arc(sx, sy - maxRadius, 4 * dpr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(136, 248, 187, 0.9)';
+      ctx.lineWidth = 1 * dpr;
+      ctx.beginPath();
+      ctx.arc(sx, sy - maxRadius, 6 * dpr, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
   // Backswing shaft: start → peak (vertical line down).
   ctx.strokeStyle = 'rgba(0,0,0,0.45)';
   ctx.lineWidth = 10 * dpr;
@@ -2700,6 +2740,10 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
   const practiceResetTimerRef = useRef(0);
   const bestRangeShotRef = useRef(0);
   const [practiceHud, setPracticeHud] = useState({ shots: 0, lastYd: 0, bestYd: 0 });
+  // v0.76 post-shot tempo banner — fades after ~1.2 s. Shape: { label, t }
+  // where t is remaining seconds; tick-loop counts it down.
+  const [tempoBanner, setTempoBanner] = useState(null);
+  const tempoBannerRef = useRef(null);
   // playersRef carries per-player ball/stroke/scores state once a match
   // is active. Populated from matchConfig the first time loadHole runs.
   const playersRef = useRef([]);
@@ -3657,6 +3701,9 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       zoomUserOverrideRef.current = false;
       swingRef.current.clubIdx = 0; // driver default; range/putting override below
       if (mode === 'clubhouse') {
+        // Clear the putter-persistence that was pulling the camera
+        // between ball + flag after exiting the putting green.
+        swingRef.current.clubIdx = 0;
         placePlayerAtSpawn();
       } else if (mode === 'range') {
         // Driver default — what most folks practice with at a range.
@@ -3903,6 +3950,12 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         // Forward-swing deviation — signed peak horizontal drift from
         // the lock point. Drives hook / slice.
         fwdPeakDevX: 0,
+        // v0.76 tempo clock — starts the moment the finger touches
+        // the SWING pad. The tempo ring in drawSwipeFeedback expands
+        // from 0 → pad radius over TEMPO_DURATION_MS; releasing AT
+        // the overlap (rings match) is perfect tempo. See endSwipe
+        // for the power/accuracy penalty math.
+        tempoStartT: Date.now(),
       };
       flushHud();
       return true;
@@ -3964,11 +4017,41 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       // launched power, so a 100% swipe on a 90%-capped club lands at
       // 90% of full carry.
       const cap = Math.max(0.3, Math.min(1, sw.prePowerCap ?? 1));
-      const power = swipePower * cap;
+      let power = swipePower * cap;
       // Accuracy = forward peak deviation + a small backswing-drift contribution
       // (~25% weight, same blend as App.js).
       const backDev = Math.max(-1, Math.min(1, (s.peakX - s.startX) / (45 * dpr)));
-      const accuracy = Math.max(-1, Math.min(1, s.fwdPeakDevX + backDev * 0.25));
+      let accuracy = Math.max(-1, Math.min(1, s.fwdPeakDevX + backDev * 0.25));
+
+      // v0.76 tempo penalty — if the swing gesture took roughly
+      // TEMPO_DURATION_SEC from first-touch to release, tempo is
+      // perfect and there's no penalty. Every 0.5 s off the mark
+      // costs up to 20% power + shifts accuracy toward hook (early)
+      // or slice (late). No bonus for perfect: it's the baseline.
+      const TEMPO_DURATION_SEC = 1.2;
+      const TEMPO_WINDOW = 0.5;   // seconds of error that map to full penalty
+      const TEMPO_MAX_PENALTY = 0.2;
+      let tempoLabel = null;
+      if (typeof s.tempoStartT === 'number') {
+        const elapsed = (Date.now() - s.tempoStartT) / 1000;
+        const tempoError = Math.abs(elapsed - TEMPO_DURATION_SEC);
+        const tempoQuality = Math.max(0, 1 - tempoError / TEMPO_WINDOW);
+        const tempoPenalty = (1 - tempoQuality) * TEMPO_MAX_PENALTY;
+        power *= (1 - tempoPenalty);
+        // Early swings tug the accuracy left (hook), late swings push
+        // it right (slice). Full penalty ≈ ±0.4 added to accuracy.
+        const tempoAccShift = (elapsed > TEMPO_DURATION_SEC ? 1 : -1) * tempoPenalty * 2;
+        accuracy = Math.max(-1, Math.min(1, accuracy + tempoAccShift));
+        // Human-readable label for a brief post-shot banner.
+        tempoLabel = tempoError < 0.10
+          ? 'PERFECT TEMPO'
+          : tempoError < 0.25
+            ? (elapsed < TEMPO_DURATION_SEC ? 'SLIGHTLY EARLY' : 'SLIGHTLY LATE')
+            : (elapsed < TEMPO_DURATION_SEC ? 'EARLY' : 'LATE');
+        setTempoBanner({ label: tempoLabel, quality: 1 - tempoPenalty / TEMPO_MAX_PENALTY });
+        clearTimeout(tempoBannerRef.current);
+        tempoBannerRef.current = setTimeout(() => setTempoBanner(null), 1500);
+      }
       ball.lastGoodX = ball.x; ball.lastGoodY = ball.y;
       const liePhys = surfacePropsAt(ball.x, ball.y);
       const clubStats = bagStatsRef.current[club.key] || null;
@@ -4051,14 +4134,12 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         return;
       }
 
+      // v0.76 — canvas taps while aiming NO LONGER set an absolute aim.
+      // Aim is purely joystick-driven via the AimPad (bottom-right
+      // pad) so big angle swings can't dump the camera off-screen.
+      // We do still consume the tap here so it doesn't accidentally
+      // trigger other handlers, but we don't rotate aim.
       const sw = swingRef.current;
-      if (sw.state === SW.AIMING) {
-        setAimFromCanvas(canvasX, canvasY);
-        activePointers.set(e.pointerId, 'aim');
-        canvas.setPointerCapture(e.pointerId);
-        e.preventDefault();
-        return;
-      }
       if (sw.state === SW.HOLED) {
         advanceHole();
         e.preventDefault();
@@ -4074,8 +4155,6 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       if (role === 'joystick') {
         const j = joystickRef.current;
         if (j) { j.dx = canvasX - j.cx; j.dy = canvasY - j.cy; }
-      } else if (role === 'aim') {
-        setAimFromCanvas(canvasX, canvasY);
       } else if (role === 'swipe') {
         updateSwipe(canvasX, canvasY);
       }
@@ -4109,6 +4188,7 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
           peakDy: 0, peakX: canvasX, peakY: canvasY,
           locked: false, fwdPeakDevX: 0,
           fromButton: true,
+          tempoStartT: Date.now(),
         };
         activePointers.set(pointerId, 'swipe');
         flushHud();
@@ -4599,7 +4679,11 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         followY = ball.y + (ball.vy || 0) * lead;
         anchorOffsetX = isTabletGS ? (viewW * 0.20) / scale : 0;
         anchorOffsetY = isTabletGS ? 0 : -(viewH * 0.22) / scale;
-      } else if (isPutting && (sw.state === SW.IDLE || sw.state === SW.AIMING || sw.state === SW.SWIPING || sw.state === SW.STOPPED)) {
+      } else if (isPutting && gameModeRef.current !== 'clubhouse' &&
+                 (sw.state === SW.IDLE || sw.state === SW.AIMING || sw.state === SW.SWIPING || sw.state === SW.STOPPED)) {
+        // Putter auto-frame — centre between ball and cup. Skipped in
+        // the clubhouse so stepping off the putting green doesn't
+        // frame on the (parked-offscreen) ball anymore.
         const flagX = FLAG.x * TILE;
         const flagY = FLAG.y * TILE;
         followX = (ball.x + flagX) / 2;
@@ -5151,10 +5235,10 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
                 <Text style={[styles.shotTypeOptLabel, active && styles.shotTypeOptLabelActive]}>{prof.label}</Text>
                 <Text style={styles.shotTypeOptSub}>
                   {t === 'normal' ? 'Full carry, full apex' :
-                   t === 'chip' ? '50% carry · 70% apex' :
-                   t === 'flop' ? '33% carry · 2× apex (wedge only)' :
+                   t === 'chip' ? 'Full carry · 70% apex' :
+                   t === 'flop' ? '66% carry · 2× apex (wedge only)' :
                    t === 'stinger' ? 'Full carry · 50% apex (iron/wood, clean lie)' :
-                   t === 'bump' ? '75% carry · 40% apex (wedge only)' :
+                   t === 'bump' ? '150% carry · 40% apex (wedge only)' :
                    t === 'tap' ? '50% roll (putter only)' :
                    t === 'blast' ? '150% roll (putter only)' :
                    ''}
@@ -5420,6 +5504,31 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
 
       {/* (v0.75 bugfix) practice shots HUD was consolidated into the
            top-left card to avoid overlapping with hudTopLeft. */}
+
+      {/* v0.76 tempo-feedback banner — "PERFECT TEMPO", "EARLY",
+           "LATE" etc. Colour ramps mint (perfect) → yellow (slightly)
+           → red (way off) based on quality. */}
+      {tempoBanner ? (
+        <View style={styles.tempoBanner} pointerEvents="none">
+          <Text
+            style={[
+              styles.tempoBannerText,
+              {
+                color:
+                  tempoBanner.quality >= 0.85 ? '#88f8bb'
+                  : tempoBanner.quality >= 0.55 ? '#fbe043'
+                  : '#ff7a7a',
+                borderColor:
+                  tempoBanner.quality >= 0.85 ? '#88f8bb'
+                  : tempoBanner.quality >= 0.55 ? '#fbe043'
+                  : '#ff7a7a',
+              },
+            ]}
+          >
+            {tempoBanner.label}
+          </Text>
+        </View>
+      ) : null}
 
       <Pressable
         style={styles.exitBtn}
@@ -6545,6 +6654,21 @@ const styles = StyleSheet.create({
     top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.55)',
     zIndex: 100,
+  },
+  // Tempo-feedback banner — floats center-screen just above the
+  // joystick for ~1.2 s after every swing. Colour comes from the
+  // inline style; this only carries the layout + typography.
+  tempoBanner: {
+    position: 'absolute',
+    left: 0, right: 0, bottom: 260,
+    alignItems: 'center',
+  },
+  tempoBannerText: {
+    fontSize: 16, fontWeight: '900', letterSpacing: 4,
+    backgroundColor: 'rgba(14, 26, 18, 0.92)',
+    borderWidth: 2,
+    paddingHorizontal: 16, paddingVertical: 6,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
   },
   // Range / putting practice card — top-center small panel showing
   // shot count + last carry + best carry.

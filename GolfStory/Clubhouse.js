@@ -83,21 +83,22 @@ export const CLUBHOUSE_WORLD = {
     { x: 6, y: 19 },
     { x: 8, y: 19 },
   ],
-  // Signs — interaction triggers with a big rectangular zone so the
-  // player can enter by walking anywhere in the corridor, not just
-  // next to the post. `zone` is in tile units; point (x, y) is where
-  // the placard draws. `target` matches a gameMode key in the screen.
+  // Signs — small rectangular entry zone anchored around each post.
+  // v0.76: previously spanned the whole west / east strip which
+  // swallowed NPC proximity. Now tight boxes — player has to walk up
+  // to the sign (or the immediate approach) and every NPC position
+  // sits OUTSIDE the zones so TALK always wins on them.
   //
-  //   driving range  — entire WEST strip, north of the building row
-  //   1st tee        — entire EAST side of the world
-  //   putting green  — entire WEST strip, south of the building row
+  //   driving range  — 6×5 tiles around the post (north-west of building)
+  //   putting green  — 5×4 tiles just south-west of the green
+  //   1st tee        — 6×5 tiles around the post (east of building)
   signs: [
     { id: 'sign_range',   x: 4,  y: 3,  label: 'DRIVING RANGE',  target: 'range',      dir: 'N',
-      zone: { x: 0, y: 0, w: 11, h: 14 } },
+      zone: { x: 2,  y: 1,  w: 6, h: 5 } },
     { id: 'sign_tee',     x: 21, y: 13, label: '1ST TEE',        target: 'roundSetup', dir: 'E',
-      zone: { x: 15, y: 0, w: 9, h: 36 } },
+      zone: { x: 18, y: 11, w: 6, h: 5 } },
     { id: 'sign_putting', x: 4,  y: 23, label: 'PUTTING GREEN',  target: 'putting',    dir: 'W',
-      zone: { x: 0, y: 15, w: 11, h: 14 } },
+      zone: { x: 2,  y: 23, w: 4, h: 3 } },
   ],
   // NPC roster — avatars are picked from the human roster at load
   // time, indexed by `golferIdx` modulo the roster length so the
@@ -116,7 +117,7 @@ export const CLUBHOUSE_WORLD = {
     {
       id: 'walker',      golferIdx: 2,  type: 'walker',
       x: 12, y: 22, facing: 'E',
-      wpA: { x: 6,  y: 24 },
+      wpA: { x: 9,  y: 24 },
       wpB: { x: 18, y: 24 },
       speed: 22,
       pauseAt: 1.6,                      // seconds to idle at each waypoint
