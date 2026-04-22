@@ -2770,6 +2770,115 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       }
     };
 
+    // ═══════════════ COURSE-IQ SHOT PLANNER ═══════════════
+    // Returns { aimAngle, clubIdx, power, shotType } for an NPC with
+    // decent Course IQ so they can steer around trees, lay up past
+    // water, and go for par-5 greens when it's actually reachable.
+    // Low-IQ NPCs skip this and fall through to the pin-at-full-send
+    // defaults. The returned plan is the IDEAL target — runNPCSwing
+    // still adds per-stat noise on top.
+    const invertCarry = (club, targetPx) => {
+      const full = computeCarry(club, 1.0);
+      if (full <= 1) return 1;
+      if (club.angle === 0) {
+        return Math.max(0.2, Math.min(1, targetPx / full));
+      }
+      return Math.max(0.2, Math.min(1, Math.sqrt(Math.max(0, targetPx) / full) * 1.03));
+    };
+    const treeIntersectsRay = (bx, by, lx, ly, clearance) => {
+      if (!TREES || !TREES.length) return false;
+      const dxR = lx - bx, dyR = ly - by;
+      const len2 = dxR * dxR + dyR * dyR;
+      if (len2 < 1) return false;
+      const cl = clearance + TREE_CANOPY_R;
+      for (const t of TREES) {
+        const tx = t.x * TILE, ty = t.y * TILE;
+        const tAlong = Math.max(0, Math.min(1, ((tx - bx) * dxR + (ty - by) * dyR) / len2));
+        const cx = bx + dxR * tAlong;
+        const cy = by + dyR * tAlong;
+        const d = Math.hypot(tx - cx, ty - cy);
+        if (d < cl) return true;
+      }
+      return false;
+    };
+    const surfaceScore = (wx, wy) => {
+      if (wx < 0 || wx > WORLD_W || wy < 0 || wy > WORLD_H) return -320;
+      const props = surfacePropsAt(wx, wy);
+      if (props?.hazard) return -320;
+      const label = props?.label || '';
+      if (label === 'Green') return 160;
+      if (label === 'Fringe') return 110;
+      if (label === 'Fairway' || label === 'Tee Box') return 90;
+      if (label === 'Rough') return -20;
+      if (label === 'Bunker') return -70;
+      if (label === 'Dirt') return -55;
+      return 0;
+    };
+    const chooseShotPlan = (pl, bx, by, fx, fy) => {
+      const courseIQ = pl.golfer?.mental?.courseManagement ?? 50;
+      if (courseIQ < 55) return null;
+      if (surfaceAt(bx, by) === T_GREEN) return null; // putter logic handles this
+      const dxP = fx - bx, dyP = fy - by;
+      const distPx = Math.hypot(dxP, dyP);
+      const distYd = distPx / TILE * YARDS_PER_TILE;
+      const aimPin = Math.atan2(dxP, -dyP);
+      const candidates = [];
+      // 1. Direct at pin, club sized to reach.
+      const directIdx = pickClubForDistance(distYd, false);
+      candidates.push({ aimAngle: aimPin, clubIdx: directIdx, targetPx: distPx, shotType: 'normal', label: 'direct' });
+      // 2. Half-speed with the direct club (lay-up around trouble).
+      candidates.push({ aimAngle: aimPin, clubIdx: directIdx, targetPx: distPx * 0.75, shotType: 'normal', label: 'soft' });
+      // 3. Pin ± 10° at full power — route around obstacles.
+      for (const offset of [-0.18, 0.18]) {
+        candidates.push({ aimAngle: aimPin + offset, clubIdx: directIdx, targetPx: distPx, shotType: 'normal', label: 'side' });
+      }
+      // 4. Par-5 "go for it" with a driver / 3W if distance demands it.
+      if (distYd > 210 && CLUBS[0].key === 'DR') {
+        const driverCarry = computeCarry(CLUBS[0], 1.0);
+        if (driverCarry > distPx * 0.85) {
+          candidates.push({ aimAngle: aimPin, clubIdx: 0, targetPx: Math.min(driverCarry, distPx), shotType: 'normal', label: 'send' });
+        }
+      }
+      // 5. Lay up to ~80 yd short so the next club is a full wedge.
+      if (distYd > 140) {
+        const layupPx = distPx - (80 * TILE / YARDS_PER_TILE);
+        if (layupPx > 40) {
+          const layupYd = layupPx / TILE * YARDS_PER_TILE;
+          const layupIdx = pickClubForDistance(layupYd, false);
+          candidates.push({ aimAngle: aimPin, clubIdx: layupIdx, targetPx: layupPx, shotType: 'normal', label: 'layup' });
+        }
+      }
+      // Score each — higher is better.
+      let bestScore = -Infinity;
+      let best = null;
+      for (const c of candidates) {
+        const club = CLUBS[c.clubIdx];
+        const power = invertCarry(club, c.targetPx);
+        const actualPx = club.angle === 0 ? club.v * power * 0.9
+          : (club.v * power) ** 2 * Math.sin(2 * club.angle * Math.PI / 180) / GRAVITY;
+        const lx = bx + Math.sin(c.aimAngle) * actualPx;
+        const ly = by - Math.cos(c.aimAngle) * actualPx;
+        let score = surfaceScore(lx, ly);
+        // Tree cost — more painful if we're NOT aiming offset to
+        // dodge (direct / send / layup shots through a tree line are
+        // worse than a deliberate side route).
+        if (treeIntersectsRay(bx, by, lx, ly, 4)) {
+          score -= (c.label === 'side') ? 40 : 140;
+        }
+        // Reward getting closer to the pin next shot.
+        const remain = Math.hypot(fx - lx, fy - ly);
+        score -= remain * 0.32;
+        // Slight penalty for deliberate layups so smart NPCs still
+        // fire at the flag when the line is clear.
+        if (c.label === 'soft' || c.label === 'layup') score -= 18;
+        if (score > bestScore) {
+          bestScore = score;
+          best = { aimAngle: c.aimAngle, clubIdx: c.clubIdx, power, shotType: c.shotType };
+        }
+      }
+      return best;
+    };
+
     const runNPCSwing = () => {
       const idx = currentPlayerIdxRef.current;
       const pl = playersRef.current[idx];
@@ -2781,20 +2890,24 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       const distPx = Math.hypot(dx, dy);
       const distYd = distPx / TILE * YARDS_PER_TILE;
       const onGreen = surfaceAt(b.x, b.y) === T_GREEN;
-      const clubIdx = pickClubForDistance(distYd, onGreen);
-      sw.clubIdx = clubIdx;
-      const club = CLUBS[clubIdx];
       const stats = pl.golfer?.stats || {};
       const mental = pl.golfer?.mental || {};
       const acc = stats.accuracy ?? 50;
       const power = stats.power ?? 50;
       const touch = stats.touch ?? 50;
       const composure = mental.composure ?? 50;
-      // Base aim straight at the pin, then add noise inversely
-      // proportional to accuracy. A 90-accuracy golfer drifts ±~0.06
-      // rad; a 40-accuracy golfer drifts ±~0.18 rad.
+      // Consult the Course-IQ planner — smart NPCs route around trees
+      // and hazards; low-IQ NPCs fall back to pin-at-pin defaults.
+      const plan = chooseShotPlan(pl, b.x, b.y, flagX, flagY);
+      const clubIdx = plan ? plan.clubIdx : pickClubForDistance(distYd, onGreen);
+      sw.clubIdx = clubIdx;
+      const club = CLUBS[clubIdx];
+      const planAim = plan ? plan.aimAngle : Math.atan2(dx, -dy);
+      // Base aim — plan target if we have one, otherwise straight at
+      // the pin — then noise inversely proportional to accuracy.
       const accNoise = (Math.random() - 0.5) * 2 * (0.20 - Math.min(0.18, acc / 600));
-      sw.aimAngle = Math.atan2(dx, -dy) + accNoise;
+      sw.aimAngle = planAim + accNoise;
+      if (plan) sw.shotType = plan.shotType;
       let powerPct;
       if (onGreen) {
         // Putting physics: ball launches horizontally and decays
@@ -2825,16 +2938,20 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         // is power²), so the inverse is sqrt(target / fullCarry), not
         // target / fullCarry. The legacy linear formula was the reason
         // NPCs kept coming up short — a 60% target needed ~77% power.
-        const carryPx = computeCarry(club, 1.0);
-        const ratio = Math.max(0, Math.min(1, distPx / Math.max(1, carryPx)));
-        // ~3% bias over the exact sqrt so lie penalties + the club's
-        // distanceFactor don't eat the landing.
-        powerPct = Math.max(0.2, Math.min(1.0, Math.sqrt(ratio) * 1.03));
+        let basePower;
+        if (plan) {
+          // Course-IQ planner already sized the power to the target.
+          basePower = plan.power;
+        } else {
+          const carryPx = computeCarry(club, 1.0);
+          const ratio = Math.max(0, Math.min(1, distPx / Math.max(1, carryPx)));
+          basePower = Math.max(0.2, Math.min(1.0, Math.sqrt(ratio) * 1.03));
+        }
         // Noise tightens as PWR rises: 50 → ±0.12, 90 → ±0.04.
         const noiseRange = Math.max(0.03, 0.17 - power / 700);
         const powerNoise = (Math.random() - 0.5) * 2 * noiseRange;
         const clutchBump = (distYd < 80 ? (composure - 50) / 700 : 0);
-        powerPct = Math.max(0.15, Math.min(1.0, powerPct + powerNoise + clutchBump));
+        powerPct = Math.max(0.15, Math.min(1.0, basePower + powerNoise + clutchBump));
       }
       // Shape: small spin coming from touch.
       sw.spinX = ((Math.random() - 0.5) * 2) * (1 - touch / 120) * 0.35;
