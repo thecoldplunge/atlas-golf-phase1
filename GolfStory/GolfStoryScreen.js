@@ -2564,6 +2564,32 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         const x1 = Math.min(WORLD_W, Math.ceil(bb[2]));
         const y1 = Math.min(WORLD_H, Math.ceil(bb[3]));
         paintBands(x0, y0, x1, y1, surf.shape, stripeFn, bandStyles);
+        // Second pass — directional shading inside the slope zone so
+        // the fairway reads as a 3D bump. Downhill side gets a darker
+        // tint, uphill gets a soft highlight; quantised into 4 bands
+        // so paintBands' run-length batching keeps the bake cheap.
+        if (hasSlope) {
+          const shadeBands = [
+            'rgba(245, 250, 210, 0.14)',  // 0: strong uphill highlight
+            'rgba(245, 250, 210, 0.07)',  // 1: soft highlight
+            'rgba(6, 20, 8, 0.10)',       // 2: soft downhill shadow
+            'rgba(2, 12, 4, 0.22)',       // 3: strong downhill shadow
+          ];
+          const shadeFn = (x, y) => {
+            if (!isTopHere(x, y)) return -1;
+            const lx = x - cx0, ly = y - cy0;
+            const d2 = lx * lx + ly * ly;
+            if (d2 > zoneR2) return -1; // outside the slope zone
+            const u = gx * lx + gy * ly;
+            const t = u / zoneR;
+            if (t < -0.55) return 0;
+            if (t < -0.18) return 1;
+            if (t < 0.18) return -1; // neutral band — no tint
+            if (t < 0.55) return 2;
+            return 3;
+          };
+          paintBands(x0, y0, x1, y1, surf.shape, shadeFn, shadeBands);
+        }
       }
       for (const p of PROPS) drawProp(sctx, p);
     };
