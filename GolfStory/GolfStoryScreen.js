@@ -2379,6 +2379,23 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
   // to true when the player taps "Next Hole" and the loop calls
   // advanceHole on the following frame.
   const pendingAdvanceRef = useRef(false);
+  // v0.74 walk-to-next-hole. After a solo player holes out, instead of
+  // auto-popping the scorecard we drop them into walking mode on the
+  // green and show a "NEXT HOLE" waypoint at the north world edge.
+  // When the player walks within trigger radius, fade out → advanceHole
+  // → fade in at the next tee. Fields:
+  //   active     true while the walk-out is running
+  //   targetX/Y  world-space waypoint (top-center of current hole)
+  //   fading     proximity reached — driving the fade animation
+  //   fadeT      0..FADE_DUR seconds elapsed in the current phase
+  //   fadePhase  'in' (opaque → covered) | 'out' (covered → clear)
+  const walkOutRef = useRef({ active: false, targetX: 0, targetY: 0, fading: false, fadeT: 0, fadePhase: 'in' });
+  // Mirror of the walk-out state consumed by the React HUD (banner,
+  // arrow rotation, fade overlay opacity). Tracked via a ref too so
+  // the tick loop can diff cheaply and only setState when a field
+  // actually changes meaningfully.
+  const walkOutHudRef = useRef({ active: false, dir: 0, fadeAlpha: 0 });
+  const [walkOutHud, setWalkOutHud] = useState({ active: false, dir: 0, fadeAlpha: 0 });
   const zoomRef = useRef(1.0);
   const joystickRef = useRef(null);
   const swipeRef = useRef(null);
@@ -3213,10 +3230,43 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         finishHoleForPlayer(activeIdx, holed);
         const allHoled = playersRef.current.every((pl) => pl.holedOutThisHole);
         if (allHoled) {
-          sw.state = SW.HOLED;
-          sw.messageTimer = 0;
-          setScorecardOpen(true);
-          flushHud();
+          // Solo round: skip the scorecard auto-pop and drop the player
+          // back into walking mode on the green. The tick loop watches
+          // for proximity to the north world edge and fires advanceHole
+          // through a black fade (see walkOutRef below).
+          const soloHuman = playersRef.current.length === 1 && !playersRef.current[0].isNPC;
+          if (holed && soloHuman) {
+            sw.state = SW.IDLE;
+            sw.messageTimer = 0;
+            // Plant the golfer on top of their ball (which is in the
+            // cup) so they "step back" out of the hole before walking.
+            const pNow = posRef.current;
+            pNow.x = ball.x;
+            pNow.y = ball.y + 6;
+            pNow.moving = false;
+            pNow.facing = 'N';
+            // Waypoint: top-center of the world, a few px south of the
+            // edge so the trigger fires while the sprite is still on
+            // screen. 24 px ≈ 1.5 tiles is loose enough that a shallow
+            // joystick push still crosses it.
+            walkOutRef.current.active = true;
+            walkOutRef.current.targetX = WORLD_W / 2;
+            walkOutRef.current.targetY = 12;
+            walkOutRef.current.fading = false;
+            walkOutRef.current.fadeT = 0;
+            walkOutRef.current.fadePhase = 'in';
+            // Clear the TEE-OFF-near-ball check — the ball is sitting
+            // in the cup right under the golfer.
+            canTeeOffRef.current = false;
+            setCanTeeOff(false);
+            setWalkOutHud({ active: true, dir: -Math.PI / 2, fadeAlpha: 0 });
+            flushHud();
+          } else {
+            sw.state = SW.HOLED;
+            sw.messageTimer = 0;
+            setScorecardOpen(true);
+            flushHud();
+          }
         } else {
           const nextIdx = pickNextPlayerIdx();
           if (nextIdx < 0) {
@@ -3661,11 +3711,49 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         if (p.moving) p.walkPhase += dt * 8; else p.walkPhase = 0;
         // Surface the TEE OFF button when the golfer walks into the
         // tee box proximity. Auto-proximity aim was removed — tap
-        // the button to commit.
-        const near = Math.hypot(p.x - ball.x, p.y - ball.y) < 22;
-        if (near !== canTeeOffRef.current) {
-          canTeeOffRef.current = near;
-          setCanTeeOff(near);
+        // the button to commit. Suppressed during walk-to-next-hole so
+        // the just-holed cup doesn't re-arm the tee-off prompt.
+        if (!walkOutRef.current.active) {
+          const near = Math.hypot(p.x - ball.x, p.y - ball.y) < 22;
+          if (near !== canTeeOffRef.current) {
+            canTeeOffRef.current = near;
+            setCanTeeOff(near);
+          }
+        }
+        // v0.74 walk-to-next-hole tick: drive the waypoint proximity
+        // → fade-to-black → advanceHole → fade-back handoff. Arrow
+        // rotation is derived further down in the HUD-mirror block.
+        const wo = walkOutRef.current;
+        if (wo.active) {
+          const FADE_DUR = 0.45;
+          const dx = wo.targetX - p.x;
+          const dy = wo.targetY - p.y;
+          if (!wo.fading) {
+            // Trigger the fade when the golfer reaches the waypoint
+            // or hits the world edge (top 24 px).
+            if (Math.hypot(dx, dy) < 24 || p.y < 24) {
+              wo.fading = true;
+              wo.fadeT = 0;
+              wo.fadePhase = 'in';
+            }
+          } else {
+            wo.fadeT += dt;
+            if (wo.fadePhase === 'in') {
+              if (wo.fadeT >= FADE_DUR) {
+                // Covered — advance the hole under the black veil,
+                // then play the fade-out at the next tee.
+                advanceHole();
+                wo.fadePhase = 'out';
+                wo.fadeT = 0;
+              }
+            } else {
+              if (wo.fadeT >= FADE_DUR) {
+                wo.active = false;
+                wo.fading = false;
+                wo.fadeT = 0;
+              }
+            }
+          }
         }
       } else if (sw.state === SW.AIMING || sw.state === SW.SWIPING) {
         p.moving = false;
@@ -3764,6 +3852,34 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       if (hudAccum > 0.25) {
         hudAccum = 0;
         setHud((h) => ({ ...h }));
+      }
+
+      // Walk-out HUD mirror: drives the NEXT-HOLE banner, directional
+      // arrow, and full-screen fade overlay. During the fade we update
+      // every tick so the black veil animates smoothly; while the
+      // player is walking we only fire when the arrow angle drifts
+      // enough to matter (≥ 4°) or the state changes.
+      const woS = walkOutRef.current;
+      if (woS.active || walkOutHudRef.current.active) {
+        let fadeAlpha = 0;
+        const FADE_DUR = 0.45;
+        if (woS.fading) {
+          const tFrac = Math.max(0, Math.min(1, woS.fadeT / FADE_DUR));
+          fadeAlpha = woS.fadePhase === 'in' ? tFrac : (1 - tFrac);
+        }
+        const dir = Math.atan2(woS.targetY - p.y, woS.targetX - p.x);
+        const prev = walkOutHudRef.current;
+        const angleDelta = Math.abs(((dir - prev.dir + Math.PI) % (2 * Math.PI)) - Math.PI);
+        const needsUpdate =
+          prev.active !== woS.active ||
+          woS.fading ||
+          Math.abs(fadeAlpha - prev.fadeAlpha) > 0.001 ||
+          angleDelta > 0.07;
+        if (needsUpdate) {
+          const next = { active: woS.active, dir, fadeAlpha };
+          walkOutHudRef.current = next;
+          setWalkOutHud(next);
+        }
       }
 
       const viewW = canvas.width;
@@ -4163,7 +4279,11 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
     hud.state !== SW.HOLED &&
     hud.state !== SW.HAZARD &&
     hud.state !== SW.OB;
-  const showWalkPrompt = hud.state === SW.IDLE && !turnHud.isNPC;
+  // Walk-to-next-hole suppresses the tee-off walk prompt (the ball's
+  // in the cup, there's nothing to tee off) and the club/shape/type
+  // cards (nothing to aim with until the new tee loads).
+  const walkingOut = !!walkOutHud.active;
+  const showWalkPrompt = hud.state === SW.IDLE && !turnHud.isNPC && !walkingOut;
   const shapeDotLeft = 22 + hud.spinX * 18;
   const shapeDotTop = 22 + hud.spinY * 18;
 
@@ -4215,27 +4335,32 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
 
       {/* Bottom-row HUD cards: CLUB · SHAPE · TYPE. Each is 78–84 wide so
           all three fit left of the SWING button on a 390+ viewport. VIEW
-          now lives in the right-side zoom column (above). */}
-      <Pressable style={styles.clubCard} onPress={() => setClubPicker(true)}>
-        <Text style={styles.hudLabel}>CLUB</Text>
-        <Text style={[styles.hudClubShort, { fontSize: 22 }]}>{hud.clubShort}</Text>
-        <Text style={[styles.hudSub, { marginTop: 2 }]}>{hud.clubCarryYd} yd</Text>
-      </Pressable>
+          now lives in the right-side zoom column (above). Hidden during
+          walk-to-next-hole — nothing to aim with until the new tee loads. */}
+      {!walkingOut ? (
+        <>
+          <Pressable style={styles.clubCard} onPress={() => setClubPicker(true)}>
+            <Text style={styles.hudLabel}>CLUB</Text>
+            <Text style={[styles.hudClubShort, { fontSize: 22 }]}>{hud.clubShort}</Text>
+            <Text style={[styles.hudSub, { marginTop: 2 }]}>{hud.clubCarryYd} yd</Text>
+          </Pressable>
 
-      <Pressable style={styles.shapeCard} onPress={() => setShapeOverlay(true)}>
-        <Text style={styles.hudLabel}>SHAPE</Text>
-        <View style={styles.shapeBall}>
-          <View style={styles.shapeCrossH} />
-          <View style={styles.shapeCrossV} />
-          <View style={[styles.shapeDot, { left: shapeDotLeft, top: shapeDotTop }]} />
-        </View>
-        <Text style={[styles.hudValue, { textAlign: 'center', marginTop: 2, fontSize: 11 }]}>{hud.shape}</Text>
-      </Pressable>
+          <Pressable style={styles.shapeCard} onPress={() => setShapeOverlay(true)}>
+            <Text style={styles.hudLabel}>SHAPE</Text>
+            <View style={styles.shapeBall}>
+              <View style={styles.shapeCrossH} />
+              <View style={styles.shapeCrossV} />
+              <View style={[styles.shapeDot, { left: shapeDotLeft, top: shapeDotTop }]} />
+            </View>
+            <Text style={[styles.hudValue, { textAlign: 'center', marginTop: 2, fontSize: 11 }]}>{hud.shape}</Text>
+          </Pressable>
 
-      <Pressable style={styles.typeCard} onPress={() => setShotTypeMenuOpen((v) => !v)}>
-        <Text style={styles.hudLabel}>TYPE</Text>
-        <Text style={[styles.hudValue, { textAlign: 'center', marginTop: 10, fontSize: 12 }]}>{(SHOT_TYPE_PROFILES[hudShotType] || SHOT_TYPE_PROFILES.normal).label}</Text>
-      </Pressable>
+          <Pressable style={styles.typeCard} onPress={() => setShotTypeMenuOpen((v) => !v)}>
+            <Text style={styles.hudLabel}>TYPE</Text>
+            <Text style={[styles.hudValue, { textAlign: 'center', marginTop: 10, fontSize: 12 }]}>{(SHOT_TYPE_PROFILES[hudShotType] || SHOT_TYPE_PROFILES.normal).label}</Text>
+          </Pressable>
+        </>
+      ) : null}
 
       {shotTypeMenuOpen ? (
         <View style={styles.shotTypeOverlay}>
@@ -4334,9 +4459,14 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         </>
       ) : null}
 
-      {hud.state === SW.IDLE && !turnHud.isNPC ? (
+      {hud.state === SW.IDLE && !turnHud.isNPC && !walkingOut ? (
         <View style={styles.controlLabel} pointerEvents="none">
           <Text style={styles.controlLabelText}>WALK</Text>
+        </View>
+      ) : null}
+      {walkingOut ? (
+        <View style={styles.controlLabel} pointerEvents="none">
+          <Text style={styles.controlLabelText}>NEXT HOLE</Text>
         </View>
       ) : null}
 
@@ -4421,6 +4551,28 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
             <Text style={styles.clubListCloseText}>✕</Text>
           </Pressable>
         </View>
+      ) : null}
+
+      {walkingOut ? (
+        <View style={styles.walkOutBanner} pointerEvents="none">
+          <Text style={styles.walkOutBannerText}>NEXT HOLE</Text>
+          <Text
+            style={[
+              styles.walkOutArrow,
+              { transform: [{ rotate: `${(walkOutHud.dir * 180 / Math.PI + 90).toFixed(1)}deg` }] },
+            ]}
+          >
+            ↑
+          </Text>
+          <Text style={styles.walkOutHint}>walk to the edge</Text>
+        </View>
+      ) : null}
+
+      {walkingOut && walkOutHud.fadeAlpha > 0 ? (
+        <View
+          style={[styles.walkOutFade, { opacity: walkOutHud.fadeAlpha }]}
+          pointerEvents={walkOutHud.fadeAlpha > 0.5 ? 'auto' : 'none'}
+        />
       ) : null}
 
       <Pressable style={styles.exitBtn} onPress={onExit}>
@@ -5534,6 +5686,40 @@ const styles = StyleSheet.create({
     borderWidth: 2, borderColor: '#f5f5ec',
     paddingHorizontal: 12, paddingVertical: 6,
     fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  // v0.74 walk-to-next-hole HUD. Top-center banner with a rotating
+  // arrow glyph pointing toward the waypoint, and a full-screen black
+  // fade overlay that covers the advanceHole swap.
+  walkOutBanner: {
+    position: 'absolute',
+    top: 110, left: 0, right: 0,
+    alignItems: 'center',
+  },
+  walkOutBannerText: {
+    color: '#fbe043',
+    fontSize: 15, fontWeight: '900', letterSpacing: 4,
+    backgroundColor: 'rgba(14,26,18,0.88)',
+    borderWidth: 2, borderColor: '#fbe043',
+    paddingHorizontal: 14, paddingVertical: 6,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  walkOutArrow: {
+    color: '#fbe043', fontSize: 34, fontWeight: '900',
+    marginTop: 6, textAlign: 'center',
+    textShadowColor: 'rgba(251,224,67,0.6)',
+    textShadowRadius: 6,
+    textShadowOffset: { width: 0, height: 0 },
+  },
+  walkOutHint: {
+    color: '#d4e0c4',
+    fontSize: 10, letterSpacing: 2, marginTop: 2,
+    fontFamily: Platform.select({ web: 'ui-monospace, Menlo, monospace', default: 'System' }),
+  },
+  walkOutFade: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: '#000',
+    zIndex: 200,
   },
   teeOffWrap: {
     position: 'absolute',
