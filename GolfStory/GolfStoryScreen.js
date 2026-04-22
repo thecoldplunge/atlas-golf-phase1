@@ -3436,6 +3436,10 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       swingRef.current.state = SW.IDLE;
       swingRef.current.aimLocked = false;
       swingRef.current.prePowerCap = 1.0;
+      // Sync the React HUD — without this the boot-time setBallOnTee()
+      // (which set sw.state = AIMING for a hole-1 address pose) stays
+      // stuck in the HUD even though the ref is back to IDLE.
+      flushHud();
     };
     placePlayerAtSpawn();
 
@@ -3466,6 +3470,11 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       // Range counter — incremented each swing for the HUD.
       practiceShotCountRef.current = 0;
       practiceResetTimerRef.current = 0;
+      // Sync the HUD so the practice mode actually shows AIMING +
+      // unlocked aim immediately (otherwise the round-mode AIM card
+      // is never re-derived from sw.state and the swing pad stays
+      // stuck in whatever pre-reset state it was in).
+      flushHud();
     };
 
     // Mode entry — swap the world, reset transient state, place
