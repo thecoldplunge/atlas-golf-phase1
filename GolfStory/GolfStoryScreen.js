@@ -2450,21 +2450,19 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       const imgData = buildWorldImageData();
       sctx.putImageData(imgData, 0, 0);
       // Mower patterns on every fairway + green.
-      //   • Flat surfaces get parallel diagonal stripes (standard lawn
-      //     mowing look) — alternating darker / lighter green bands.
-      //   • Sloped surfaces get big chevron stripes pointing downhill,
-      //     like a lane of painted arrows mowed into the turf. The
-      //     chevron apex lines up with the downhill direction so the
-      //     shape communicates grade at a glance.
-      // Per-row run-length batching keeps the pixel loop tractable for
-      // a one-shot static bake.
-      const MOW_DARK_DARK  = 'rgba(6, 26, 10, 0.22)';
-      const MOW_DARK_MID   = 'rgba(12, 38, 14, 0.13)';
-      const MOW_LIGHT_MID  = 'rgba(220, 244, 200, 0.07)';
-      const MOW_LIGHT_HI   = 'rgba(238, 252, 214, 0.11)';
+      //   • Flat surfaces (no slope) get parallel diagonal stripes —
+      //     standard lawn mowing look.
+      //   • Sloped surfaces get CHEVRON stripes pointing downhill. The
+      //     chevron apex lines up with the gradient so the shape itself
+      //     reads as "pitch goes this way".
+      // Two-tone high-contrast alpha blend so the pattern actually pops
+      // off the fairway base colour. No "display-only" fallback — real
+      // slope ↔ chevron, one-to-one.
+      const MOW_DARK  = 'rgba(5, 22, 8, 0.38)';
+      const MOW_LIGHT = 'rgba(236, 248, 208, 0.16)';
       const paintBands = (x0, y0, x1, y1, shape, stripeFn, bandStyles) => {
         for (let y = y0; y < y1; y++) {
-          const runs = bandStyles.map(() => -1); // runStart per band
+          const runs = bandStyles.map(() => -1);
           for (let x = x0; x <= x1; x++) {
             const inside = x < x1 && pointInShape(x + 0.5, y + 0.5, shape);
             const band = inside ? stripeFn(x, y) : -1;
@@ -2484,54 +2482,30 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         if (surf.type !== T_FAIRWAY && surf.type !== T_GREEN) continue;
         const bb = surf.shape._bbox;
         if (!bb) continue;
-        // Pick the slope that drives the chevron pattern:
-        //   1) explicit per-region surf.slope if authored,
-        //   2) GREEN_SLOPE for greens without their own,
-        //   3) a DISPLAY-ONLY tee→flag pitch for fairways so every hole
-        //      gets the directional chevron look. This display slope is
-        //      only used for rendering — physics still reads the real
-        //      slope (or none) from surfacePropsAt.
-        let slope = surf.slope
+        const slope = surf.slope
           || (surf.type === T_GREEN && GREEN_SLOPE && GREEN_SLOPE.mag
               ? { angle: GREEN_SLOPE.angle, mag: GREEN_SLOPE.mag }
               : null);
-        if (!slope && surf.type === T_FAIRWAY && TEE && FLAG) {
-          const dx = FLAG.x - TEE.x;
-          const dy = FLAG.y - TEE.y;
-          if (Math.hypot(dx, dy) > 0.1) {
-            slope = { angle: Math.atan2(dx, -dy), mag: 3 };
-          }
-        }
         const hasSlope = !!(slope && slope.mag);
-        // Gradient axis for the stripe math. Slope: real downhill.
-        // Flat: a gentle 30° diagonal so stripes look like lawn mow lines.
         const gx = hasSlope ? Math.sin(slope.angle) : Math.cos(Math.PI * 0.18);
         const gy = hasSlope ? -Math.cos(slope.angle) : Math.sin(Math.PI * 0.18);
-        // Period / bandwidth tuned per-pattern:
-        //   flat: 14 px stripes, ~50 / 50 dark vs light.
-        //   slope: 34 px chevron period, 14 px chevron shaft + 4 px edge.
-        const P = hasSlope ? 34 : 14;
-        const darkW = hasSlope ? 14 : 7;
-        const edgeW = hasSlope ? 4 : 3;
+        // Tight diagonals (14 px) for the lawn-stripe look; wider
+        // chevrons (24 px) so the V actually reads as an arrow.
+        const P = hasSlope ? 24 : 14;
+        const half = P / 2;
         const stripeFn = hasSlope
           ? (x, y) => {
               const u = gx * x + gy * y;
               const v = -gy * x + gx * y;
               const phase = ((u + Math.abs(v)) % P + P) % P;
-              if (phase < darkW) return 0; // dark band (chevron shaft)
-              if (phase < darkW + edgeW) return 2; // bright edge
-              if (phase >= P - edgeW) return 3;   // bright trailing edge
-              return 1; // soft mid tone
+              return phase < half ? 0 : 1;
             }
           : (x, y) => {
               const u = gx * x + gy * y;
               const phase = ((u % P) + P) % P;
-              if (phase < darkW) return 0;
-              if (phase < darkW + edgeW) return 2;
-              if (phase >= P - edgeW) return 3;
-              return 1;
+              return phase < half ? 0 : 1;
             };
-        const bandStyles = [MOW_DARK_DARK, MOW_DARK_MID, MOW_LIGHT_HI, MOW_LIGHT_MID];
+        const bandStyles = [MOW_DARK, MOW_LIGHT];
         const x0 = Math.max(0, Math.floor(bb[0]));
         const y0 = Math.max(0, Math.floor(bb[1]));
         const x1 = Math.min(WORLD_W, Math.ceil(bb[2]));
