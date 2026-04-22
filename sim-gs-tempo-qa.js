@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // QA for v0.76:
-//   • Tempo swing penalty math (no-bonus baseline, 20% max miss, 1.2s window)
+//   • Tempo swing penalty math (no-bonus baseline, 20% max miss, 0.9s window)
 //   • Short-game carry bump (chip / bump / flop)
 //   • Sign-zone proximity tightening (small zones near sign, NPCs still reachable)
 
-const TEMPO_DURATION_SEC = 1.2;
+const TEMPO_DURATION_SEC = 0.9;  // v0.79: tightened from 1.2
 const TEMPO_WINDOW = 0.5;
 const TEMPO_MAX_PENALTY = 0.2;
 
@@ -45,7 +45,7 @@ console.log('v0.76 tempo + short-game QA\n');
 // --- Tempo: near-perfect (within 0.10 s) still hits PERFECT ----------
 {
   const start = 1000;
-  const r = applyTempo(1.0, 0, start, start + 1250); // 50 ms late
+  const r = applyTempo(1.0, 0, start, start + (TEMPO_DURATION_SEC * 1000 + 50)); // 50 ms late
   assert(r.label === 'PERFECT TEMPO', `50 ms late still counts as perfect`, r.label);
   assert(r.penalty < 0.05, `50 ms late penalty < 5%`, r.penalty.toFixed(3));
 }
@@ -53,8 +53,8 @@ console.log('v0.76 tempo + short-game QA\n');
 // --- Tempo: very early swing ------------------------------------------
 {
   const start = 1000;
-  const r = applyTempo(1.0, 0, start, start + 500); // 700 ms early
-  assert(r.power < 0.85, `700 ms early → significant power penalty`, r.power.toFixed(3));
+  const r = applyTempo(1.0, 0, start, start + 200); // ~0.7s early vs 0.9 target
+  assert(r.power < 0.85, `very early → significant power penalty`, r.power.toFixed(3));
   assert(r.accuracy < 0, `early tempo tugs accuracy negative (hook)`, r.accuracy.toFixed(3));
   assert(r.label === 'EARLY', `early tempo label`, r.label);
 }
@@ -62,8 +62,8 @@ console.log('v0.76 tempo + short-game QA\n');
 // --- Tempo: very late swing -------------------------------------------
 {
   const start = 1000;
-  const r = applyTempo(1.0, 0, start, start + 2000); // 800 ms late
-  assert(r.power < 0.85, `800 ms late → significant power penalty`, r.power.toFixed(3));
+  const r = applyTempo(1.0, 0, start, start + 1700); // ~0.8s late vs 0.9 target
+  assert(r.power < 0.85, `very late → significant power penalty`, r.power.toFixed(3));
   assert(r.accuracy > 0, `late tempo tugs accuracy positive (slice)`, r.accuracy.toFixed(3));
   assert(r.label === 'LATE', `late tempo label`, r.label);
 }

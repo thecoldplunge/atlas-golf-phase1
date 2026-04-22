@@ -88,8 +88,12 @@ function isContent(img, x, y) {
   const { pixels, bpp, width } = img;
   const i = (y * width + x) * bpp;
   const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
-  // Background is solid dark. Anything non-zero counts.
-  return (r + g + b) > 36;
+  // Background is EITHER solid dark (old sheet) OR near-white (new
+  // sheet exported from a tool that didn't include a real alpha
+  // channel). Both count as "empty".
+  if (r + g + b < 36) return false;
+  if (r > 220 && g > 220 && b > 220) return false;
+  return true;
 }
 
 function rowDensity(img, y, x0, x1) {

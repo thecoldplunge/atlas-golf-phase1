@@ -4,7 +4,7 @@
 // sw.aimAngle every frame. This sim mirrors the tick's aim-rotation
 // block and asserts the expected behaviours.
 
-const AIM_ROT_SPEED = 1.5;   // radians / second at full deflection
+const AIM_ROT_SPEED = 0.8;   // v0.79: slowed from 1.5 rad/s
 const AIM_DEADZONE = 0.1;
 
 function tickAim(sw, joyX, dt) {

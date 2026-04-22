@@ -1607,16 +1607,15 @@ function buildTintedSpriteSheet(sourceImg, shirtHex, pantsHex) {
   const px = data.data;
   const shirtTarget = shirtHex ? _hexToRgb(shirtHex) : null;
   const pantsTarget = pantsHex ? _hexToRgb(pantsHex) : null;
-  // v0.78.3 — also chroma-key the solid black atlas background. Every
-  // pixel whose RGB sum is under BG_THRESHOLD gets alpha=0 so the
-  // sprites aren't framed by black rectangles on the green grass.
-  const BG_THRESHOLD = 30;
+  // v0.79 — chroma-key BOTH solid-black AND near-white backgrounds.
+  // The v0.78 atlas was exported with a black bg; the v0.79 atlas
+  // was exported with a white bg (no real alpha channel in either
+  // file). Killing both ensures the sprite never draws a halo on
+  // the green grass.
   for (let i = 0; i < px.length; i += 4) {
     const r = px[i], g = px[i + 1], b = px[i + 2];
-    if (r + g + b < BG_THRESHOLD) {
-      px[i + 3] = 0;
-      continue;
-    }
+    if (r + g + b < 30) { px[i + 3] = 0; continue; }
+    if (r > 220 && g > 220 && b > 220) { px[i + 3] = 0; continue; }
     if (shirtTarget && _isNearShirt(r, g, b)) {
       const o = _shadeMatch(r, g, b, SPRITE_SHIRT_RGB, shirtTarget);
       px[i] = o.r; px[i + 1] = o.g; px[i + 2] = o.b;
@@ -2961,7 +2960,7 @@ function drawSwipeFeedback(ctx, swipe, dpr) {
   // red once it's blown past the window. Only drawn if the tempo
   // clock is running (it's always running during SWIPING).
   if (typeof swipe.tempoStartT === 'number') {
-    const TEMPO_DURATION_MS = 1200;
+    const TEMPO_DURATION_MS = 900;
     const elapsed = Date.now() - swipe.tempoStartT;
     const tempoT = Math.min(1.8, elapsed / TEMPO_DURATION_MS);
     const tempoR = tempoT * maxRadius;
@@ -4547,7 +4546,7 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       // perfect and there's no penalty. Every 0.5 s off the mark
       // costs up to 20% power + shifts accuracy toward hook (early)
       // or slice (late). No bonus for perfect: it's the baseline.
-      const TEMPO_DURATION_SEC = 1.2;
+      const TEMPO_DURATION_SEC = 0.9;
       const TEMPO_WINDOW = 0.5;   // seconds of error that map to full penalty
       const TEMPO_MAX_PENALTY = 0.2;
       let tempoLabel = null;
@@ -5074,12 +5073,10 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         }
       } else if (sw.state === SW.AIMING || sw.state === SW.SWIPING) {
         p.moving = false;
-        // v0.78.5 — joystick aim rotation. aimJoystickRef holds the
-        // current pad x-deflection (−1 ↔ +1). Deadzone 0.1 so a
-        // finger resting dead-centre doesn't slowly creep. Full
-        // deflection rotates AIM_ROT_SPEED rad/s (~86°/s), so full-
-        // circle aim takes ~4.3s.
-        const AIM_ROT_SPEED = 1.5;
+        // v0.79 — joystick aim rotation. Slowed from 1.5 rad/s to
+        // 0.8 rad/s at full deflection (~46°/s, full-circle takes
+        // ~7.9s). Finer aim control per user feedback.
+        const AIM_ROT_SPEED = 0.8;
         const AIM_DEADZONE = 0.1;
         if (sw.state === SW.AIMING && !sw.aimLocked) {
           const joyX = aimJoystickRef.current || 0;
@@ -5335,14 +5332,16 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
             // lost the crosshair on a H2 driver carry.)
             const lx = ball.x + Math.sin(sw.aimAngle) * clubCarryPx;
             const ly = ball.y - Math.cos(sw.aimAngle) * clubCarryPx;
-            // Bias the followed point slightly back toward the ball so
-            // short shots keep both endpoints in frame, but heavily
-            // toward the landing so long drives don't push the
-            // crosshair off the top of the screen.
-            followX = lx * 0.9 + ball.x * 0.1;
-            followY = ly * 0.9 + ball.y * 0.1;
-            anchorOffsetX = isTabletGS ? (viewW * 0.18) / scale : 0;
-            anchorOffsetY = isTabletGS ? 0 : -(viewH * 0.22) / scale;
+            // v0.79 — centre the aim crosshair dead-on in the viewport.
+            // Follow the landing spot 100% and zero the anchor offsets
+            // so the crosshair is right at the middle of the screen.
+            // Trade-off: ball may sit off-screen on long shots; user
+            // prefers aim-in-the-middle over keeping both endpoints in
+            // frame.
+            followX = lx;
+            followY = ly;
+            anchorOffsetX = 0;
+            anchorOffsetY = 0;
           }
         } else if (isBallMoving) {
           // Flight framing: lead the ball aggressively and push it toward
