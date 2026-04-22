@@ -2484,10 +2484,24 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         if (surf.type !== T_FAIRWAY && surf.type !== T_GREEN) continue;
         const bb = surf.shape._bbox;
         if (!bb) continue;
-        const slope = surf.slope
+        // Pick the slope that drives the chevron pattern:
+        //   1) explicit per-region surf.slope if authored,
+        //   2) GREEN_SLOPE for greens without their own,
+        //   3) a DISPLAY-ONLY tee→flag pitch for fairways so every hole
+        //      gets the directional chevron look. This display slope is
+        //      only used for rendering — physics still reads the real
+        //      slope (or none) from surfacePropsAt.
+        let slope = surf.slope
           || (surf.type === T_GREEN && GREEN_SLOPE && GREEN_SLOPE.mag
               ? { angle: GREEN_SLOPE.angle, mag: GREEN_SLOPE.mag }
               : null);
+        if (!slope && surf.type === T_FAIRWAY && TEE && FLAG) {
+          const dx = FLAG.x - TEE.x;
+          const dy = FLAG.y - TEE.y;
+          if (Math.hypot(dx, dy) > 0.1) {
+            slope = { angle: Math.atan2(dx, -dy), mag: 3 };
+          }
+        }
         const hasSlope = !!(slope && slope.mag);
         // Gradient axis for the stripe math. Slope: real downhill.
         // Flat: a gentle 30° diagonal so stripes look like lawn mow lines.
