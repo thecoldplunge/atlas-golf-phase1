@@ -2320,36 +2320,39 @@ function drawNpcLabel(ctx, x, y, name) {
 }
 
 function drawBall(ctx, px, py, z, spinPhase = 0, sideSpin = 0) {
-  // v0.81.1 — smooth AA golf ball at roughly HALF the v0.81 size
-  // (3.5→8 was too chunky). Now 1.75 grounded → 4 at apex. The
-  // smoothing + arcade visual-lift stay. Added a rotating seam that
-  // reads as spin — phase accumulates from distance travelled in
-  // the tick loop, axis tilts with sideSpin (draw / fade).
+  // v0.81.2 — 15% smaller than v0.81.1 (user: "too big, hovering").
+  // Grounded radius 1.5, apex 3.4. At lift=0 the ball visually rests
+  // on the ground plane (cy = y - r) instead of floating above it,
+  // and the drop shadow is smaller + fainter so it doesn't scream
+  // "this ball is in the air" when the ball is clearly resting.
   const ARCADE_VISUAL_LIFT = 1.5;
-  const ARCADE_SIZE_BOOST  = 2.25;      // half of the v0.81 boost
   const lift = Math.max(0, (z | 0) * ARCADE_VISUAL_LIFT);
   const x = Math.floor(px), y = Math.floor(py);
   const altT = Math.min(1, lift / 60);
-  const r = 1.75 + altT * ARCADE_SIZE_BOOST;    // 1.75 → 4 at apex
-  const cy = y - 2 - lift;
-  // Drop shadow — subtle puck when grounded, widens + fades at apex.
+  const r = 1.5 + altT * 1.9;                      // 1.5 → 3.4 at apex
+  const cy = lift > 0 ? y - r - lift : y - r + 0.5; // rests on ground when grounded
+  // Drop shadow — tiny puck right under the ball when grounded, then
+  // bigger + fainter as altitude rises (penumbra widens with height).
   if (lift === 0) {
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';             // lighter
     ctx.beginPath();
-    ctx.ellipse(x, y + 0.3, r * 0.75, r * 0.4, 0, 0, Math.PI * 2);
+    ctx.ellipse(x, y + 0.3, r * 0.55, r * 0.22, 0, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    const alpha = 0.55 - altT * 0.3;
+    const alpha = 0.50 - altT * 0.3;
     ctx.fillStyle = `rgba(0,0,0,${alpha.toFixed(3)})`;
     ctx.beginPath();
     ctx.ellipse(x, y + 0.3, r * 0.95, r * 0.45, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  // Dark silhouette rim.
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
-  ctx.beginPath();
-  ctx.arc(x + 0.3, cy + 0.3, r + 0.4, 0, Math.PI * 2);
-  ctx.fill();
+  // Dark silhouette rim — only in-flight, so grounded balls don't
+  // get a shadow ring that fights the reduced ground shadow.
+  if (lift > 0) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.beginPath();
+    ctx.arc(x + 0.3, cy + 0.3, r + 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
   // Ball body.
   ctx.fillStyle = COLORS.ballWhite;
   ctx.beginPath();
@@ -2709,20 +2712,59 @@ function launchBall(b, aimAngle, power, accuracyOffset, spinX, spinY, club, opts
   // flight too, not just at launch.
   b.spinX = spinX * curveAmp;
   b.spinY = spinY;
+  // v0.81.2 — stash shot meta so the spin-seam display in drawBall
+  // can rotate in the correct direction + at the right rate for
+  // each shot type (chip + flop = heavy backspin, stinger + bump =
+  // topspin, putter variants = minimal spin).
+  b.shotType = activeShotType;
+  b.clubCategory = club.key === 'PT' ? 'putter'
+    : (club.key === 'PW' || club.key === 'SW' || club.key === 'LW') ? 'wedge'
+    : (club.key === 'DR' || club.key === '3W' || club.key === '5W' || club.key === '7W') ? 'wood'
+    : 'iron';
   b.dropT = 0;
   b.windResist = golferFactors.windResist;
   b.launchLieLabel = liePhys?.label || null;
 }
 
 function stepBall(b, dt, windX, windY, flagX, flagY) {
-  // v0.81.1 — spin-display phase accumulates by horizontal speed so
-  // the seam inside the ball rotates as it travels. 0.15 is a feel
-  // constant: at 250 yd/s the seam spins at ~37 rad/s, which reads
-  // as "fast spinning". Non-moving balls stay at phase 0.
+  // v0.81.2 — spin visualisation tied to real golf behaviour:
+  //   • Default flight → backspin (seam rotates CCW = negative phase)
+  //   • Hook (spinX < 0) → bias CCW even harder
+  //   • Slice (spinX > 0) → reverse to CW (positive phase)
+  //   • Flop / chip → backspin amped (stops the ball cold on the green)
+  //   • Stinger / bump → topspin (seam rotates with ball travel, CW)
+  //   • Putter / tap / blast → almost no spin at all
+  //   • Rolling balls show topspin-ish rotation from contact with ground
+  //
+  // Phase accumulates in radians. Positive = clockwise from above.
   if (b.state === 'flying' || b.state === 'rolling') {
     const hSpeed = Math.hypot(b.vx || 0, b.vy || 0);
     if (hSpeed > 0.5) {
-      b.spinDisplayPhase = (b.spinDisplayPhase || 0) + hSpeed * dt * 0.15;
+      let baseRate = -hSpeed * 0.10;    // CCW backspin by default
+      // Shot-type modifier.
+      switch (b.shotType) {
+        case 'chip':     baseRate *= 1.6; break;   // heavy backspin
+        case 'flop':     baseRate *= 2.2; break;   // max backspin
+        case 'stinger':  baseRate *= -0.9; break;  // low + running = topspin
+        case 'bump':     baseRate *= -0.4; break;  // bump-and-run → some topspin
+        case 'tap':      baseRate *= 0.1; break;   // putter tap — almost no spin
+        case 'blast':    baseRate *= 0.1; break;
+        default:         break;                    // normal / null → backspin
+      }
+      // Putter variants always spin only mildly.
+      if (b.clubCategory === 'putter') baseRate *= 0.25;
+      // Rolling = ball-ground contact drives topspin regardless of
+      // the in-flight spin story. Flip the sign to match travel.
+      if (b.state === 'rolling') baseRate = hSpeed * 0.25;
+      // Spin-Y (high/low shape): negative = hit it high (more backspin);
+      // positive = hit it low / stinger (topspin lean).
+      if (b.spinY < 0) baseRate *= (1.0 + Math.abs(b.spinY) * 0.6);
+      if (b.spinY > 0) baseRate *= (1.0 - b.spinY * 1.4);   // can invert
+      // Side-spin (hook/slice) tugs the visible rotation direction.
+      //   spinX > 0 (slice / fade): clockwise (+rate)
+      //   spinX < 0 (hook / draw):  counterclockwise (-rate)
+      baseRate += b.spinX * hSpeed * 0.08;
+      b.spinDisplayPhase = (b.spinDisplayPhase || 0) + baseRate * dt;
     }
   } else if (b.state === 'stopped' || b.state === 'rest' || b.state === 'holed') {
     b.spinDisplayPhase = 0;
