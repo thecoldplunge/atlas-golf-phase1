@@ -2319,52 +2319,68 @@ function drawNpcLabel(ctx, x, y, name) {
   ctx.textBaseline = 'alphabetic';
 }
 
-function drawBall(ctx, px, py, z) {
-  // v0.81 — arcade ball. Smooth anti-aliased circle (no more 3-pixel
-  // blob) that scales 3.5 → 8 px by altitude so high shots read as
-  // "closer to camera". The VISUAL lift is also exaggerated (z × 1.5)
-  // so the arc pops without disturbing the tuned carry distances —
-  // physics stays the same, only the render position changes.
+function drawBall(ctx, px, py, z, spinPhase = 0, sideSpin = 0) {
+  // v0.81.1 — smooth AA golf ball at roughly HALF the v0.81 size
+  // (3.5→8 was too chunky). Now 1.75 grounded → 4 at apex. The
+  // smoothing + arcade visual-lift stay. Added a rotating seam that
+  // reads as spin — phase accumulates from distance travelled in
+  // the tick loop, axis tilts with sideSpin (draw / fade).
   const ARCADE_VISUAL_LIFT = 1.5;
-  const ARCADE_SIZE_BOOST  = 4.5;       // max extra radius at apex
+  const ARCADE_SIZE_BOOST  = 2.25;      // half of the v0.81 boost
   const lift = Math.max(0, (z | 0) * ARCADE_VISUAL_LIFT);
   const x = Math.floor(px), y = Math.floor(py);
   const altT = Math.min(1, lift / 60);
-  const r = 3.5 + altT * ARCADE_SIZE_BOOST;   // 3.5 grounded → 8 at apex
-  const cy = y - 3 - lift;
-  // Drop shadow — small subtle puck when grounded, grows + fades as
-  // altitude rises (wider penumbra when the caster is further away).
+  const r = 1.75 + altT * ARCADE_SIZE_BOOST;    // 1.75 → 4 at apex
+  const cy = y - 2 - lift;
+  // Drop shadow — subtle puck when grounded, widens + fades at apex.
   if (lift === 0) {
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath();
-    ctx.ellipse(x, y + 0.5, r * 0.7, r * 0.38, 0, 0, Math.PI * 2);
+    ctx.ellipse(x, y + 0.3, r * 0.75, r * 0.4, 0, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    const alpha = 0.55 - altT * 0.3;     // 0.55 → 0.25
+    const alpha = 0.55 - altT * 0.3;
     ctx.fillStyle = `rgba(0,0,0,${alpha.toFixed(3)})`;
     ctx.beginPath();
-    ctx.ellipse(x, y + 0.5, r * 0.9, r * 0.45, 0, 0, Math.PI * 2);
+    ctx.ellipse(x, y + 0.3, r * 0.95, r * 0.45, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  // Dark rim under the ball for silhouette.
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+  // Dark silhouette rim.
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
   ctx.beginPath();
-  ctx.arc(x + 0.4, cy + 0.4, r + 0.4, 0, Math.PI * 2);
+  ctx.arc(x + 0.3, cy + 0.3, r + 0.4, 0, Math.PI * 2);
   ctx.fill();
-  // Ball body — smooth white circle.
+  // Ball body.
   ctx.fillStyle = COLORS.ballWhite;
   ctx.beginPath();
   ctx.arc(x, cy, r, 0, Math.PI * 2);
   ctx.fill();
-  // Shaded bottom-right for rounded feel.
+  // Spin seam — a thin dark line across the ball that rotates with
+  // spinPhase. Axis tilts toward sideSpin so a fade shows a slightly
+  // right-tilted seam while a draw shows a left-tilted one. Skipped
+  // when the ball is at rest (phase 0).
+  if (Math.abs(spinPhase) > 0.001 && r >= 2.0) {
+    const axisTilt = sideSpin * 0.5;   // up to ±0.5 rad off-axis
+    const seamAng = spinPhase + axisTilt;
+    const sx = Math.cos(seamAng) * r * 0.85;
+    const sy = Math.sin(seamAng) * r * 0.85;
+    ctx.strokeStyle = 'rgba(30, 30, 30, 0.65)';
+    ctx.lineWidth = Math.max(0.8, r * 0.22);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x - sx, cy - sy);
+    ctx.lineTo(x + sx, cy + sy);
+    ctx.stroke();
+  }
+  // Soft shaded bottom-right.
   ctx.fillStyle = COLORS.ballShadow;
   ctx.beginPath();
-  ctx.arc(x + r * 0.35, cy + r * 0.3, r * 0.45, 0, Math.PI * 2);
+  ctx.arc(x + r * 0.3, cy + r * 0.25, r * 0.4, 0, Math.PI * 2);
   ctx.fill();
   // Bright highlight top-left.
   ctx.fillStyle = 'rgba(255,255,255,0.95)';
   ctx.beginPath();
-  ctx.arc(x - r * 0.35, cy - r * 0.35, r * 0.32, 0, Math.PI * 2);
+  ctx.arc(x - r * 0.35, cy - r * 0.35, r * 0.3, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -2518,6 +2534,12 @@ function simulatePutt(startX, startY, aimAngle, accuracy, power, club, spinX, sh
 
 function drawShotPredict(ctx, points) {
   if (points.length < 2) return;
+  // v0.81.1 — match the ball's arcade visual lift so the tracer arc
+  // sits where the rendered ball will actually fly. Physics z stays
+  // unchanged (carry math is identical); only the Y-render coord is
+  // bumped. Keep in sync with ARCADE_VISUAL_LIFT inside drawBall.
+  const LIFT = 1.5;
+  const zRender = (p) => p.y - p.z * LIFT;
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -2532,22 +2554,22 @@ function drawShotPredict(ctx, points) {
   ctx.strokeStyle = 'rgba(255,246,216,0.35)';
   ctx.lineWidth = 3.8;
   ctx.beginPath();
-  ctx.moveTo(points[0].x, points[0].y - points[0].z);
-  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y - points[i].z);
+  ctx.moveTo(points[0].x, zRender(points[0]));
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, zRender(points[i]));
   ctx.stroke();
 
   ctx.strokeStyle = 'rgba(255,246,216,0.85)';
   ctx.lineWidth = 2.0;
   ctx.beginPath();
-  ctx.moveTo(points[0].x, points[0].y - points[0].z);
-  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y - points[i].z);
+  ctx.moveTo(points[0].x, zRender(points[0]));
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, zRender(points[i]));
   ctx.stroke();
 
   ctx.strokeStyle = 'rgba(255,255,255,1)';
   ctx.lineWidth = 0.9;
   ctx.beginPath();
-  ctx.moveTo(points[0].x, points[0].y - points[0].z);
-  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y - points[i].z);
+  ctx.moveTo(points[0].x, zRender(points[0]));
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, zRender(points[i]));
   ctx.stroke();
 
   const last = points[points.length - 1];
@@ -2564,23 +2586,29 @@ function drawShotPredict(ctx, points) {
 
 function drawFlightTrail(ctx, trail) {
   if (trail.length < 2) return;
+  // v0.81.1 — same 1.5× arcade lift as drawBall + drawShotPredict,
+  // so the vapour trail tracks the rendered ball position, not the
+  // physics z.
+  const LIFT = 1.5;
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   for (let i = 1; i < trail.length; i++) {
     const p0 = trail[i - 1], p1 = trail[i];
     const a = (i / trail.length);
+    const y0 = p0.y - p0.z * LIFT;
+    const y1 = p1.y - p1.z * LIFT;
     ctx.strokeStyle = `rgba(255,246,216,${(a * 0.42).toFixed(3)})`;
     ctx.lineWidth = 3.2;
     ctx.beginPath();
-    ctx.moveTo(p0.x, p0.y - p0.z);
-    ctx.lineTo(p1.x, p1.y - p1.z);
+    ctx.moveTo(p0.x, y0);
+    ctx.lineTo(p1.x, y1);
     ctx.stroke();
     ctx.strokeStyle = `rgba(255,255,255,${(a * 0.8).toFixed(3)})`;
     ctx.lineWidth = 1.1;
     ctx.beginPath();
-    ctx.moveTo(p0.x, p0.y - p0.z);
-    ctx.lineTo(p1.x, p1.y - p1.z);
+    ctx.moveTo(p0.x, y0);
+    ctx.lineTo(p1.x, y1);
     ctx.stroke();
   }
   ctx.restore();
@@ -2687,6 +2715,18 @@ function launchBall(b, aimAngle, power, accuracyOffset, spinX, spinY, club, opts
 }
 
 function stepBall(b, dt, windX, windY, flagX, flagY) {
+  // v0.81.1 — spin-display phase accumulates by horizontal speed so
+  // the seam inside the ball rotates as it travels. 0.15 is a feel
+  // constant: at 250 yd/s the seam spins at ~37 rad/s, which reads
+  // as "fast spinning". Non-moving balls stay at phase 0.
+  if (b.state === 'flying' || b.state === 'rolling') {
+    const hSpeed = Math.hypot(b.vx || 0, b.vy || 0);
+    if (hSpeed > 0.5) {
+      b.spinDisplayPhase = (b.spinDisplayPhase || 0) + hSpeed * dt * 0.15;
+    }
+  } else if (b.state === 'stopped' || b.state === 'rest' || b.state === 'holed') {
+    b.spinDisplayPhase = 0;
+  }
   if (b.state === 'flying') {
     const heightFactor = Math.min(1, b.z / 15);
     const windMult = b.windResist ?? 1;
@@ -5569,7 +5609,11 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       } else if (sw.state !== SW.HOLED && sw.state !== SW.SPLASHING) {
         // Hide the ball during the splash — it's "under water" until
         // the hazard notification brings it back to the last-good lie.
-        drawables.push({ kind: 'ball', x: ball.x, y: ball.y, z: ball.z });
+        drawables.push({
+          kind: 'ball', x: ball.x, y: ball.y, z: ball.z,
+          spinPhase: ball.spinDisplayPhase || 0,
+          sideSpin: ball.spinX || 0,
+        });
       }
       // Always draw the golfer — players expect to see themselves
       // watching the shot unfold, not vanish at impact. Hidden only
@@ -5637,7 +5681,7 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         if (d.kind === 'tree') drawTree(ctx, d.x, d.y, swayTime, windStrength, d.variant);
         else if (d.kind === 'bush') drawBush(ctx, d.x, d.y, d.variant, swayTime, windStrength);
         else if (d.kind === 'flag') drawFlag(ctx, d.x, d.y, now, { showPole: d.showPole !== false });
-        else if (d.kind === 'ball') drawBall(ctx, d.x, d.y, d.z || 0);
+        else if (d.kind === 'ball') drawBall(ctx, d.x, d.y, d.z || 0, d.spinPhase || 0, d.sideSpin || 0);
         else if (d.kind === 'balldrop') drawBallDropping(ctx, d.x, d.y, d.t);
         else if (d.kind === 'golfer') drawGolfer(ctx, d.x, d.y, d.facing, d.phase, d.swingInfo, d.palette || null, d.facing8 || null);
         else if (d.kind === 'building') drawClubhouseBuilding(ctx, d.x, d.y, d.w, d.h, d.label);
