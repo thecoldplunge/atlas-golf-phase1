@@ -112,7 +112,7 @@ const pinShake = { t: 999, intensity: 0 };
 // can paint a flurry at the impact point.
 const burstLeaves = [];
 const YARDS_PER_TILE = 10;
-const MAX_LEAVES = 14;
+const MAX_LEAVES = 8;  // v0.81 — trimmed from 14 for frame-rate recovery
 
 const T_ROUGH = 0;
 const T_FAIRWAY = 1;
@@ -2320,32 +2320,52 @@ function drawNpcLabel(ctx, x, y, name) {
 }
 
 function drawBall(ctx, px, py, z) {
-  const lift = Math.max(0, z | 0);
+  // v0.81 — arcade ball. Smooth anti-aliased circle (no more 3-pixel
+  // blob) that scales 3.5 → 8 px by altitude so high shots read as
+  // "closer to camera". The VISUAL lift is also exaggerated (z × 1.5)
+  // so the arc pops without disturbing the tuned carry distances —
+  // physics stays the same, only the render position changes.
+  const ARCADE_VISUAL_LIFT = 1.5;
+  const ARCADE_SIZE_BOOST  = 4.5;       // max extra radius at apex
+  const lift = Math.max(0, (z | 0) * ARCADE_VISUAL_LIFT);
   const x = Math.floor(px), y = Math.floor(py);
-  // Drop shadow — small subtle puck when the ball is grounded, then
-  // grows up to ~1.7× the ball sprite and fades as altitude rises
-  // (real penumbra widens and softens with caster height).
+  const altT = Math.min(1, lift / 60);
+  const r = 3.5 + altT * ARCADE_SIZE_BOOST;   // 3.5 grounded → 8 at apex
+  const cy = y - 3 - lift;
+  // Drop shadow — small subtle puck when grounded, grows + fades as
+  // altitude rises (wider penumbra when the caster is further away).
   if (lift === 0) {
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath();
-    ctx.ellipse(x, y + 0.5, 1.0, 0.55, 0, 0, Math.PI * 2);
+    ctx.ellipse(x, y + 0.5, r * 0.7, r * 0.38, 0, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    const t = Math.min(1, lift / 35);
-    const rx = 1.5 + t * 1.05;    // 1.5 → 2.55 radius (3 → 5.1 wide)
-    const ry = 1.3 + t * 0.9;     // 1.3 → 2.2  radius (2.6 → 4.4 tall)
-    const alpha = 0.55 - t * 0.3; // 0.55 → 0.25
+    const alpha = 0.55 - altT * 0.3;     // 0.55 → 0.25
     ctx.fillStyle = `rgba(0,0,0,${alpha.toFixed(3)})`;
     ctx.beginPath();
-    ctx.ellipse(x, y + 0.5, rx, ry, 0, 0, Math.PI * 2);
+    ctx.ellipse(x, y + 0.5, r * 0.9, r * 0.45, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  // Ball body — 3×3 (50% larger than the previous 2×2 sprite).
-  ctx.fillStyle = COLORS.ballShadow;
-  ctx.fillRect(x - 1, y - 3 - lift, 3, 3);
+  // Dark rim under the ball for silhouette.
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+  ctx.beginPath();
+  ctx.arc(x + 0.4, cy + 0.4, r + 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  // Ball body — smooth white circle.
   ctx.fillStyle = COLORS.ballWhite;
-  ctx.fillRect(x - 1, y - 3 - lift, 2, 1);
-  ctx.fillRect(x - 1, y - 3 - lift, 1, 2);
+  ctx.beginPath();
+  ctx.arc(x, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  // Shaded bottom-right for rounded feel.
+  ctx.fillStyle = COLORS.ballShadow;
+  ctx.beginPath();
+  ctx.arc(x + r * 0.35, cy + r * 0.3, r * 0.45, 0, Math.PI * 2);
+  ctx.fill();
+  // Bright highlight top-left.
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.beginPath();
+  ctx.arc(x - r * 0.35, cy - r * 0.35, r * 0.32, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawBallDropping(ctx, px, py, t) {
@@ -5454,10 +5474,31 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       }
 
       const windStrength = Math.min(1, w.speed / 16);
+      // v0.81 — viewport-cull foliage. Only push trees / bushes that
+      // overlap the visible rect (plus a small margin for the tree's
+      // canopy that sticks above its anchor). Off-screen foliage is
+      // skipped entirely — no sort, no draw, no sin() per frame.
+      const viewLeft   = camX - 16;
+      const viewTop    = camY - 48;
+      const viewRight  = camX + visibleW + 16;
+      const viewBottom = camY + visibleH + 16;
+      const inView = (wx, wy) => wx >= viewLeft && wx <= viewRight && wy >= viewTop && wy <= viewBottom;
+      // v0.81 — wind sway time throttled to 4 Hz (every 250 ms).
+      // Trees + bushes still appear to sway but sin() only recomputes
+      // a new value 4 times a second instead of every frame.
+      const swayTime = Math.floor(now / 250) * 250;
 
       const drawables = [];
-      for (const t of TREES) drawables.push({ kind: 'tree', x: t.x * TILE, y: t.y * TILE, variant: t.variant });
-      for (const b of BUSHES) drawables.push({ kind: 'bush', x: b.x * TILE, y: b.y * TILE, variant: b.variant });
+      for (const t of TREES) {
+        const wx = t.x * TILE, wy = t.y * TILE;
+        if (!inView(wx, wy)) continue;
+        drawables.push({ kind: 'tree', x: wx, y: wy, variant: t.variant });
+      }
+      for (const b of BUSHES) {
+        const wx = b.x * TILE, wy = b.y * TILE;
+        if (!inView(wx, wy)) continue;
+        drawables.push({ kind: 'bush', x: wx, y: wy, variant: b.variant });
+      }
       // v0.75 — clubhouse / range / putting world extras. The
       // building draws as a chunky pixel structure with a roof
       // overhang. Signs are short posts with a yellow plank. NPCs
@@ -5593,8 +5634,8 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
       }
       drawables.sort((a, b2) => a.y - b2.y);
       for (const d of drawables) {
-        if (d.kind === 'tree') drawTree(ctx, d.x, d.y, now, windStrength, d.variant);
-        else if (d.kind === 'bush') drawBush(ctx, d.x, d.y, d.variant, now, windStrength);
+        if (d.kind === 'tree') drawTree(ctx, d.x, d.y, swayTime, windStrength, d.variant);
+        else if (d.kind === 'bush') drawBush(ctx, d.x, d.y, d.variant, swayTime, windStrength);
         else if (d.kind === 'flag') drawFlag(ctx, d.x, d.y, now, { showPole: d.showPole !== false });
         else if (d.kind === 'ball') drawBall(ctx, d.x, d.y, d.z || 0);
         else if (d.kind === 'balldrop') drawBallDropping(ctx, d.x, d.y, d.t);
