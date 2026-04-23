@@ -2319,7 +2319,29 @@ function drawNpcLabel(ctx, x, y, name) {
   ctx.textBaseline = 'alphabetic';
 }
 
-function drawBall(ctx, px, py, z, spinPhase = 0, sideSpin = 0) {
+// v0.81.3 — pre-computed dimple positions on the unit sphere, in a
+// "travel frame" where +X = perpendicular right, +Y = along travel
+// direction (forward), +Z = up. Drawn as subtle dark dots that track
+// the 3D rotation of the ball, projected to 2D. Visibility check
+// (z > 0) culls points on the far side of the ball so the dimple
+// pattern genuinely reads as end-over-end rotation from overhead.
+const _BALL_DIMPLES = [
+  [ 0.00,  0.00, 1.00],
+  [ 0.50,  0.00, 0.87],
+  [-0.50,  0.00, 0.87],
+  [ 0.00,  0.50, 0.87],
+  [ 0.00, -0.50, 0.87],
+  [ 0.40,  0.40, 0.82],
+  [-0.40,  0.40, 0.82],
+  [ 0.40, -0.40, 0.82],
+  [-0.40, -0.40, 0.82],
+  [ 0.85,  0.00, 0.53],
+  [-0.85,  0.00, 0.53],
+  [ 0.00,  0.85, 0.53],
+  [ 0.00, -0.85, 0.53],
+];
+
+function drawBall(ctx, px, py, z, spinPhase = 0, sideSpin = 0, vx = 0, vy = 0) {
   // v0.81.2 — 15% smaller than v0.81.1 (user: "too big, hovering").
   // Grounded radius 1.5, apex 3.4. At lift=0 the ball visually rests
   // on the ground plane (cy = y - r) instead of floating above it,
@@ -2358,22 +2380,61 @@ function drawBall(ctx, px, py, z, spinPhase = 0, sideSpin = 0) {
   ctx.beginPath();
   ctx.arc(x, cy, r, 0, Math.PI * 2);
   ctx.fill();
-  // Spin seam — a thin dark line across the ball that rotates with
-  // spinPhase. Axis tilts toward sideSpin so a fade shows a slightly
-  // right-tilted seam while a draw shows a left-tilted one. Skipped
-  // when the ball is at rest (phase 0).
-  if (Math.abs(spinPhase) > 0.001 && r >= 2.0) {
-    const axisTilt = sideSpin * 0.5;   // up to ±0.5 rad off-axis
-    const seamAng = spinPhase + axisTilt;
-    const sx = Math.cos(seamAng) * r * 0.85;
-    const sy = Math.sin(seamAng) * r * 0.85;
-    ctx.strokeStyle = 'rgba(30, 30, 30, 0.65)';
-    ctx.lineWidth = Math.max(0.8, r * 0.22);
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(x - sx, cy - sy);
-    ctx.lineTo(x + sx, cy + sy);
-    ctx.stroke();
+  // v0.81.3 — dimple pattern. Each dimple is a 3D point on the unit
+  // sphere in "travel frame" (+X perpendicular right, +Y along travel,
+  // +Z up). Backspin rotates the sphere around +X so points slide
+  // FROM FRONT TO BACK across the top hemisphere for a ball travelling
+  // north — true end-over-end. Side-spin rotates around +Z so the
+  // whole pattern also spins in-plane for hook / slice. Only points
+  // with z > 0 (near side) draw; the rest are hidden behind the ball.
+  // Skipped when the ball is small (<1.7 r) or barely spinning — the
+  // resting ball stays smooth.
+  if (r >= 1.7 && Math.abs(spinPhase) > 0.02) {
+    const speed = Math.hypot(vx, vy);
+    // Travel direction in screen space. atan2(vx, -vy) gives 0 when
+    // the ball heads north (-Y), positive = clockwise (east at +π/2).
+    // Fall back to 0 if speed is negligible so the pattern still spins
+    // coherently on a stationary (but still-rotating-visually) ball.
+    const travelAngle = speed > 0.5 ? Math.atan2(vx, -vy) : 0;
+    const cosT = Math.cos(travelAngle), sinT = Math.sin(travelAngle);
+    // Backspin rotation around +X axis. Negative spinPhase (our
+    // backspin convention) should make the visible top move BACKWARD.
+    // Rotating by -spinPhase does that.
+    const bp = -spinPhase;
+    const cosB = Math.cos(bp), sinB = Math.sin(bp);
+    // Side-spin in-plane rotation. Scaled down so it's a subtle swirl
+    // on top of the dominant backspin motion.
+    const sp = sideSpin * spinPhase * 0.3;
+    const cosS = Math.cos(sp), sinS = Math.sin(sp);
+    ctx.fillStyle = 'rgba(30, 30, 30, 0.30)';
+    for (let i = 0; i < _BALL_DIMPLES.length; i++) {
+      const d = _BALL_DIMPLES[i];
+      let u = d[0], v = d[1], w = d[2];
+      // 1. Apply backspin around X axis
+      const v1 = v * cosB - w * sinB;
+      const w1 = v * sinB + w * cosB;
+      // 2. Side-spin around Z axis (the camera-forward axis)
+      const u2 = u * cosS - v1 * sinS;
+      const v2 = u * sinS + v1 * cosS;
+      // Visibility — behind-ball points culled.
+      if (w1 <= 0.05) continue;
+      // 3. Rotate (u, v) from travel frame into screen frame.
+      //    Travel direction in screen: (sinT, -cosT).
+      //    Right-of-travel in screen:  (cosT, sinT).
+      //    Point at (u, v) in travel frame → screen:
+      //      dx = u * cosT + v * sinT
+      //      dy = u * sinT - v * cosT
+      const dx = u2 * cosT + v2 * sinT;
+      const dy = u2 * sinT - v2 * cosT;
+      // 0.85 = subtle surface compression so dimples near the edge
+      // don't overflow the AA circle.
+      const sx = x + dx * r * 0.85;
+      const sy = cy + dy * r * 0.85;
+      const dot = Math.max(0.4, r * 0.16 * w1);
+      ctx.beginPath();
+      ctx.arc(sx, sy, dot, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   // Soft shaded bottom-right.
   ctx.fillStyle = COLORS.ballShadow;
@@ -5464,16 +5525,27 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
             // lost the crosshair on a H2 driver carry.)
             const lx = ball.x + Math.sin(sw.aimAngle) * clubCarryPx;
             const ly = ball.y - Math.cos(sw.aimAngle) * clubCarryPx;
-            // v0.79 — centre the aim crosshair dead-on in the viewport.
-            // Follow the landing spot 100% and zero the anchor offsets
-            // so the crosshair is right at the middle of the screen.
-            // Trade-off: ball may sit off-screen on long shots; user
-            // prefers aim-in-the-middle over keeping both endpoints in
-            // frame.
+            // v0.82 — aim-camera overhaul. The aim crosshair (landing
+            // spot) lands at a specific "comfortable-to-look-at"
+            // position on screen — NOT dead-centre.
+            //   Portrait (phone): upper-middle, ~30% from top.
+            //   Landscape (tablet): right-side, vertically centred.
+            // This mimics how a real golfer sights the target — the
+            // flag is up-and-away, not right in the middle of vision —
+            // and keeps the bottom of the screen clear for the ball,
+            // pads, club card, and HUD. The anchor offset maths: if
+            // followX is mapped to screen centre (viewW/2), then
+            // adding anchorOffsetX = (targetScreenX - viewW/2) / scale
+            // shifts the followed point rightward by that many world
+            // units. We solve for the desired on-screen target.
             followX = lx;
             followY = ly;
-            anchorOffsetX = 0;
-            anchorOffsetY = 0;
+            const AIM_TARGET_X_FRAC = isTabletGS ? 0.68 : 0.50;
+            const AIM_TARGET_Y_FRAC = isTabletGS ? 0.50 : 0.32;
+            const targetScreenX = viewW * AIM_TARGET_X_FRAC;
+            const targetScreenY = viewH * AIM_TARGET_Y_FRAC;
+            anchorOffsetX = (targetScreenX - viewW / 2) / scale;
+            anchorOffsetY = (targetScreenY - viewH / 2) / scale;
           }
         } else if (isBallMoving) {
           // Flight framing: lead the ball aggressively and push it toward
@@ -5655,6 +5727,8 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
           kind: 'ball', x: ball.x, y: ball.y, z: ball.z,
           spinPhase: ball.spinDisplayPhase || 0,
           sideSpin: ball.spinX || 0,
+          vx: ball.vx || 0,
+          vy: ball.vy || 0,
         });
       }
       // Always draw the golfer — players expect to see themselves
@@ -5723,7 +5797,7 @@ function GolfStoryScreenInner({ onExit, selectedGolfer, selectedBag, equipmentCa
         if (d.kind === 'tree') drawTree(ctx, d.x, d.y, swayTime, windStrength, d.variant);
         else if (d.kind === 'bush') drawBush(ctx, d.x, d.y, d.variant, swayTime, windStrength);
         else if (d.kind === 'flag') drawFlag(ctx, d.x, d.y, now, { showPole: d.showPole !== false });
-        else if (d.kind === 'ball') drawBall(ctx, d.x, d.y, d.z || 0, d.spinPhase || 0, d.sideSpin || 0);
+        else if (d.kind === 'ball') drawBall(ctx, d.x, d.y, d.z || 0, d.spinPhase || 0, d.sideSpin || 0, d.vx || 0, d.vy || 0);
         else if (d.kind === 'balldrop') drawBallDropping(ctx, d.x, d.y, d.t);
         else if (d.kind === 'golfer') drawGolfer(ctx, d.x, d.y, d.facing, d.phase, d.swingInfo, d.palette || null, d.facing8 || null);
         else if (d.kind === 'building') drawClubhouseBuilding(ctx, d.x, d.y, d.w, d.h, d.label);
