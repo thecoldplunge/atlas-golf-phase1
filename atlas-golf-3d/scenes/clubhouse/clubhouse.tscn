@@ -1,0 +1,56 @@
+[gd_scene load_steps=8 format=3 uid="uid://bgolfclubhous00"]
+
+[ext_resource type="Script" path="res://scripts/clubhouse.gd" id="1_clubhouse_script"]
+[ext_resource type="PackedScene" uid="uid://bgolfplayer0000" path="res://scenes/player/golfer.tscn" id="2_golfer"]
+[ext_resource type="PackedScene" uid="uid://bgolfcam0000000" path="res://scenes/camera/camera_rig.tscn" id="3_camera"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
+size = Vector2(60, 60)
+
+[sub_resource type="StandardMaterial3D" id="Mat_ground"]
+albedo_color = Color(0.28, 0.55, 0.27, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape_ground"]
+size = Vector3(60, 0.1, 60)
+
+[sub_resource type="Environment" id="Environment_day"]
+background_mode = 1
+background_color = Color(0.58, 0.78, 0.95, 1)
+ambient_light_source = 2
+ambient_light_color = Color(1, 1, 0.92, 1)
+ambient_light_energy = 0.5
+
+[node name="Clubhouse" type="Node3D"]
+script = ExtResource("1_clubhouse_script")
+golfer_path = NodePath("Golfer")
+signs_container = NodePath("Signs")
+npcs_container = NodePath("NPCs")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_day")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.7, -0.5, 0.5, 0, 0.707, 0.707, -0.7, -0.5, 0.5, 0, 20, 0)
+shadow_enabled = true
+
+[node name="Ground" type="StaticBody3D" parent="."]
+collision_layer = 1
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Ground"]
+mesh = SubResource("PlaneMesh_ground")
+surface_material_override/0 = SubResource("Mat_ground")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
+shape = SubResource("BoxShape_ground")
+
+[node name="Signs" type="Node3D" parent="."]
+
+[node name="NPCs" type="Node3D" parent="."]
+
+[node name="Golfer" parent="." instance=ExtResource("2_golfer")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+
+[node name="CameraRig" parent="." instance=ExtResource("3_camera")]
+target_node_path = NodePath("../Golfer")
+target_offset = Vector3(0, 4.5, -6)

@@ -1,0 +1,26 @@
+[gd_scene load_steps=5 format=3 uid="uid://bgolfball00000"]
+
+[ext_resource type="Script" path="res://scripts/ball.gd" id="1_ball_script"]
+
+[sub_resource type="SphereMesh" id="SphereMesh_ball"]
+radius = 0.021
+height = 0.042
+
+[sub_resource type="SphereShape3D" id="SphereShape_ball"]
+radius = 0.021
+
+[sub_resource type="StandardMaterial3D" id="Mat_ball"]
+albedo_color = Color(1, 1, 1, 1)
+
+[node name="Ball" type="RigidBody3D"]
+script = ExtResource("1_ball_script")
+collision_layer = 4
+collision_mask = 1
+physics_material_override = null
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+mesh = SubResource("SphereMesh_ball")
+surface_material_override/0 = SubResource("Mat_ball")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("SphereShape_ball")

@@ -1,0 +1,22 @@
+# Godot-specific
+.import/
+.godot/
+export.cfg
+export_presets.cfg
+
+# Imported translations (automatically generated from CSV files)
+*.translation
+
+# Mono-specific
+.mono/
+data_*/
+mono_crash.*.json
+
+# System/IDE
+.DS_Store
+.vscode/
+.idea/
+
+# Build output
+export/
+build/

@@ -1,0 +1,64 @@
+[gd_scene load_steps=9 format=3 uid="uid://bgolfhole1000"]
+
+[ext_resource type="Script" path="res://scripts/hole.gd" id="1_hole_script"]
+[ext_resource type="PackedScene" uid="uid://bgolfplayer0000" path="res://scenes/player/golfer.tscn" id="2_golfer"]
+[ext_resource type="PackedScene" uid="uid://bgolfball00000" path="res://scenes/ball/ball.tscn" id="3_ball"]
+[ext_resource type="PackedScene" uid="uid://bgolfcam0000000" path="res://scenes/camera/camera_rig.tscn" id="4_camera"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_fairway"]
+size = Vector2(80, 300)
+
+[sub_resource type="StandardMaterial3D" id="Mat_fairway"]
+albedo_color = Color(0.31, 0.58, 0.3, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape_fairway"]
+size = Vector3(80, 0.1, 300)
+
+[sub_resource type="Environment" id="Environment_hole"]
+background_mode = 1
+background_color = Color(0.58, 0.78, 0.95, 1)
+ambient_light_source = 2
+ambient_light_color = Color(1, 1, 0.92, 1)
+ambient_light_energy = 0.5
+
+[node name="HoleOne" type="Node3D"]
+script = ExtResource("1_hole_script")
+hole_idx = 0
+golfer_path = NodePath("Golfer")
+ball_path = NodePath("Ball")
+camera_path = NodePath("CameraRig")
+flag_path = NodePath("Flag")
+ground_path = NodePath("Ground")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_hole")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.7, -0.5, 0.5, 0, 0.707, 0.707, -0.7, -0.5, 0.5, 0, 40, 0)
+shadow_enabled = true
+
+[node name="Ground" type="StaticBody3D" parent="."]
+collision_layer = 1
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Ground"]
+mesh = SubResource("PlaneMesh_fairway")
+surface_material_override/0 = SubResource("Mat_fairway")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
+shape = SubResource("BoxShape_fairway")
+
+[node name="Flag" type="Node3D" parent="."]
+
+[node name="Pole" type="MeshInstance3D" parent="Flag"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+mesh = SubResource("PlaneMesh_fairway")
+visible = false
+
+[node name="Ball" parent="." instance=ExtResource("3_ball")]
+
+[node name="Golfer" parent="." instance=ExtResource("2_golfer")]
+ball_path = NodePath("../Ball")
+
+[node name="CameraRig" parent="." instance=ExtResource("4_camera")]
+target_node_path = NodePath("../Ball")

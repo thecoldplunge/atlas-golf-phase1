@@ -1,0 +1,63 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+
+config_version=5
+
+[application]
+
+config/name="Atlas Golf 3D"
+config/description="3D Godot 4 port of the Golf Story prototype — swipe-tempo swing, rate-based aim joystick, walkable clubhouse + driving range + putting green + multi-hole match play. Carry math, shot-type profiles, tempo window, and clubhouse NPC/shop flows ported from the JS spike (atlas-golf-phase1)."
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.2", "Forward Plus")
+config/icon="res://icon.svg"
+
+[autoload]
+
+GameState="*res://scripts/game_state.gd"
+Constants="*res://data/constants.gd"
+Clubs="*res://data/clubs.gd"
+ShotTypes="*res://data/shot_types.gd"
+Surfaces="*res://data/surfaces.gd"
+Holes="*res://data/holes.gd"
+ShopCatalog="*res://data/shop_catalog.gd"
+NpcDialog="*res://data/npc_dialog.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="viewport"
+window/stretch/aspect="expand"
+
+[input]
+
+; Walk joystick (keyboard fallback). Stick input comes from a virtual
+; pad in the HUD; these bindings let you test on desktop without a
+; touch screen.
+walk_up={"deadzone": 0.2, "events": [{"device": 0, "physical_keycode": 87, "type": "InputEventKey"}, {"device": 0, "physical_keycode": 4194320, "type": "InputEventKey"}]}
+walk_down={"deadzone": 0.2, "events": [{"device": 0, "physical_keycode": 83, "type": "InputEventKey"}, {"device": 0, "physical_keycode": 4194322, "type": "InputEventKey"}]}
+walk_left={"deadzone": 0.2, "events": [{"device": 0, "physical_keycode": 65, "type": "InputEventKey"}, {"device": 0, "physical_keycode": 4194319, "type": "InputEventKey"}]}
+walk_right={"deadzone": 0.2, "events": [{"device": 0, "physical_keycode": 68, "type": "InputEventKey"}, {"device": 0, "physical_keycode": 4194321, "type": "InputEventKey"}]}
+aim_left={"deadzone": 0.2, "events": [{"device": 0, "physical_keycode": 81, "type": "InputEventKey"}]}
+aim_right={"deadzone": 0.2, "events": [{"device": 0, "physical_keycode": 69, "type": "InputEventKey"}]}
+tee_off={"deadzone": 0.5, "events": [{"device": 0, "physical_keycode": 32, "type": "InputEventKey"}]}
+interact={"deadzone": 0.5, "events": [{"device": 0, "physical_keycode": 70, "type": "InputEventKey"}]}
+camera_toggle={"deadzone": 0.5, "events": [{"device": 0, "physical_keycode": 86, "type": "InputEventKey"}]}
+
+[layer_names]
+
+3d_physics/layer_1="world"
+3d_physics/layer_2="player"
+3d_physics/layer_3="ball"
+3d_physics/layer_4="interaction"
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
+anti_aliasing/quality/msaa_3d=2
+
+[physics]
+
+3d/default_gravity=9.8

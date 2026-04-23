@@ -1,0 +1,33 @@
+[gd_scene load_steps=6 format=3 uid="uid://bgolfplayer0000"]
+
+[ext_resource type="Script" path="res://scripts/golfer.gd" id="1_golfer_script"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape_golfer"]
+radius = 0.35
+height = 1.75
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_golfer"]
+radius = 0.35
+height = 1.75
+
+[sub_resource type="StandardMaterial3D" id="Mat_shirt"]
+albedo_color = Color(0.42, 0.23, 0.64, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_pants"]
+albedo_color = Color(0.77, 0.65, 0.44, 1)
+
+[node name="Golfer" type="CharacterBody3D"]
+script = ExtResource("1_golfer_script")
+collision_layer = 2
+collision_mask = 1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.88, 0)
+shape = SubResource("CapsuleShape_golfer")
+
+[node name="Mesh" type="Node3D" parent="."]
+
+[node name="Body" type="MeshInstance3D" parent="Mesh"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.88, 0)
+mesh = SubResource("CapsuleMesh_golfer")
+surface_material_override/0 = SubResource("Mat_shirt")

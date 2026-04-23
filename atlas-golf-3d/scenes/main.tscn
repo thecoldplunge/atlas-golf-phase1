@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3 uid="uid://bgolfmain00000"]
+
+[ext_resource type="PackedScene" uid="uid://bgolfclubhous00" path="res://scenes/clubhouse/clubhouse.tscn" id="1_clubhouse"]
+
+[node name="Main" type="Node"]
+
+[node name="Clubhouse" parent="." instance=ExtResource("1_clubhouse")]

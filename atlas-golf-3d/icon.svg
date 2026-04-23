@@ -1,0 +1,6 @@
+<svg width="128" height="128" xmlns="http://www.w3.org/2000/svg">
+  <rect width="128" height="128" fill="#0e1a12"/>
+  <circle cx="64" cy="64" r="36" fill="none" stroke="#88f8bb" stroke-width="4"/>
+  <circle cx="64" cy="64" r="8" fill="#fbe043"/>
+  <text x="64" y="120" font-family="monospace" font-size="12" font-weight="900" fill="#88f8bb" text-anchor="middle">ATLAS 3D</text>
+</svg>
