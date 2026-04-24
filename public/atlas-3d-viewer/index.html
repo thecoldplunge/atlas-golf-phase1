@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Atlas 3D · Animation Viewer</title>
+    <style>
+      :root {
+        --bg: #0b1220;
+        --bg-2: #0f1a2e;
+        --ink: #dce7ff;
+        --ink-dim: #7b8fb5;
+        --accent: #4ade80;
+        --accent-dim: #1c6c3d;
+        --danger: #ef4444;
+        --btn-bg: rgba(20, 32, 56, 0.85);
+        --btn-border: rgba(120, 160, 220, 0.35);
+        --btn-bg-active: rgba(74, 222, 128, 0.18);
+        --btn-border-active: rgba(74, 222, 128, 0.8);
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: radial-gradient(ellipse at 50% 30%, var(--bg-2) 0%, var(--bg) 75%);
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+        overflow: hidden;
+        overscroll-behavior: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      canvas { display: block; touch-action: none; }
+      #stage {
+        position: fixed;
+        inset: 0;
+      }
+      #hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+                 max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+      }
+      #hud > * { pointer-events: auto; }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+      .title {
+        font-size: 12px;
+        letter-spacing: 0.15em;
+        color: var(--ink-dim);
+        text-transform: uppercase;
+      }
+      .title b {
+        color: var(--ink);
+        margin-right: 6px;
+      }
+      #back {
+        font: inherit;
+        background: var(--btn-bg);
+        border: 1px solid var(--btn-border);
+        color: var(--ink);
+        padding: 8px 12px;
+        border-radius: 10px;
+        letter-spacing: 0.12em;
+        font-size: 11px;
+        text-transform: uppercase;
+        text-decoration: none;
+      }
+      #controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+        padding-top: 8px;
+      }
+      .anim-btn {
+        font: inherit;
+        min-height: 44px;
+        min-width: 72px;
+        padding: 10px 14px;
+        border-radius: 12px;
+        background: var(--btn-bg);
+        border: 1px solid var(--btn-border);
+        color: var(--ink);
+        font-size: 13px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+      }
+      .anim-btn:active { transform: scale(0.97); }
+      .anim-btn.active {
+        background: var(--btn-bg-active);
+        border-color: var(--btn-border-active);
+        color: var(--accent);
+      }
+      #loading {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: var(--bg);
+        transition: opacity 400ms ease;
+        z-index: 10;
+      }
+      #loading.hidden { opacity: 0; pointer-events: none; }
+      .loader-ring {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        border: 3px solid rgba(120, 160, 220, 0.25);
+        border-top-color: var(--accent);
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      #loading .label {
+        font-size: 12px;
+        letter-spacing: 0.2em;
+        color: var(--ink-dim);
+        text-transform: uppercase;
+      }
+      #hint {
+        font-size: 10px;
+        letter-spacing: 0.15em;
+        color: var(--ink-dim);
+        text-align: center;
+        padding-top: 6px;
+        text-transform: uppercase;
+      }
+      #error {
+        position: fixed;
+        left: 16px;
+        right: 16px;
+        bottom: 24px;
+        padding: 14px 16px;
+        border-radius: 10px;
+        background: rgba(239, 68, 68, 0.15);
+        border: 1px solid rgba(239, 68, 68, 0.5);
+        color: #fecaca;
+        font-size: 12px;
+        line-height: 1.4;
+        display: none;
+        white-space: pre-wrap;
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="stage"></div>
+
+    <div id="hud">
+      <header>
+        <div class="title"><b>ATLAS 3D</b> <span id="anim-label">loading…</span></div>
+        <a id="back" href="/">Close</a>
+      </header>
+
+      <div>
+        <div id="hint">LMB/1-finger rotate · wheel/pinch zoom · RMB/2-fingers pan</div>
+        <div id="controls" role="toolbar" aria-label="Animations"></div>
+      </div>
+    </div>
+
+    <div id="loading">
+      <div class="loader-ring"></div>
+      <div class="label">Loading Atlas 3D…</div>
+    </div>
+
+    <div id="error"></div>
+
+    <script type="module">
+      import * as THREE from 'three';
+      import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+      const MANIFEST_URL = '/models/atlas-3d/index.json';
+      const stage = document.getElementById('stage');
+      const controlsEl = document.getElementById('controls');
+      const loadingEl = document.getElementById('loading');
+      const errorEl = document.getElementById('error');
+      const animLabel = document.getElementById('anim-label');
+
+      const showError = (msg) => {
+        errorEl.style.display = 'block';
+        errorEl.textContent = msg;
+        console.error(msg);
+      };
+
+      async function main() {
+        const manifestRes = await fetch(MANIFEST_URL, { cache: 'no-store' });
+        if (!manifestRes.ok) throw new Error(`Manifest fetch failed: ${manifestRes.status}`);
+        const manifest = await manifestRes.json();
+
+        // Resolve GLB paths relative to the manifest's URL so the manifest
+        // stays portable if moved.
+        const manifestUrl = new URL(MANIFEST_URL, location.href);
+        const basePath = new URL(manifest.assets.base.path, manifestUrl).pathname;
+        const animsPath = new URL(manifest.assets.animations.path, manifestUrl).pathname;
+
+        // ── Renderer ─────────────────────────────────────────────
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.05;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        stage.appendChild(renderer.domElement);
+
+        // ── Scene ────────────────────────────────────────────────
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0b1220);
+        scene.fog = new THREE.Fog(0x0b1220, 8, 30);
+
+        const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.01, 100);
+        camera.position.set(0.0, 1.6, 3.2);
+
+        // ── Lights ───────────────────────────────────────────────
+        const hemi = new THREE.HemisphereLight(0xbcd5ff, 0x263040, 0.55);
+        scene.add(hemi);
+
+        const key = new THREE.DirectionalLight(0xfff4e0, 1.3);
+        key.position.set(3, 5, 2.5);
+        key.castShadow = true;
+        key.shadow.mapSize.set(2048, 2048);
+        key.shadow.bias = -0.0005;
+        key.shadow.camera.near = 0.5;
+        key.shadow.camera.far = 20;
+        key.shadow.camera.left = -4;
+        key.shadow.camera.right = 4;
+        key.shadow.camera.top = 4;
+        key.shadow.camera.bottom = -4;
+        scene.add(key);
+
+        const rim = new THREE.DirectionalLight(0x6aa9ff, 0.45);
+        rim.position.set(-3, 3, -3);
+        scene.add(rim);
+
+        // ── Ground ───────────────────────────────────────────────
+        const ground = new THREE.Mesh(
+          new THREE.CircleGeometry(8, 64),
+          new THREE.MeshStandardMaterial({ color: 0x0e1a2c, roughness: 1.0, metalness: 0.0 })
+        );
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        const grid = new THREE.GridHelper(8, 16, 0x1a2d4e, 0x14233f);
+        grid.position.y = 0.001;
+        scene.add(grid);
+
+        // ── Load base model + animation library ──────────────────
+        const loader = new GLTFLoader();
+        const [baseGltf, animGltf] = await Promise.all([
+          loader.loadAsync(basePath),
+          loader.loadAsync(animsPath),
+        ]);
+
+        const character = baseGltf.scene;
+        character.traverse((o) => {
+          if (o.isMesh) {
+            o.castShadow = true;
+            o.receiveShadow = true;
+            if (o.material) {
+              o.material.envMapIntensity = 0.6;
+              if (o.material.map) o.material.map.colorSpace = THREE.SRGBColorSpace;
+            }
+          }
+        });
+
+        // Auto-fit: normalize to unit height so camera framing is predictable
+        // regardless of source export units.
+        const bbox = new THREE.Box3().setFromObject(character);
+        const size = bbox.getSize(new THREE.Vector3());
+        const targetHeight = 1.7; // meters
+        const scale = targetHeight / Math.max(size.y, 1e-6);
+        character.scale.setScalar(scale);
+        // Re-measure + drop to ground
+        const bbox2 = new THREE.Box3().setFromObject(character);
+        character.position.y -= bbox2.min.y;
+        scene.add(character);
+
+        // ── Animation mixer + actions keyed by manifest id ──────
+        const mixer = new THREE.AnimationMixer(character);
+        const clipByName = Object.fromEntries(animGltf.animations.map((c) => [c.name, c]));
+        const actions = {};
+        const missing = [];
+
+        for (const a of manifest.animations) {
+          if (!a.sourceClipName) continue; // 'idle' has no source clip
+          const clip = clipByName[a.sourceClipName];
+          if (!clip) { missing.push(a.sourceClipName); continue; }
+          const action = mixer.clipAction(clip);
+          action.loop = THREE[a.loop] ?? THREE.LoopRepeat;
+          if (a.clampWhenFinished) action.clampWhenFinished = true;
+          actions[a.id] = { action, meta: a };
+        }
+        if (missing.length) {
+          showError(`Missing clips in animations GLB: ${missing.join(', ')}`);
+        }
+
+        // ── OrbitControls: explicit mouse + touch mapping ───────
+        const orbit = new OrbitControls(camera, renderer.domElement);
+        orbit.target.set(0, targetHeight * 0.55, 0);
+        orbit.enableDamping = true;
+        orbit.dampingFactor = 0.08;
+        orbit.minDistance = 1.0;
+        orbit.maxDistance = 8.0;
+        orbit.maxPolarAngle = Math.PI * 0.495;
+        orbit.screenSpacePanning = true;
+        // Mouse:  L=rotate, wheel=zoom, R=pan
+        orbit.mouseButtons = {
+          LEFT:   THREE.MOUSE.ROTATE,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT:  THREE.MOUSE.PAN,
+        };
+        // Touch:  1-finger=rotate, 2-finger=dolly+pan (pinch zoom + pan)
+        orbit.touches = {
+          ONE: THREE.TOUCH.ROTATE,
+          TWO: THREE.TOUCH.DOLLY_PAN,
+        };
+        orbit.update();
+
+        // ── Build animation buttons from manifest ───────────────
+        let currentId = null;
+        const setActiveButton = (id) => {
+          controlsEl.querySelectorAll('.anim-btn').forEach((b) => {
+            b.classList.toggle('active', b.dataset.id === id);
+          });
+        };
+
+        const playAnim = (id) => {
+          if (currentId === id) return;
+          const next = actions[id];
+          const prev = currentId ? actions[currentId] : null;
+          const fade = 0.25;
+
+          if (prev) prev.action.fadeOut(fade);
+
+          if (next) {
+            next.action.reset();
+            next.action.fadeIn(fade);
+            next.action.play();
+          }
+
+          currentId = id;
+          setActiveButton(id);
+          animLabel.textContent = (next?.meta?.label ?? 'Idle').toUpperCase();
+        };
+
+        for (const a of manifest.animations) {
+          if (a.id !== 'idle' && !actions[a.id]) continue; // skip missing clips
+          const btn = document.createElement('button');
+          btn.className = 'anim-btn';
+          btn.dataset.id = a.id;
+          btn.textContent = a.label;
+          btn.addEventListener('click', () => playAnim(a.id));
+          controlsEl.appendChild(btn);
+        }
+
+        // Auto-return oneShot animations to idle (or specified onFinish)
+        mixer.addEventListener('finished', (e) => {
+          const finishedEntry = Object.values(actions).find((v) => v.action === e.action);
+          if (!finishedEntry) return;
+          const meta = finishedEntry.meta;
+          const graph = manifest.states?.graph?.[meta.id];
+          const onFinish = graph?.onFinish;
+          if (graph?.oneShot) {
+            if (onFinish === 'idle' || !onFinish) playAnim('idle');
+          }
+        });
+
+        const defaultId = manifest.states?.initial
+          ?? (manifest.animations.find((a) => a.isDefault)?.id)
+          ?? 'idle';
+        playAnim(defaultId);
+
+        // ── Resize ──────────────────────────────────────────────
+        const onResize = () => {
+          const w = window.innerWidth, h = window.innerHeight;
+          camera.aspect = w / h;
+          camera.updateProjectionMatrix();
+          renderer.setSize(w, h);
+          renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        };
+        window.addEventListener('resize', onResize);
+        window.addEventListener('orientationchange', onResize);
+
+        // ── Render loop ─────────────────────────────────────────
+        const clock = new THREE.Clock();
+        const tick = () => {
+          const dt = clock.getDelta();
+          mixer.update(dt);
+          orbit.update();
+          renderer.render(scene, camera);
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+
+        // ── Hide loading ────────────────────────────────────────
+        loadingEl.classList.add('hidden');
+        setTimeout(() => loadingEl.remove(), 500);
+      }
+
+      main().catch((err) => {
+        loadingEl.classList.add('hidden');
+        showError(`Failed to load Atlas 3D viewer:\n${err?.message || err}`);
+      });
+    </script>
+  </body>
+</html>

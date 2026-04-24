@@ -1,0 +1,2374 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Atlas 3D · Hole 1 · Par 4</title>
+    <style>
+      :root {
+        --sky: #a6d7ff;
+        --ink: #0c1a2a;
+        --accent: #4ade80;
+        --accent-dim: #1c6c3d;
+        --power: #f59e0b;
+        --danger: #ef4444;
+        --panel: rgba(12, 26, 42, 0.72);
+        --panel-border: rgba(255, 255, 255, 0.18);
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: var(--sky);
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+        overflow: hidden;
+        overscroll-behavior: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      canvas { display: block; touch-action: none; }
+      #stage { position: fixed; inset: 0; }
+
+      #hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+                 max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+      }
+      #hud > * { pointer-events: auto; }
+
+      header { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+      .pill {
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        color: #fff;
+        padding: 8px 12px;
+        border-radius: 10px;
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        text-decoration: none;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+      }
+      .scorecard { display: flex; gap: 6px; }
+      .score-cell {
+        min-width: 54px;
+        text-align: center;
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        color: #fff;
+        padding: 8px 10px;
+        border-radius: 10px;
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+      }
+      .score-cell b { display: block; color: var(--accent); font-size: 18px; letter-spacing: 0; }
+      .score-cell.dist b { color: #fff; font-size: 16px; }
+      .score-cell.lie b { font-size: 12px; padding-top: 3px; }
+
+      #footer { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+
+      /* Collapsed club display — just shows the currently-selected club */
+      #club-current {
+        min-width: 96px;
+        min-height: 48px;
+        padding: 8px 16px;
+        border-radius: 12px;
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        color: #fff;
+        font: inherit;
+        font-size: 12px;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+      }
+      #club-current .name { font-size: 14px; letter-spacing: 0.2em; color: var(--accent); }
+      #club-current .yd { font-size: 10px; color: #cdd9e8; }
+
+      /* Vertical expanding menu above the current-club button */
+      #club-menu {
+        position: fixed;
+        left: 50%;
+        transform: translateX(-50%);
+        bottom: calc(184px + env(safe-area-inset-bottom));
+        display: none;
+        flex-direction: column;
+        gap: 4px;
+        max-height: 56vh;
+        overflow-y: auto;
+        padding: 8px;
+        border-radius: 14px;
+        background: rgba(12, 26, 42, 0.92);
+        border: 1px solid var(--panel-border);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        z-index: 20;
+        scrollbar-width: none;
+      }
+      #club-menu.open { display: flex; }
+      #club-menu::-webkit-scrollbar { display: none; }
+
+      #aim-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        justify-content: center;
+      }
+      #shape-row {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        justify-content: center;
+      }
+      .shape-btn {
+        min-width: 78px;
+        min-height: 40px;
+        padding: 6px 10px;
+        border-radius: 10px;
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        color: #fff;
+        font: inherit;
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1px;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+      }
+      .shape-btn .lbl { font-size: 9px; color: #9db2cc; letter-spacing: 0.14em; }
+      .shape-btn .val { font-size: 12px; letter-spacing: 0.16em; color: var(--accent); }
+      .shape-btn:active { transform: scale(0.97); }
+      #aim {
+        font: inherit;
+        min-height: 48px;
+        min-width: 100px;
+        padding: 10px 18px;
+        border-radius: 999px;
+        background: var(--panel);
+        border: 2px solid var(--panel-border);
+        color: #fff;
+        font-size: 13px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        cursor: pointer;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+      }
+      #aim.active {
+        background: rgba(255, 235, 59, 0.22);
+        border-color: #ffeb3b;
+        color: #ffeb3b;
+        box-shadow: 0 0 0 3px rgba(255, 235, 59, 0.15);
+      }
+      .club-btn {
+        min-width: 150px;
+        min-height: 44px;
+        padding: 8px 14px;
+        border-radius: 10px;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.08);
+        color: #fff;
+        font: inherit;
+        font-size: 11px;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .club-btn .name { font-size: 13px; letter-spacing: 0.18em; color: #fff; }
+      .club-btn .yd   { color: #9db2cc; font-size: 10px; letter-spacing: 0.1em; }
+      .club-btn.active {
+        background: rgba(74, 222, 128, 0.22);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .club-btn.active .yd { color: var(--accent); }
+      .club-btn:disabled { opacity: 0.35; cursor: default; }
+
+      #hint {
+        color: #fff;
+        font-size: 10px;
+        letter-spacing: 0.15em;
+        text-align: center;
+        text-transform: uppercase;
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        padding: 6px 10px;
+        border-radius: 999px;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+      }
+
+      #swing {
+        position: relative;
+        min-width: 220px;
+        min-height: 68px;
+        border-radius: 999px;
+        border: 2px solid rgba(255, 255, 255, 0.6);
+        background: linear-gradient(180deg, #1c6c3d 0%, #0e4426 100%);
+        color: #fff;
+        font: inherit;
+        font-size: 16px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        cursor: pointer;
+        overflow: hidden;
+        touch-action: none;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+      }
+      #swing:disabled { opacity: 0.5; cursor: default; }
+      #swing .label { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; }
+      #swing .meter {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, var(--accent) 0%, var(--power) 60%, var(--danger) 100%);
+        transform-origin: left center;
+        transform: scaleX(0);
+        opacity: 0.85;
+      }
+
+      #toast {
+        position: fixed;
+        top: 30%;
+        left: 50%;
+        transform: translate(-50%, -50%) scale(0.9);
+        background: rgba(12, 26, 42, 0.92);
+        color: #fff;
+        padding: 22px 32px;
+        border-radius: 18px;
+        border: 2px solid var(--accent);
+        font-size: 22px;
+        letter-spacing: 0.18em;
+        text-align: center;
+        text-transform: uppercase;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 260ms ease, transform 260ms ease;
+      }
+      #toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      #toast small { display: block; margin-top: 8px; font-size: 12px; letter-spacing: 0.12em; color: var(--accent); }
+
+      #loading {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: var(--sky);
+        color: var(--ink);
+        transition: opacity 400ms ease;
+        z-index: 10;
+      }
+      #loading.hidden { opacity: 0; pointer-events: none; }
+      .loader-ring {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        border: 3px solid rgba(12, 26, 42, 0.2);
+        border-top-color: var(--accent-dim);
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      #loading .label { font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; }
+
+      #error {
+        position: fixed;
+        left: 16px;
+        right: 16px;
+        bottom: 24px;
+        padding: 14px 16px;
+        border-radius: 10px;
+        background: #ffd9d9;
+        border: 1px solid rgba(239, 68, 68, 0.55);
+        color: #7a0a0a;
+        font-size: 12px;
+        line-height: 1.4;
+        display: none;
+        white-space: pre-wrap;
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/",
+          "three/addons/utils/BufferGeometryUtils.js": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/utils/BufferGeometryUtils.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="stage"></div>
+
+    <div id="hud">
+      <header>
+        <a class="pill" href="/" id="back">‹ Close</a>
+        <div class="scorecard">
+          <div class="score-cell"><b id="hole-par">4</b>PAR</div>
+          <div class="score-cell"><b id="hole-strokes">0</b>STROKES</div>
+          <div class="score-cell dist"><b id="hole-dist">—</b>YD TO PIN</div>
+          <div class="score-cell lie"><b id="hole-lie">TEE</b>LIE</div>
+        </div>
+      </header>
+
+      <div id="footer">
+        <div id="shape-row">
+          <button class="shape-btn" id="btn-power"><span class="lbl">PWR</span><span class="val" id="val-power">100%</span></button>
+          <button class="shape-btn" id="btn-loft"><span class="lbl">LOFT</span><span class="val" id="val-loft">STD</span></button>
+          <button class="shape-btn" id="btn-curve"><span class="lbl">SHAPE</span><span class="val" id="val-curve">STR</span></button>
+        </div>
+        <button id="club-current" aria-label="Current club — tap to change">
+          <span class="name" id="club-current-name">—</span>
+          <span class="yd" id="club-current-yd">— yd</span>
+        </button>
+        <div id="aim-row">
+          <button id="aim" aria-label="Aim mode">AIM</button>
+        </div>
+        <button id="swing" aria-label="Swing">
+          <div class="meter" id="meter"></div>
+          <div class="label"><span id="swing-label">HOLD TO SWING</span></div>
+        </button>
+      </div>
+
+      <div id="club-menu" role="menu" aria-label="Select club"></div>
+    </div>
+
+    <div id="toast"><span id="toast-text"></span><small id="toast-sub"></small></div>
+    <div id="loading">
+      <div class="loader-ring"></div>
+      <div class="label">Loading hole…</div>
+    </div>
+    <div id="error"></div>
+
+    <script type="module">
+      import * as THREE from 'three';
+      import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+      import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+      // ═════════════════ Constants & course design ═════════════════
+      const M_PER_YARD = 0.9144;
+      const YD = (m) => m / M_PER_YARD;
+      const BALL_RADIUS = 0.04;              // real ball + 10% for visibility
+      const CHAR_HEIGHT = 1.7;
+      const GRAVITY = 14.0;                  // arcade, not real
+      // (legacy const kept for readability; real cup uses CUP_RADIUS_PHYS)
+      const PUTT_MAX_M = 25;                 // putter max distance (meters)
+      const CUP_RADIUS_PHYS = 0.15;          // physical cup capture radius (m) — bigger + forgiving
+      const MAX_SINK_SPEED = 4.0;            // m/s — lips out only if faster
+      const CUP_GRAVITY_RADIUS = 1.6;        // within this, ball is pulled toward cup
+      const CUP_GRAVITY_STRENGTH = 3.5;      // m/s² at edge, scales with proximity
+
+      // Hand-designed holes, in meters. +X right, -Z forward, Y up.
+      const HOLES = [
+        {
+          name: 'Hole 1 · Pine Hollow',
+          par: 4,
+          tee:       { x: 0, z: 0, w: 6, h: 3 },
+          ballStart: { x: 0, z: -1.5 },
+          cup:       { x: 6, z: -250 },
+          green:     { x: 4, z: -248, rx: 11, rz: 13 },
+          fairway: [
+            { x: 0, z: -3 }, { x: 0, z: -60 }, { x: 2, z: -120 },
+            { x: 6, z: -180 }, { x: 7, z: -230 },
+          ],
+          fairwayWidth: 26,
+          bunkers: [
+            { x: 17, z: -185, rx: 5, rz: 7 },
+            { x: -6, z: -243, rx: 5, rz: 5 },
+            { x: 14, z: -258, rx: 4, rz: 4 },
+          ],
+          water: [],
+          treeClusters: [
+            { x: -14, z: -30, n: 8, spread: 6 },
+            { x: -18, z: -90, n: 10, spread: 8 },
+            { x: -20, z: -160, n: 12, spread: 10 },
+            { x: -22, z: -220, n: 8, spread: 7 },
+            { x: 22, z: -40, n: 6, spread: 6 },
+            { x: 28, z: -110, n: 10, spread: 10 },
+            { x: 30, z: -200, n: 8, spread: 8 },
+            { x: 26, z: -260, n: 6, spread: 6 },
+          ],
+          dropZone: { x: 0, z: -120 },
+        },
+        {
+          name: 'Hole 2 · Bent Elbow',
+          par: 5,
+          tee:       { x: 0, z: 0, w: 6, h: 3 },
+          ballStart: { x: 0, z: -1.5 },
+          cup:       { x: -74, z: -455 },
+          green:     { x: -72, z: -453, rx: 12, rz: 13 },
+          // dogleg left: starts straight, bends hard left around z≈-240, runs SW to green
+          fairway: [
+            { x: 0,   z: -3 },
+            { x: 0,   z: -80 },
+            { x: -4,  z: -170 },
+            { x: -16, z: -240 },
+            { x: -40, z: -320 },
+            { x: -60, z: -400 },
+            { x: -70, z: -438 },
+          ],
+          fairwayWidth: 28,
+          bunkers: [
+            { x: 10,  z: -225, rx: 6, rz: 7 },   // outside dogleg corner (tempts cut)
+            { x: -30, z: -290, rx: 5, rz: 6 },   // inside fairway bunker
+            { x: -88, z: -448, rx: 5, rz: 5 },   // greenside back-left
+            { x: -62, z: -478, rx: 4, rz: 4 },   // greenside long
+          ],
+          water: [
+            { x: -58, z: -430, rx: 14, rz: 6 },  // pond in front of green
+          ],
+          treeClusters: [
+            // right side of fairway (outside dogleg) — penalizes straight shot
+            { x: 18,  z: -60,  n: 8,  spread: 7 },
+            { x: 22,  z: -150, n: 10, spread: 9 },
+            { x: 24,  z: -260, n: 10, spread: 9 },
+            // left side (inside dogleg, blocking the cut)
+            { x: -26, z: -90,  n: 10, spread: 8 },
+            { x: -40, z: -170, n: 10, spread: 9 },
+            { x: -60, z: -240, n: 10, spread: 9 },
+            // along second leg
+            { x: -82, z: -320, n: 10, spread: 10 },
+            { x: -20, z: -380, n: 8, spread: 9 },
+            { x: -92, z: -440, n: 8, spread: 8 },
+            { x: -52, z: -490, n: 8, spread: 8 },
+            { x: -92, z: -490, n: 6, spread: 6 },
+          ],
+          dropZone: { x: -44, z: -398 }, // if in water, drop here
+        },
+      ];
+
+      // Full 14-club bag. carryRatio is carry / total; rest becomes roll+bounce.
+      // spin 0..1 — low for woods (run out), high for wedges (grab on green).
+      const CLUBS = [
+        { id: 'driver', name: 'Driver', maxYd: 260, angleDeg: 11, scatter: 0.09, teeOnly: true, spin: 0.22, carryRatio: 0.87 },
+        { id: '3wood',  name: '3W',     maxYd: 240, angleDeg: 14, scatter: 0.08,                 spin: 0.30, carryRatio: 0.88 },
+        { id: '5wood',  name: '5W',     maxYd: 225, angleDeg: 16, scatter: 0.075,                spin: 0.34, carryRatio: 0.89 },
+        { id: '4iron',  name: '4i',     maxYd: 195, angleDeg: 20, scatter: 0.065,                spin: 0.46, carryRatio: 0.92 },
+        { id: '5iron',  name: '5i',     maxYd: 180, angleDeg: 22, scatter: 0.06,                 spin: 0.52, carryRatio: 0.93 },
+        { id: '6iron',  name: '6i',     maxYd: 170, angleDeg: 24, scatter: 0.055,                spin: 0.58, carryRatio: 0.94 },
+        { id: '7iron',  name: '7i',     maxYd: 160, angleDeg: 26, scatter: 0.05,                 spin: 0.65, carryRatio: 0.94 },
+        { id: '8iron',  name: '8i',     maxYd: 150, angleDeg: 28, scatter: 0.05,                 spin: 0.72, carryRatio: 0.95 },
+        { id: '9iron',  name: '9i',     maxYd: 140, angleDeg: 30, scatter: 0.045,                spin: 0.78, carryRatio: 0.95 },
+        { id: 'pw',     name: 'PW',     maxYd: 125, angleDeg: 34, scatter: 0.042,                spin: 0.85, carryRatio: 0.96 },
+        { id: 'gw',     name: 'GW',     maxYd: 110, angleDeg: 38, scatter: 0.04,                 spin: 0.90, carryRatio: 0.96 },
+        { id: 'sw',     name: 'SW',     maxYd: 95,  angleDeg: 42, scatter: 0.038,                spin: 0.94, carryRatio: 0.97 },
+        { id: 'lw',     name: 'LW',     maxYd: 75,  angleDeg: 48, scatter: 0.036,                spin: 0.98, carryRatio: 0.98 },
+        { id: 'putter', name: 'Putt',   maxYd: YD(PUTT_MAX_M), angleDeg: 0, scatter: 0.015, putt: true, spin: 0, carryRatio: 1.0 },
+      ];
+
+      // Ground-interaction physics per lie type.
+      // cor            — coefficient of restitution (vertical bounce keep %)
+      // horizFriction  — horizontal velocity kept per bounce (compensates for
+      //                  our ignored air drag; makes distant shots behave)
+      // rollDecel      — m/s² decel once the ball transitions to rolling
+      // spinBackFactor — scales incoming-spin effect on green-style surfaces
+      const LIE_PHYS = {
+        // horizFriction values compensate for our zero air-drag model, so the
+        // total (carry + bounces + roll) ≈ the club's listed maxYd.
+        fairway: { cor: 0.30, horizFriction: 0.28, rollDecel: 3.2,  spinBackFactor: 0.25 },
+        tee:     { cor: 0.30, horizFriction: 0.28, rollDecel: 3.2,  spinBackFactor: 0.25 },
+        green:   { cor: 0.20, horizFriction: 0.40, rollDecel: 4.0,  spinBackFactor: 1.0 },
+        rough:   { cor: 0.10, horizFriction: 0.15, rollDecel: 8.0,  spinBackFactor: 0.0 },
+        bunker:  { cor: 0.04, horizFriction: 0.08, rollDecel: 14.0, spinBackFactor: 0.0 },
+      };
+      const clubById = Object.fromEntries(CLUBS.map((c) => [c.id, c]));
+
+      // ═════════════════ DOM ═════════════════
+      const stage = document.getElementById('stage');
+      const loadingEl = document.getElementById('loading');
+      const errorEl = document.getElementById('error');
+      const holePar = document.getElementById('hole-par');
+      const holeStrokes = document.getElementById('hole-strokes');
+      const holeDist = document.getElementById('hole-dist');
+      const holeLie = document.getElementById('hole-lie');
+      const swingBtn = document.getElementById('swing');
+      const swingLabel = document.getElementById('swing-label');
+      const meterEl = document.getElementById('meter');
+      const clubsEl = document.getElementById('clubs');
+      const toastEl = document.getElementById('toast');
+      const toastText = document.getElementById('toast-text');
+      const toastSub = document.getElementById('toast-sub');
+
+      const showError = (m) => { errorEl.style.display = 'block'; errorEl.textContent = m; console.error(m); };
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      const lerp = (a, b, t) => a + (b - a) * t;
+      const dist2D = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz);
+
+      function toast(text, sub = '', ms = 2200) {
+        toastText.textContent = text; toastSub.textContent = sub;
+        toastEl.classList.add('show');
+        clearTimeout(toast._t);
+        toast._t = setTimeout(() => toastEl.classList.remove('show'), ms);
+      }
+
+      // ═════════════════ Lie detection ═════════════════
+      // Returns 'tee' | 'green' | 'fairway' | 'bunker' | 'water' | 'rough'.
+      function lieAt(x, z, h) {
+        const t = h.tee;
+        if (x >= t.x - t.w / 2 && x <= t.x + t.w / 2 && z >= t.z - t.h && z <= t.z) return 'tee';
+        const g = h.green;
+        if (((x - g.x) ** 2) / (g.rx * g.rx) + ((z - g.z) ** 2) / (g.rz * g.rz) <= 1) return 'green';
+        for (const b of h.bunkers) {
+          if (((x - b.x) ** 2) / (b.rx * b.rx) + ((z - b.z) ** 2) / (b.rz * b.rz) <= 1) return 'bunker';
+        }
+        for (const w of (h.water || [])) {
+          if (((x - w.x) ** 2) / (w.rx * w.rx) + ((z - w.z) ** 2) / (w.rz * w.rz) <= 1) return 'water';
+        }
+        const pts = h.fairway;
+        const halfW = h.fairwayWidth / 2;
+        for (let i = 0; i < pts.length - 1; i++) {
+          const a = pts[i], b = pts[i + 1];
+          const dx = b.x - a.x, dz = b.z - a.z;
+          const len2 = dx * dx + dz * dz;
+          const t01 = clamp(((x - a.x) * dx + (z - a.z) * dz) / Math.max(len2, 1e-6), 0, 1);
+          const px = a.x + dx * t01, pz = a.z + dz * t01;
+          if (dist2D(x, z, px, pz) <= halfW) return 'fairway';
+        }
+        return 'rough';
+      }
+
+      // Compute bbox of a hole (meters, with padding).
+      function holeBounds(h) {
+        const xs = [h.tee.x, h.cup.x, h.ballStart.x];
+        const zs = [h.tee.z, h.cup.z, h.ballStart.z];
+        for (const f of h.fairway) { xs.push(f.x); zs.push(f.z); }
+        for (const b of [h.green, ...h.bunkers, ...(h.water || [])]) {
+          xs.push(b.x - (b.rx || 0), b.x + (b.rx || 0));
+          zs.push(b.z - (b.rz || 0), b.z + (b.rz || 0));
+        }
+        for (const c of (h.treeClusters || [])) {
+          xs.push(c.x - c.spread, c.x + c.spread);
+          zs.push(c.z - c.spread, c.z + c.spread);
+        }
+        const pad = 24;
+        return {
+          minX: Math.min(...xs) - pad, maxX: Math.max(...xs) + pad,
+          minZ: Math.min(...zs) - pad, maxZ: Math.max(...zs) + pad,
+        };
+      }
+
+      // ═════════════════ Ground texture (baked canvas) ═════════════════
+      function buildGroundTexture(HOLE) {
+        const { minX, maxX, minZ, maxZ } = holeBounds(HOLE);
+        const w = maxX - minX, h = maxZ - minZ;
+        const PX_PER_M = 10;
+        const cw = Math.round(w * PX_PER_M), ch = Math.round(h * PX_PER_M);
+        const canvas = document.createElement('canvas');
+        canvas.width = cw; canvas.height = ch;
+        const ctx = canvas.getContext('2d');
+        const toU = (x) => (x - minX) * PX_PER_M;
+        const toV = (z) => (z - minZ) * PX_PER_M;
+        const rand = (a, b) => a + Math.random() * (b - a);
+
+        // ── Deep rough (base) ──────────────────────────
+        // Layered greens + patches that vary by large perlin-like blocks.
+        ctx.fillStyle = '#3b6a38';
+        ctx.fillRect(0, 0, cw, ch);
+        // Big smooth blotches (darker/lighter patches)
+        for (let i = 0; i < 90; i++) {
+          const rx = rand(40, 160), ry = rand(40, 160);
+          const px = rand(0, cw), py = rand(0, ch);
+          const colors = ['rgba(47,95,47,0.18)', 'rgba(70,120,62,0.14)', 'rgba(38,82,40,0.2)'];
+          ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
+          ctx.beginPath();
+          ctx.ellipse(px, py, rx, ry, Math.random() * Math.PI, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // Grass clump speckle
+        const speckles = Math.floor((cw * ch) / 250);
+        for (let i = 0; i < speckles; i++) {
+          const r = Math.random();
+          ctx.fillStyle = r < 0.33 ? '#2f5a32' : r < 0.66 ? '#4c8548' : '#5d9651';
+          const sx = Math.random() * cw, sy = Math.random() * ch;
+          const sz = 1 + Math.random() * 2;
+          ctx.fillRect(sx, sy, sz, sz);
+        }
+
+        // ── First cut (2nd cut): ring of intermediate rough around fairway ──
+        // A slightly taller/greener band hugging both sides of the fairway.
+        const fp = HOLE.fairway;
+        const FIRST_CUT_EXTRA = 4.5; // meters wider than fairway on each side
+        ctx.save();
+        ctx.strokeStyle = '#4d8a46';
+        ctx.lineWidth = (HOLE.fairwayWidth + FIRST_CUT_EXTRA * 2) * PX_PER_M;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(toU(fp[0].x), toV(fp[0].z));
+        for (let i = 1; i < fp.length; i++) ctx.lineTo(toU(fp[i].x), toV(fp[i].z));
+        ctx.stroke();
+        // Flecks in the first cut for texture
+        ctx.globalAlpha = 0.18;
+        ctx.strokeStyle = '#3c7238';
+        ctx.lineWidth = (HOLE.fairwayWidth + FIRST_CUT_EXTRA * 2 - 1) * PX_PER_M;
+        ctx.setLineDash([4 * PX_PER_M, 3 * PX_PER_M]);
+        ctx.beginPath();
+        ctx.moveTo(toU(fp[0].x), toV(fp[0].z));
+        for (let i = 1; i < fp.length; i++) ctx.lineTo(toU(fp[i].x), toV(fp[i].z));
+        ctx.stroke();
+        ctx.restore();
+
+        // ── Fairway — smooth manicured + mower stripes ───
+        ctx.save();
+        ctx.strokeStyle = '#5fa858';
+        ctx.lineWidth = HOLE.fairwayWidth * PX_PER_M;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(toU(fp[0].x), toV(fp[0].z));
+        for (let i = 1; i < fp.length; i++) ctx.lineTo(toU(fp[i].x), toV(fp[i].z));
+        ctx.stroke();
+        ctx.restore();
+
+        // Alternating mower stripes: darker/lighter bands along fairway length
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        // light stripe
+        ctx.globalAlpha = 0.14;
+        ctx.strokeStyle = '#76c063';
+        ctx.lineWidth = (HOLE.fairwayWidth - 6) * PX_PER_M;
+        ctx.setLineDash([7 * PX_PER_M, 7 * PX_PER_M]);
+        ctx.lineDashOffset = 0;
+        ctx.beginPath();
+        ctx.moveTo(toU(fp[0].x), toV(fp[0].z));
+        for (let i = 1; i < fp.length; i++) ctx.lineTo(toU(fp[i].x), toV(fp[i].z));
+        ctx.stroke();
+        // darker stripe (offset)
+        ctx.globalAlpha = 0.13;
+        ctx.strokeStyle = '#4b8c48';
+        ctx.lineDashOffset = 7 * PX_PER_M;
+        ctx.beginPath();
+        ctx.moveTo(toU(fp[0].x), toV(fp[0].z));
+        for (let i = 1; i < fp.length; i++) ctx.lineTo(toU(fp[i].x), toV(fp[i].z));
+        ctx.stroke();
+        // fine-grain dots for fairway blade texture
+        ctx.globalAlpha = 0.5;
+        ctx.setLineDash([]);
+        for (let i = 0; i < cw * ch / 600; i++) {
+          ctx.fillStyle = Math.random() > 0.5 ? 'rgba(100,170,90,0.25)' : 'rgba(70,130,65,0.22)';
+          ctx.fillRect(Math.random() * cw, Math.random() * ch, 1, 1);
+        }
+        ctx.restore();
+
+        // ── Tee box: manicured rectangle ────────────────
+        const t = HOLE.tee;
+        ctx.fillStyle = '#81c571';
+        ctx.fillRect(
+          toU(t.x - t.w / 2), toV(t.z - t.h),
+          t.w * PX_PER_M, t.h * PX_PER_M,
+        );
+        // Tee stripes
+        ctx.save();
+        ctx.globalAlpha = 0.18;
+        ctx.fillStyle = '#95d084';
+        for (let i = 0; i < t.h; i += 1.2) {
+          ctx.fillRect(
+            toU(t.x - t.w / 2),
+            toV(t.z - t.h) + i * PX_PER_M,
+            t.w * PX_PER_M, 0.6 * PX_PER_M,
+          );
+        }
+        ctx.restore();
+
+        // ── Green: dappled putting surface with subtle darker rings ──
+        const g = HOLE.green;
+        // Fringe collar (slightly darker/taller than green proper)
+        ctx.fillStyle = '#6aad6f';
+        ctx.beginPath();
+        ctx.ellipse(toU(g.x), toV(g.z), (g.rx + 1.2) * PX_PER_M, (g.rz + 1.2) * PX_PER_M, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Putting surface base
+        ctx.fillStyle = '#8fd196';
+        ctx.beginPath();
+        ctx.ellipse(toU(g.x), toV(g.z), g.rx * PX_PER_M, g.rz * PX_PER_M, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // (Green mow rings removed — they were overpowering and drew through
+        // the cup area. The green's natural speckle gives enough texture.)
+        // Green speckle
+        ctx.save();
+        ctx.beginPath();
+        ctx.ellipse(toU(g.x), toV(g.z), g.rx * PX_PER_M, g.rz * PX_PER_M, 0, 0, Math.PI * 2);
+        ctx.clip();
+        for (let i = 0; i < (g.rx * g.rz * PX_PER_M * PX_PER_M) / 60; i++) {
+          ctx.fillStyle = Math.random() > 0.5 ? 'rgba(140,210,150,0.25)' : 'rgba(108,175,118,0.22)';
+          ctx.fillRect(
+            toU(g.x - g.rx) + Math.random() * 2 * g.rx * PX_PER_M,
+            toV(g.z - g.rz) + Math.random() * 2 * g.rz * PX_PER_M,
+            1, 1,
+          );
+        }
+        ctx.restore();
+
+        // ── Bunkers: texture with ripple + grain ─────────
+        for (const b of HOLE.bunkers) {
+          const ux = toU(b.x), vz = toV(b.z);
+          const rrx = b.rx * PX_PER_M, rrz = b.rz * PX_PER_M;
+          // Darker bunker edge ring (lip)
+          ctx.fillStyle = '#c9b479';
+          ctx.beginPath();
+          ctx.ellipse(ux, vz, rrx + 2, rrz + 2, 0, 0, Math.PI * 2);
+          ctx.fill();
+          // Radial gradient for sand
+          const grad = ctx.createRadialGradient(ux - rrx * 0.25, vz - rrz * 0.25, 0, ux, vz, Math.max(rrx, rrz));
+          grad.addColorStop(0, '#fbeec8');
+          grad.addColorStop(0.6, '#efd9a3');
+          grad.addColorStop(1, '#dcc082');
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.ellipse(ux, vz, rrx, rrz, 0, 0, Math.PI * 2);
+          ctx.fill();
+          // Ripple lines
+          ctx.save();
+          ctx.beginPath();
+          ctx.ellipse(ux, vz, rrx, rrz, 0, 0, Math.PI * 2);
+          ctx.clip();
+          ctx.globalAlpha = 0.18;
+          ctx.strokeStyle = '#b99d63';
+          ctx.lineWidth = 0.5 * PX_PER_M;
+          for (let k = 0; k < 4; k++) {
+            ctx.beginPath();
+            const ox = (Math.random() - 0.5) * rrx * 0.4;
+            const oy = (Math.random() - 0.5) * rrz * 0.4;
+            ctx.ellipse(ux + ox, vz + oy, rrx * (0.3 + k * 0.15), rrz * (0.3 + k * 0.15) * 0.8,
+                        Math.random() * Math.PI, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          // Grain specks
+          ctx.globalAlpha = 0.7;
+          for (let k = 0; k < rrx * rrz / 25; k++) {
+            ctx.fillStyle = Math.random() > 0.5 ? 'rgba(200,170,110,0.35)' : 'rgba(250,230,180,0.4)';
+            ctx.fillRect(
+              ux - rrx + Math.random() * 2 * rrx,
+              vz - rrz + Math.random() * 2 * rrz,
+              1, 1,
+            );
+          }
+          ctx.restore();
+        }
+
+        // water hazards
+        for (const w of (HOLE.water || [])) {
+          const grad = ctx.createRadialGradient(
+            toU(w.x), toV(w.z), 0,
+            toU(w.x), toV(w.z), Math.max(w.rx, w.rz) * PX_PER_M,
+          );
+          grad.addColorStop(0, '#4aa6d8');
+          grad.addColorStop(0.6, '#2f7fb5');
+          grad.addColorStop(1, '#205a85');
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.ellipse(toU(w.x), toV(w.z), w.rx * PX_PER_M, w.rz * PX_PER_M, 0, 0, Math.PI * 2);
+          ctx.fill();
+          // ripple hint
+          ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+          ctx.lineWidth = 0.4 * PX_PER_M;
+          for (let r = 0.25; r < 1; r += 0.25) {
+            ctx.beginPath();
+            ctx.ellipse(toU(w.x), toV(w.z), w.rx * PX_PER_M * r, w.rz * PX_PER_M * r, 0, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+
+        // Paint the cup's mouth solid black FIRST (bottom layer) — guarantees
+        // a dark disc even where mipmap alpha bleed would otherwise show grass.
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(
+          toU(HOLE.cup.x),
+          toV(HOLE.cup.z),
+          (CUP_RADIUS_PHYS + 0.01) * PX_PER_M,
+          0, Math.PI * 2,
+        );
+        ctx.fill();
+
+        // Then cut the cup out — real transparent circle so the cylindrical
+        // shaft underneath is visible as a proper 3D hole.
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.beginPath();
+        ctx.arc(
+          toU(HOLE.cup.x),
+          toV(HOLE.cup.z),
+          CUP_RADIUS_PHYS * PX_PER_M,
+          0, Math.PI * 2,
+        );
+        ctx.fill();
+        ctx.restore();
+
+        return { canvas, minX, maxX, minZ, maxZ };
+      }
+
+      // ═════════════════ Main ═════════════════
+      async function main() {
+        const CHAR_MANIFEST = '/models/atlas-3d/index.json';
+        const manifest = await (await fetch(CHAR_MANIFEST, { cache: 'no-store' })).json();
+
+        // ── Renderer ───────────────────────────
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        stage.appendChild(renderer.domElement);
+
+        // ── Scene ──────────────────────────────
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xa6d7ff);
+        scene.fog = new THREE.Fog(0xa6d7ff, 180, 450);
+
+        const camera = new THREE.PerspectiveCamera(
+          45, window.innerWidth / window.innerHeight, 0.1, 800,
+        );
+
+        // ── Lights ─────────────────────────────
+        // Sun: strongly offset in the sky so shadows look natural (not top-down).
+        const sun = new THREE.DirectionalLight(0xfff2d0, 1.55);
+        sun.position.set(140, 180, -60);
+        sun.target.position.set(0, 0, -150);
+        scene.add(sun.target);
+        sun.castShadow = true;
+        sun.shadow.mapSize.set(2048, 2048);
+        sun.shadow.bias = -0.0003;
+        sun.shadow.camera.near = 1;
+        sun.shadow.camera.far = 500;
+        sun.shadow.camera.left = -100;
+        sun.shadow.camera.right = 100;
+        sun.shadow.camera.top = 60;
+        sun.shadow.camera.bottom = -400;
+        scene.add(sun);
+        scene.add(new THREE.HemisphereLight(0xcfe9ff, 0x2d4a2a, 0.5));
+
+        // Visible sun disc (very subtle) in the sky
+        const sunDisc = new THREE.Mesh(
+          new THREE.CircleGeometry(8, 48),
+          new THREE.MeshBasicMaterial({ color: 0xfff0c0, transparent: true, opacity: 0.85 }),
+        );
+        sunDisc.position.copy(sun.position).normalize().multiplyScalar(260);
+        sunDisc.lookAt(0, 0, 0);
+        scene.add(sunDisc);
+
+        // ── Birds in the sky (persistent across holes) ──
+        const BIRD_COUNT = 7;
+        const birds = [];
+        for (let i = 0; i < BIRD_COUNT; i++) {
+          const verts = new Float32Array([
+            -1.0, 0.0, 0.0,   // 0: Left wing tip
+             0.0, 0.0, 0.0,   // 1: body center
+             1.0, 0.0, 0.0,   // 2: Right wing tip
+             0.0, 0.0, 0.45,  // 3: nose
+          ]);
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+          geo.setIndex([0, 1, 3, 2, 3, 1]);
+          geo.computeVertexNormals();
+          const mat = new THREE.MeshBasicMaterial({
+            color: 0x1b1b1e, side: THREE.DoubleSide,
+          });
+          const bird = new THREE.Mesh(geo, mat);
+          bird.userData = {
+            cx: (Math.random() - 0.5) * 160,
+            cz: -140 + (Math.random() - 0.5) * 280,
+            r: 50 + Math.random() * 70,
+            y: 22 + Math.random() * 22,
+            phase: Math.random() * Math.PI * 2,
+            angVel: (Math.random() < 0.5 ? -1 : 1) * (0.06 + Math.random() * 0.1),
+            flapPhase: Math.random() * Math.PI * 2,
+            flapSpeed: 7 + Math.random() * 4,
+            origPos: verts.slice(),
+          };
+          bird.scale.setScalar(0.9 + Math.random() * 0.8);
+          scene.add(bird);
+          birds.push(bird);
+        }
+
+        // ── Hole-specific scene group (rebuilt per hole) ─────
+        let HOLE = HOLES[0];
+        let currentHoleIdx = 0;
+        let holeGroup = new THREE.Group();
+        let flagMesh = null;        // set by loadHole() → animated in tick
+        let poleLift = null;        // pin group — hidden when ball is on green
+        let leavesMesh = null;
+        let leavesData = null;
+        let leavesBounds = null;
+        let treesRef = null;        // { trunks, leaves, data } for wind sway
+        scene.add(holeGroup);
+
+        const disposeGroup = (g) => {
+          g.traverse((o) => {
+            if (o.isMesh || o.isInstancedMesh) {
+              o.geometry?.dispose?.();
+              if (o.material) {
+                const mats = Array.isArray(o.material) ? o.material : [o.material];
+                for (const m of mats) {
+                  m.map?.dispose?.();
+                  m.dispose?.();
+                }
+              }
+            }
+          });
+          scene.remove(g);
+        };
+
+        function buildHoleScene(h) {
+          const g = new THREE.Group();
+
+          // Ground
+          const { canvas, minX, maxX, minZ, maxZ } = buildGroundTexture(h);
+          const bw = maxX - minX, bh = maxZ - minZ;
+          const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+          const tex = new THREE.CanvasTexture(canvas);
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.anisotropy = renderer.capabilities.getMaxAnisotropy?.() ?? 1;
+          // Crisp alpha at hole edges (no mipmap bleed)
+          tex.generateMipmaps = false;
+          tex.minFilter = THREE.LinearFilter;
+          tex.magFilter = THREE.LinearFilter;
+          tex.needsUpdate = true;
+          const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(bw, bh, 1, 1),
+            new THREE.MeshStandardMaterial({
+              map: tex,
+              roughness: 1.0,
+              metalness: 0.0,
+              transparent: true,
+              alphaTest: 0.5,
+              side: THREE.DoubleSide,
+            }),
+          );
+          ground.rotation.x = -Math.PI / 2;
+          ground.position.set(cx, 0, cz);
+          ground.receiveShadow = true;
+          g.add(ground);
+
+          // Skirt
+          const skirt = new THREE.Mesh(
+            new THREE.CircleGeometry(Math.max(bw, bh) * 2, 72),
+            new THREE.MeshBasicMaterial({ color: 0x2e5230 }),
+          );
+          skirt.rotation.x = -Math.PI / 2;
+          skirt.position.set(cx, -0.01, cz);
+          g.add(skirt);
+
+          // Trees — stacked cones for layered pine look, per-instance color,
+          // gentle wind sway each frame.
+          const treeData = [];
+          for (const c of (h.treeClusters || [])) {
+            for (let i = 0; i < c.n; i++) {
+              const ang = Math.random() * Math.PI * 2;
+              const r = Math.sqrt(Math.random()) * c.spread;
+              const tx = c.x + Math.cos(ang) * r;
+              const tz = c.z + Math.sin(ang) * r;
+              const lie = lieAt(tx, tz, h);
+              if (lie !== 'rough' && lie !== 'tee') continue;
+              treeData.push({
+                x: tx, z: tz,
+                scale: 0.85 + Math.random() * 0.55,
+                swayPhase: Math.random() * Math.PI * 2,
+                swaySpeed: 0.7 + Math.random() * 0.5,
+                swayAmp: 0.012 + Math.random() * 0.02,
+                tint: 0.8 + Math.random() * 0.35,
+              });
+            }
+          }
+          let treeMeshes = null;
+          if (treeData.length) {
+            // Trunk — anchored at base (y=0)
+            const trunkGeo = new THREE.CylinderGeometry(0.2, 0.28, 1.4, 8);
+            trunkGeo.translate(0, 0.7, 0);
+            const trunkMat = new THREE.MeshStandardMaterial({
+              color: 0x5a3c24, roughness: 1.0,
+              vertexColors: false,
+            });
+            const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, treeData.length);
+            trunks.castShadow = true;
+
+            // Layered leaves: 3 stacked cones merged, rising above trunk top
+            const c1 = new THREE.ConeGeometry(1.55, 2.2, 9);
+            c1.translate(0, 1.4 + 1.1, 0);
+            const c2 = new THREE.ConeGeometry(1.15, 1.8, 9);
+            c2.translate(0, 1.4 + 2.0, 0);
+            const c3 = new THREE.ConeGeometry(0.72, 1.35, 9);
+            c3.translate(0, 1.4 + 2.95, 0);
+            const leafGeo = mergeGeometries([c1, c2, c3]);
+            const leafMat = new THREE.MeshStandardMaterial({
+              color: 0xffffff, // multiplied by instance color
+              roughness: 0.95,
+              flatShading: true,
+            });
+            const leaves = new THREE.InstancedMesh(leafGeo, leafMat, treeData.length);
+            leaves.castShadow = true;
+
+            // Per-instance color (green tint variation)
+            const col = new THREE.Color();
+            for (let i = 0; i < treeData.length; i++) {
+              const d = treeData[i];
+              const baseR = 0.18 * d.tint;
+              const baseG = 0.36 * d.tint;
+              const baseB = 0.20 * d.tint;
+              col.setRGB(
+                clamp(baseR + (Math.random() - 0.5) * 0.04, 0, 1),
+                clamp(baseG + (Math.random() - 0.5) * 0.05, 0, 1),
+                clamp(baseB + (Math.random() - 0.5) * 0.04, 0, 1),
+              );
+              leaves.setColorAt(i, col);
+            }
+            if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
+
+            g.add(trunks, leaves);
+            treeMeshes = { trunks, leaves, data: treeData };
+          }
+
+          // Water surfaces with an animated normal map for ripples.
+          const waterMeshes = [];
+          for (const w of (h.water || [])) {
+            // Procedural normal map — concentric circular waves + noise.
+            const nc = document.createElement('canvas');
+            nc.width = 256; nc.height = 256;
+            const nctx = nc.getContext('2d');
+            nctx.fillStyle = '#8080ff'; // "flat" normal (z up)
+            nctx.fillRect(0, 0, 256, 256);
+            // Blue-ish ripples: offset G channel for wave normals
+            for (let k = 0; k < 10; k++) {
+              const cxn = Math.random() * 256, czn = Math.random() * 256;
+              for (let r = 6; r < 100; r += 6) {
+                nctx.strokeStyle = `rgba(${128 + Math.sin(r * 0.3) * 50},${128 + Math.cos(r * 0.3) * 50},255,${0.12 - r * 0.001})`;
+                nctx.lineWidth = 2;
+                nctx.beginPath();
+                nctx.arc(cxn, czn, r, 0, Math.PI * 2);
+                nctx.stroke();
+              }
+            }
+            // Fine noise
+            for (let i = 0; i < 1200; i++) {
+              const px = Math.random() * 256, py = Math.random() * 256;
+              const j = 32;
+              nctx.fillStyle = `rgba(${128 + (Math.random() - 0.5) * j}, ${128 + (Math.random() - 0.5) * j}, 255, 0.5)`;
+              nctx.fillRect(px, py, 2, 2);
+            }
+            const normalTex = new THREE.CanvasTexture(nc);
+            normalTex.wrapS = normalTex.wrapT = THREE.RepeatWrapping;
+            normalTex.repeat.set(3, 3);
+
+            const mat = new THREE.MeshStandardMaterial({
+              color: 0x2f7fb5,
+              metalness: 0.4,
+              roughness: 0.25,
+              transparent: true,
+              opacity: 0.82,
+              normalMap: normalTex,
+              normalScale: new THREE.Vector2(0.6, 0.6),
+            });
+            // Subdivided circle: we use a PlaneGeometry and mask via alphaTest
+            // baked into the vertex coords — but for simplicity, use a dense
+            // CircleGeometry subdivided radially.
+            const waterGeo = new THREE.CircleGeometry(1, 48);
+            const waterMesh = new THREE.Mesh(waterGeo, mat);
+            waterMesh.rotation.x = -Math.PI / 2;
+            waterMesh.scale.set(w.rx, w.rz, 1);
+            waterMesh.position.set(w.x, 0.02, w.z);
+            waterMesh.userData = { normalTex, baseY: 0.02 };
+            g.add(waterMesh);
+            waterMeshes.push(waterMesh);
+          }
+          g.userData.waterMeshes = waterMeshes;
+
+          // Cup (stays in ground) + liftable pole+flag (pulled on green)
+          const pinGroup = new THREE.Group();
+          pinGroup.position.set(h.cup.x, 0, h.cup.z);
+
+          // Dark ring on the surface (rim)
+          const cupRing = new THREE.Mesh(
+            new THREE.RingGeometry(CUP_RADIUS_PHYS, CUP_RADIUS_PHYS + 0.025, 32),
+            new THREE.MeshBasicMaterial({ color: 0xf9f6ee, side: THREE.DoubleSide }),
+          );
+          cupRing.rotation.x = -Math.PI / 2;
+          cupRing.position.y = 0.002;
+          cupRing.renderOrder = 4;
+          pinGroup.add(cupRing);
+
+          // The hole itself — inside-rendered cylinder, visible from above
+          // through the alpha-clipped ground texture. Unlit pure-black so
+          // the interior can't pick up ambient reflection.
+          const cupShaft = new THREE.Mesh(
+            new THREE.CylinderGeometry(CUP_RADIUS_PHYS, CUP_RADIUS_PHYS, 0.28, 32, 1, true),
+            new THREE.MeshBasicMaterial({
+              color: 0x000000,
+              side: THREE.BackSide,
+            }),
+          );
+          cupShaft.position.y = -0.14;
+          pinGroup.add(cupShaft);
+
+          // Bottom disc (pure black)
+          const cupFloor = new THREE.Mesh(
+            new THREE.CircleGeometry(CUP_RADIUS_PHYS, 24),
+            new THREE.MeshBasicMaterial({ color: 0x000000 }),
+          );
+          cupFloor.rotation.x = -Math.PI / 2;
+          cupFloor.position.y = -0.28;
+          pinGroup.add(cupFloor);
+
+          // Liftable pin (pole + flag). Animated up when ball reaches green.
+          const poleLift = new THREE.Group();
+          poleLift.position.y = 0; // ground level when in the cup
+          const pole = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.03, 0.03, 2.4, 8),
+            new THREE.MeshStandardMaterial({ color: 0xf4efe6, roughness: 0.6 }),
+          );
+          pole.position.y = 1.2;
+          pole.castShadow = true;
+          poleLift.add(pole);
+          const flagGeo = new THREE.PlaneGeometry(0.8, 0.46, 16, 3);
+          const flagMesh = new THREE.Mesh(
+            flagGeo,
+            new THREE.MeshStandardMaterial({
+              color: 0xef4444, roughness: 0.85, side: THREE.DoubleSide,
+            }),
+          );
+          flagMesh.position.set(0.42, 2.18, 0);
+          flagMesh.userData.origPos = flagGeo.attributes.position.array.slice();
+          poleLift.add(flagMesh);
+          pinGroup.add(poleLift);
+          g.add(pinGroup);
+
+          // Blowing leaves — instanced, drift across hole in wind direction.
+          const { minX: bxMinX, maxX: bxMaxX, minZ: bxMinZ, maxZ: bxMaxZ } = holeBounds(h);
+          const LEAF_COUNT = 22;
+          const leafMat = new THREE.MeshStandardMaterial({
+            color: 0xc87a2a,
+            roughness: 0.9,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.92,
+          });
+          const leafGeo = new THREE.PlaneGeometry(0.18, 0.22);
+          const leaves = new THREE.InstancedMesh(leafGeo, leafMat, LEAF_COUNT);
+          leaves.frustumCulled = false;
+          const leafData = [];
+          const rand = (a, b) => a + Math.random() * (b - a);
+          for (let i = 0; i < LEAF_COUNT; i++) {
+            leafData.push({
+              x: rand(bxMinX, bxMaxX),
+              y: rand(0.4, 5.0),
+              z: rand(bxMinZ, bxMaxZ),
+              vx: rand(2.5, 4.5),          // wind +X
+              vy: rand(-0.6, -0.2),         // falling
+              vz: rand(-0.4, 0.4),
+              rx: rand(0, Math.PI * 2),
+              ry: rand(0, Math.PI * 2),
+              rz: rand(0, Math.PI * 2),
+              vrx: rand(-2.2, 2.2),
+              vry: rand(-1.8, 1.8),
+              vrz: rand(-2.2, 2.2),
+              color: Math.random() < 0.5 ? 0xc87a2a : (Math.random() < 0.5 ? 0xe0a23a : 0x8b4513),
+            });
+            leaves.setColorAt?.(i, new THREE.Color(leafData[i].color));
+          }
+          if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
+          g.add(leaves);
+
+          return {
+            group: g,
+            flag: flagMesh,
+            poleLift,
+            leaves,
+            leafData,
+            treeMeshes,
+            bounds: { minX: bxMinX, maxX: bxMaxX, minZ: bxMinZ, maxZ: bxMaxZ },
+          };
+        }
+
+        // ── Ball: dimpled surface via procedural bump map ────
+        const dimpleCanvas = document.createElement('canvas');
+        dimpleCanvas.width = 256; dimpleCanvas.height = 256;
+        const dctx = dimpleCanvas.getContext('2d');
+        dctx.fillStyle = '#ffffff';
+        dctx.fillRect(0, 0, 256, 256);
+        // Hex-packed dimples for a realistic look
+        const DIMPLE_R = 9;
+        const STEP = 20;
+        for (let row = 0; row * STEP * 0.866 < 256 + STEP; row++) {
+          const y = row * STEP * 0.866;
+          const offsetX = (row % 2) * STEP / 2;
+          for (let col = 0; col * STEP < 256 + STEP; col++) {
+            const x = col * STEP + offsetX;
+            const grad = dctx.createRadialGradient(x, y, 0, x, y, DIMPLE_R);
+            grad.addColorStop(0, '#555');
+            grad.addColorStop(0.75, '#c8c8c8');
+            grad.addColorStop(1, '#ffffff');
+            dctx.fillStyle = grad;
+            dctx.beginPath();
+            dctx.arc(x, y, DIMPLE_R, 0, Math.PI * 2);
+            dctx.fill();
+          }
+        }
+        const dimpleTex = new THREE.CanvasTexture(dimpleCanvas);
+        dimpleTex.wrapS = dimpleTex.wrapT = THREE.RepeatWrapping;
+        dimpleTex.repeat.set(3, 2);
+
+        const ball = new THREE.Mesh(
+          new THREE.SphereGeometry(BALL_RADIUS, 32, 24),
+          new THREE.MeshStandardMaterial({
+            color: 0xfafaf6,
+            roughness: 0.32,
+            metalness: 0.02,
+            bumpMap: dimpleTex,
+            bumpScale: 0.0035,
+          }),
+        );
+        ball.castShadow = true;
+        ball.position.set(HOLE.ballStart.x, BALL_RADIUS, HOLE.ballStart.z);
+        scene.add(ball);
+
+        // Ground shadow for the ball — realistic size (~1.3× ball radius),
+        // soft and fades fast with height.
+        const ballShadow = new THREE.Mesh(
+          new THREE.CircleGeometry(0.055, 20),
+          new THREE.MeshBasicMaterial({
+            color: 0x000000,
+            transparent: true,
+            opacity: 0.28,
+            depthWrite: false,
+          }),
+        );
+        ballShadow.rotation.x = -Math.PI / 2;
+        ballShadow.position.y = 0.012;
+        ballShadow.renderOrder = 6;
+        scene.add(ballShadow);
+
+        // ── Aim indicator: 3D arc tracer + end dot ──
+        // A TubeGeometry along the predicted ballistic trajectory, rebuilt each
+        // frame during aim/charge.
+        const aimTubeMat = new THREE.MeshBasicMaterial({
+          color: 0xffeb3b,
+          transparent: true,
+          opacity: 0.65,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        });
+        const aimShadowMat = new THREE.MeshBasicMaterial({
+          color: 0x000000,
+          transparent: true,
+          opacity: 0.25,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        });
+        let aimTube = null, aimShadowTube = null;
+        const disposeAimTube = () => {
+          if (aimTube) { aimTube.geometry.dispose(); scene.remove(aimTube); aimTube = null; }
+          if (aimShadowTube) { aimShadowTube.geometry.dispose(); scene.remove(aimShadowTube); aimShadowTube = null; }
+        };
+        const rebuildAimTube = (points, radius) => {
+          disposeAimTube();
+          if (points.length < 2) return;
+          const curve = new THREE.CatmullRomCurve3(points);
+          const segs = Math.min(80, Math.max(24, points.length * 2));
+          const geo = new THREE.TubeGeometry(curve, segs, radius, 10, false);
+          aimTube = new THREE.Mesh(geo, aimTubeMat);
+          aimTube.renderOrder = 10;
+          aimTube.frustumCulled = false;
+          scene.add(aimTube);
+
+          // Shadow: same trajectory projected onto the ground (flat).
+          const shadowPts = points.map((p) => new THREE.Vector3(p.x, 0.03, p.z));
+          const shadowCurve = new THREE.CatmullRomCurve3(shadowPts);
+          const shadowGeo = new THREE.TubeGeometry(shadowCurve, segs, radius * 0.9, 8, false);
+          aimShadowTube = new THREE.Mesh(shadowGeo, aimShadowMat);
+          aimShadowTube.renderOrder = 9;
+          aimShadowTube.frustumCulled = false;
+          scene.add(aimShadowTube);
+        };
+
+        // Landing-point dot stays as a reference
+        const aimDot = new THREE.Mesh(
+          new THREE.CircleGeometry(0.18, 24),
+          new THREE.MeshBasicMaterial({
+            color: 0xffeb3b,
+            transparent: true,
+            opacity: 0.9,
+            depthWrite: false,
+          }),
+        );
+        aimDot.rotation.x = -Math.PI / 2;
+        aimDot.position.y = 0.04;
+        aimDot.renderOrder = 11;
+        scene.add(aimDot);
+
+        // ── Shot trail (rebuilt as the ball flies) ──────────────
+        const trailPoints = [];     // THREE.Vector3[]
+        let trailTube = null;
+        const trailMat = new THREE.MeshBasicMaterial({
+          color: 0xff7733,
+          transparent: true,
+          opacity: 0.9,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        });
+        const disposeTrailTube = () => {
+          if (trailTube) {
+            trailTube.geometry.dispose();
+            scene.remove(trailTube);
+            trailTube = null;
+          }
+        };
+        const TRAIL_MAX_DIST_M = 20 * M_PER_YARD;  // keep only the last 20 yd behind ball
+        const rebuildTrailTube = () => {
+          disposeTrailTube();
+          if (trailPoints.length < 2) return;
+          const curve = new THREE.CatmullRomCurve3(trailPoints);
+          const segs = Math.min(120, trailPoints.length * 3);
+          const geo = new THREE.TubeGeometry(curve, segs, 0.027, 8, false);
+          trailTube = new THREE.Mesh(geo, trailMat);
+          trailTube.renderOrder = 9;
+          trailTube.frustumCulled = false;
+          scene.add(trailTube);
+        };
+        const clearTrail = () => {
+          trailPoints.length = 0;
+          disposeTrailTube();
+          trailMat.opacity = 0.9;
+        };
+
+        // ── Sink / splash ripple VFX ─────────────────────────────
+        const sinkRipples = [];
+        const spawnRingsAt = (x, z, innerR, ringCount, color = 0xffffff) => {
+          for (let n = 0; n < ringCount; n++) {
+            const ring = new THREE.Mesh(
+              new THREE.RingGeometry(innerR, innerR + 0.03, 28),
+              new THREE.MeshBasicMaterial({
+                color,
+                transparent: true,
+                opacity: 0.9,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+              }),
+            );
+            ring.rotation.x = -Math.PI / 2;
+            ring.position.set(x, 0.04, z);
+            ring.renderOrder = 12;
+            ring.userData = { start: performance.now() + n * 110, duration: 780 };
+            scene.add(ring);
+            sinkRipples.push(ring);
+          }
+        };
+        const spawnSinkRipple = () =>
+          spawnRingsAt(HOLE.cup.x, HOLE.cup.z, CUP_RADIUS_PHYS, 3, 0xffffff);
+        const spawnWaterSplash = (x, z) =>
+          spawnRingsAt(x, z, 0.2, 4, 0xcde4f5);
+
+        // ── Atlas character ──────────────────
+        const baseGlbPath = new URL(manifest.assets.base.path, new URL(CHAR_MANIFEST, location.href)).pathname;
+        const animsGlbPath = new URL(manifest.assets.animations.path, new URL(CHAR_MANIFEST, location.href)).pathname;
+        const gloader = new GLTFLoader();
+        const [baseGltf, animGltf] = await Promise.all([
+          gloader.loadAsync(baseGlbPath), gloader.loadAsync(animsGlbPath),
+        ]);
+        const character = baseGltf.scene;
+        character.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+        const bx = new THREE.Box3().setFromObject(character);
+        const sz = bx.getSize(new THREE.Vector3());
+        const charScale = CHAR_HEIGHT / Math.max(sz.y, 1e-6);
+        character.scale.setScalar(charScale);
+        scene.add(character);
+
+        const mixer = new THREE.AnimationMixer(character);
+        const clipByName = Object.fromEntries(animGltf.animations.map((c) => [c.name, c]));
+        const actions = {};
+        for (const a of manifest.animations) {
+          if (!a.sourceClipName) continue;
+          const clip = clipByName[a.sourceClipName];
+          if (!clip) continue;
+          const action = mixer.clipAction(clip);
+          action.loop = THREE[a.loop] ?? THREE.LoopRepeat;
+          if (a.clampWhenFinished) action.clampWhenFinished = true;
+          actions[a.id] = action;
+        }
+        let currentAction = null;
+        const play = (id, fade = 0.2) => {
+          const a = actions[id]; if (!a) return;
+          if (currentAction && currentAction !== a) currentAction.fadeOut(fade);
+          a.reset().fadeIn(fade).play();
+          currentAction = a;
+        };
+
+        // Right-handed golfer stance: stand 2 ft (0.61 m) to the LEFT of aim
+        // (i.e. "west" when aim is "north"), body facing 90° CW of aim (east).
+        // Ball ends up in front of the golfer's chest as a real stance looks.
+        const STANCE_OFFSET_M = 0.61;  // 2 ft
+        const stanceCharacter = (atX, atZ, aimX, aimZ) => {
+          const dx = aimX - atX, dz = aimZ - atZ;
+          const L = Math.hypot(dx, dz) || 1;
+          const nx = dx / L, nz = dz / L;
+          // Left of aim (west when aim is north): rotate aim 90° CCW.
+          const sx = nz, sz = -nx;
+          character.position.set(atX + sx * STANCE_OFFSET_M, 0, atZ + sz * STANCE_OFFSET_M);
+          character.rotation.y = Math.atan2(nx, nz) - Math.PI / 2;
+        };
+
+        // ── OrbitControls ────────────────────
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        controls.maxPolarAngle = Math.PI * 0.49;
+        controls.minDistance = 3.5;
+        controls.maxDistance = 80;
+        controls.screenSpacePanning = true;
+        controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+        controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+
+        // Camera snap: target is at the ball so OrbitControls rotates around
+        // it, and mouse/finger drag changes the aim direction (camera forward
+        // projected to the ground). In aim mode the camera pulls back + up.
+        const snapCameraBehindBall = () => {
+          const dx = HOLE.cup.x - ball.position.x;
+          const dz = HOLE.cup.z - ball.position.z;
+          const L = Math.hypot(dx, dz) || 1;
+          const nx = dx / L, nz = dz / L;
+          const rx = -nz, rz = nx;
+          const back = aimMode ? 4.2 : 10;
+          const up   = aimMode ? 2.8 : 5.2;
+          // Keep a slight perpendicular offset in aim mode so the view is never
+          // dead-on down the aim line even when aimed straight at the pin.
+          const right = aimMode ? 1.8 : 1;
+          const aheadM = aimMode ? 6 : 0.8;
+          // Target is well ahead of the ball in aim mode so camera looks down
+          // the fairway (green in the distance); close-behind for non-aim view.
+          controls.target.set(
+            ball.position.x + nx * aheadM,
+            BALL_RADIUS + (aimMode ? 0.6 : 0),
+            ball.position.z + nz * aheadM,
+          );
+          camera.position.set(
+            ball.position.x - nx * back + rx * right,
+            up,
+            ball.position.z - nz * back + rz * right,
+          );
+          controls.update();
+        };
+
+        // ── State ────────────────────────────
+        let state = 'aim';     // 'aim' | 'charging' | 'flying' | 'rolling' | 'putting' | 'holed'
+        let strokes = 0;
+        let lie = lieAt(ball.position.x, ball.position.z, HOLE);
+        let selectedClubId = 'driver';
+        let aimMode = false;   // default: show golfer + hole in nice 3rd-person
+
+        // ── Shot shape controls ────────────────────
+        // Power: 4 levels. Loft: 3 levels (adds ± deg to club angle).
+        // Curve: 5 levels (hook/draw/straight/fade/slice).
+        const POWER_LEVELS = [1.0, 0.75, 0.5, 0.25];
+        const LOFT_LEVELS  = [
+          { id: 'STD',  offsetDeg:  0 },
+          { id: 'HIGH', offsetDeg:  6 },
+          { id: 'LOW',  offsetDeg: -6 },
+        ];
+        const CURVE_LEVELS = [
+          { id: 'STR',   factor:  0.0 },
+          { id: 'FADE',  factor:  0.35 },
+          { id: 'SLICE', factor:  1.0 },
+          { id: 'DRAW',  factor: -0.35 },
+          { id: 'HOOK',  factor: -1.0 },
+        ];
+        let powerIdx = 0;
+        let loftIdx = 0;
+        let curveIdx = 0;
+        const currentPower = () => POWER_LEVELS[powerIdx];
+        const currentLoft  = () => LOFT_LEVELS[loftIdx];
+        const currentCurve = () => CURVE_LEVELS[curveIdx];
+
+        const valPower = document.getElementById('val-power');
+        const valLoft  = document.getElementById('val-loft');
+        const valCurve = document.getElementById('val-curve');
+        const refreshShape = () => {
+          valPower.textContent = `${Math.round(currentPower() * 100)}%`;
+          valLoft.textContent  = currentLoft().id;
+          valCurve.textContent = currentCurve().id;
+        };
+        document.getElementById('btn-power').addEventListener('click', () => {
+          powerIdx = (powerIdx + 1) % POWER_LEVELS.length;
+          refreshShape();
+        });
+        document.getElementById('btn-loft').addEventListener('click', () => {
+          loftIdx = (loftIdx + 1) % LOFT_LEVELS.length;
+          refreshShape();
+        });
+        document.getElementById('btn-curve').addEventListener('click', () => {
+          curveIdx = (curveIdx + 1) % CURVE_LEVELS.length;
+          refreshShape();
+        });
+        refreshShape();
+
+        const aimBtn = document.getElementById('aim');
+        const setAimMode = (on) => {
+          aimMode = on;
+          aimBtn.classList.toggle('active', on);
+          aimBtn.textContent = on ? 'AIMING' : 'AIM';
+          // Aim line/dot stay visible in either mode (as long as we're at rest).
+          // Camera snaps to either aim-focus or golfer-focus based on mode.
+          swingBtn.disabled = !(state === 'aim');
+          snapCameraBehindBall();
+        };
+        aimBtn.addEventListener('click', () => {
+          if (state === 'charging') return; // don't interrupt
+          setAimMode(!aimMode);
+        });
+
+        // Aim vector: reconstructed from camera horizontal forward
+        const aim = new THREE.Vector3(0, 0, -1);
+        const updateAim = () => {
+          // Camera forward projected on ground, then aim from ball
+          const dir = new THREE.Vector3();
+          camera.getWorldDirection(dir);
+          dir.y = 0; dir.normalize();
+          if (dir.lengthSq() < 1e-6) dir.set(0, 0, -1);
+          aim.copy(dir);
+        };
+
+        // ── Club UI ──────────────────────────
+        const clubMenuEl = document.getElementById('club-menu');
+        const clubCurrentBtn = document.getElementById('club-current');
+        const clubCurrentName = document.getElementById('club-current-name');
+        const clubCurrentYd = document.getElementById('club-current-yd');
+        const clubButtons = {};
+        CLUBS.forEach((c) => {
+          const btn = document.createElement('button');
+          btn.className = 'club-btn';
+          btn.dataset.id = c.id;
+          btn.innerHTML = `<span class="name">${c.name}</span><span class="yd">${Math.round(c.maxYd)} yd</span>`;
+          btn.addEventListener('click', () => {
+            selectClub(c.id, true);
+            clubMenuEl.classList.remove('open');
+          });
+          clubMenuEl.appendChild(btn);
+          clubButtons[c.id] = btn;
+        });
+        clubCurrentBtn.addEventListener('click', () => {
+          clubMenuEl.classList.toggle('open');
+        });
+        // Close menu on outside click
+        document.addEventListener('pointerdown', (e) => {
+          if (!clubMenuEl.contains(e.target) && e.target !== clubCurrentBtn && !clubCurrentBtn.contains(e.target)) {
+            clubMenuEl.classList.remove('open');
+          }
+        });
+
+        const refreshClubButtons = () => {
+          const offTee = lie !== 'tee';
+          const onGreen = lie === 'green';
+          for (const c of CLUBS) {
+            const btn = clubButtons[c.id];
+            btn.classList.toggle('active', c.id === selectedClubId);
+            let disabled = false;
+            if (c.putt && !onGreen) disabled = true;
+            if (!c.putt && onGreen) disabled = true;
+            if (c.teeOnly && offTee) disabled = true;
+            btn.disabled = disabled;
+          }
+          // Update the collapsed display
+          const sel = clubById[selectedClubId];
+          if (sel) {
+            clubCurrentName.textContent = sel.name;
+            clubCurrentYd.textContent = sel.putt ? 'PUTT' : `${Math.round(sel.maxYd)} yd`;
+          }
+        };
+        const autoSelectClub = () => {
+          const remYd = dist2D(ball.position.x, ball.position.z, HOLE.cup.x, HOLE.cup.z) / M_PER_YARD;
+          if (lie === 'green') return selectClub('putter', false);
+          if (lie === 'tee') {
+            // Long par 5 → driver; shorter par 3 → iron by distance
+            if (remYd > 230) return selectClub('driver', false);
+            if (remYd > 215) return selectClub('3wood', false);
+            if (remYd > 195) return selectClub('5wood', false);
+          }
+          // Pick the smallest club whose maxYd still covers the remaining distance.
+          const bag = CLUBS.filter((c) => !c.putt && !c.teeOnly && c.maxYd >= remYd);
+          if (bag.length) {
+            const best = bag.reduce((a, b) => a.maxYd < b.maxYd ? a : b);
+            return selectClub(best.id, false);
+          }
+          // Out of range — use the longest non-tee club
+          const longest = CLUBS.filter((c) => !c.putt && !c.teeOnly)
+            .reduce((a, b) => a.maxYd > b.maxYd ? a : b);
+          return selectClub(longest.id, false);
+        };
+        const selectClub = (id, userInitiated) => {
+          const c = clubById[id];
+          if (!c) return;
+          // Guard: can't pick a disabled club
+          const offTee = lie !== 'tee';
+          const onGreen = lie === 'green';
+          if (c.putt && !onGreen) return;
+          if (!c.putt && onGreen) return;
+          if (c.teeOnly && offTee) return;
+          selectedClubId = id;
+          refreshClubButtons();
+        };
+
+        // ── Swing handling ───────────────────
+        let charging = false;
+        let chargeStart = 0;
+        let power = 0;
+        let powerTick = null;
+        const CHARGE_TIME = 1400;
+
+        const beginCharge = (e) => {
+          if (state !== 'aim') return;
+          e.preventDefault();
+          charging = true;
+          chargeStart = performance.now();
+          state = 'charging';
+          swingLabel.textContent = 'RELEASE';
+          swingBtn.setPointerCapture?.(e.pointerId);
+          powerTick = requestAnimationFrame(tickCharge);
+        };
+        const tickCharge = () => {
+          if (!charging) return;
+          const t = (performance.now() - chargeStart) / CHARGE_TIME;
+          const phase = t % 2;
+          power = phase < 1 ? phase : 2 - phase;
+          meterEl.style.transform = `scaleX(${power})`;
+          powerTick = requestAnimationFrame(tickCharge);
+        };
+        const endCharge = (e) => {
+          if (!charging) return;
+          e?.preventDefault();
+          charging = false;
+          cancelAnimationFrame(powerTick);
+          const p = power;
+          meterEl.style.transform = 'scaleX(0)';
+          swingLabel.textContent = 'HOLD TO SWING';
+          swingBtn.disabled = true;
+          fireShot(p);
+        };
+        swingBtn.addEventListener('pointerdown', beginCharge);
+        swingBtn.addEventListener('pointerup', endCharge);
+        swingBtn.addEventListener('pointercancel', (e) => { if (charging) endCharge(e); });
+        swingBtn.addEventListener('pointerleave', (e) => { if (charging) endCharge(e); });
+
+        // ── Fire shot ────────────────────────
+        const vel = new THREE.Vector3();
+        const fireShot = (pwr) => {
+          const club = clubById[selectedClubId];
+          strokes += 1;
+          updateHUD();
+
+          // Lie modifier
+          const lieMul =
+            lie === 'bunker' ? 0.55 :
+            lie === 'rough'  ? 0.78 :
+            1.0;
+
+          updateAim();
+          const nx = aim.x, nz = aim.z;
+          const sx = -nz, sz = nx;
+
+          if (club.putt) {
+            // Putt: roll along ground at speed ~ power * PUTT_MAX_M, decays with friction
+            state = 'putting';
+            const range = clamp(pwr, 0.05, 1.0) * PUTT_MAX_M;
+            const lateralYd = (Math.random() - 0.5) * range * club.scatter;
+            const distJit = (Math.random() - 0.5) * range * 0.06;
+            const launchSpeed = Math.sqrt(2 * 4.0 * Math.max(0.1, range + distJit));
+            vel.set(
+              nx * launchSpeed + sx * (lateralYd / Math.max(range, 0.1)) * launchSpeed,
+              0,
+              nz * launchSpeed + sz * (lateralYd / Math.max(range, 0.1)) * launchSpeed,
+            );
+            clearTrail();
+            play('golf_drive', 0.1);
+            return;
+          }
+
+          // Full / partial swing
+          state = 'flying';
+          const carryRatio = club.carryRatio ?? 0.9;
+          const pwrMul = currentPower();
+          const loftOffDeg = currentLoft().offsetDeg;
+          const curveFactor = currentCurve().factor;
+          const effPwr = clamp(pwr, 0.05, 1.0) * pwrMul;
+          const carryTargetYd = club.maxYd * carryRatio * effPwr * lieMul;
+          const carryTargetM = carryTargetYd * M_PER_YARD;
+          const jitter = 1 + (Math.random() - 0.5) * (club.scatter * 2);
+          const carryM = Math.max(3, carryTargetM * jitter);
+          const lateralM = (Math.random() - 0.5) * carryTargetM * club.scatter;
+          const angle = THREE.MathUtils.degToRad(clamp(club.angleDeg + loftOffDeg, 3, 65));
+          const v0 = Math.sqrt((GRAVITY * carryM) / Math.max(Math.sin(2 * angle), 0.0001));
+          const vHoriz = v0 * Math.cos(angle);
+          const vUp = v0 * Math.sin(angle);
+          vel.set(
+            nx * vHoriz + sx * (lateralM / Math.max(carryM, 0.1)) * vHoriz,
+            vUp,
+            nz * vHoriz + sz * (lateralM / Math.max(carryM, 0.1)) * vHoriz,
+          );
+          ball.userData.launchDir = { x: nx, z: nz };
+          ball.userData.spin = club.spin * clamp(pwr, 0.4, 1.0);
+          ball.userData.curveFactor = curveFactor;
+          ball.userData.bounces = 0;
+          clearTrail();
+          play('golf_drive', 0.12);
+        };
+
+        // Place character in a celebration pose near (but not on) the cup,
+        // facing it. Returns final placement so we can override per animation.
+        const placeNearCup = (backM = 2.4, faceCup = true) => {
+          // "Behind" the cup from the tee direction (tee→cup direction, step back from cup).
+          const dx = HOLE.cup.x - HOLE.ballStart.x;
+          const dz = HOLE.cup.z - HOLE.ballStart.z;
+          const L = Math.hypot(dx, dz) || 1;
+          const nx = dx / L, nz = dz / L;
+          character.position.set(
+            HOLE.cup.x - nx * backM,
+            0,
+            HOLE.cup.z - nz * backM,
+          );
+          character.rotation.set(0, faceCup ? Math.atan2(nx, nz) : Math.atan2(-nx, -nz), 0);
+        };
+
+        // Fake a "dead" pose — character flat on their back, no animations
+        // playing (so bones don't push the mesh underground).
+        const fakeDead = () => {
+          placeNearCup(2.0, true);
+          // Kill any active mixer actions so the skinned bones stop pushing
+          // verts below the ground plane.
+          mixer.stopAllAction();
+          currentAction = null;
+          // Tip backward. Lift slightly so no part of the body clips under.
+          character.rotation.set(-Math.PI / 2, 0, 0);
+          character.position.y = 0.18;
+        };
+
+        // Begin the drop-in animation when the ball crosses the cup rim.
+        const startSink = () => {
+          state = 'sinking';
+          vel.x *= 0.35;
+          vel.z *= 0.35;
+          vel.y = Math.min(vel.y, -0.4);
+          spawnSinkRipple();
+        };
+
+        // ── Auto-advance to next shot (no walking animation) ───
+        const finishTurn = () => {
+          // Water hazard penalty: +1 stroke, drop at drop zone
+          const landLie = lieAt(ball.position.x, ball.position.z, HOLE);
+          if (landLie === 'water') {
+            strokes += 1;
+            const dz = HOLE.dropZone || HOLE.ballStart;
+            ball.position.set(dz.x, BALL_RADIUS, dz.z);
+            toast('WATER HAZARD', '+1 PENALTY STROKE', 1800);
+            lie = lieAt(ball.position.x, ball.position.z, HOLE);
+          } else {
+            lie = landLie;
+          }
+
+          updateHUD();
+          autoSelectClub();
+
+          // Ball on the green → flag simply disappears (caddy removed the pin).
+          if (poleLift) poleLift.visible = lie !== 'green';
+
+          // Holed?
+          const d = Math.hypot(ball.position.x - HOLE.cup.x, ball.position.z - HOLE.cup.z);
+          if (d < CUP_RADIUS_PHYS + 0.05) {
+            state = 'holed';
+            swingBtn.disabled = true;
+            aimBtn.disabled = true;
+            disposeAimTube();
+            aimDot.visible = false;
+
+            const diff = strokes - HOLE.par;
+            const label =
+              strokes === 1 ? 'HOLE IN ONE!' :
+              diff <= -2 ? 'EAGLE' :
+              diff === -1 ? 'BIRDIE' :
+              diff === 0 ? 'PAR' :
+              diff === 1 ? 'BOGEY' :
+              diff === 2 ? 'DOUBLE BOGEY' :
+              `+${diff}`;
+            toast(label, `${strokes} STROKE${strokes === 1 ? '' : 'S'}`, 4200);
+
+            // Score-based reaction. Position character off the cup so we don't
+            // stand him on top of the hole.
+            if (diff <= -1 || strokes === 1) {
+              placeNearCup(2.4, true);
+              play('show_both_arm_muscles', 0.2);       // birdie / eagle / HIO = flex
+            } else if (diff === 0) {
+              placeNearCup(2.4, true);
+              play('shrug', 0.2);                        // par = shrug
+            } else {
+              fakeDead();                                // bogey+ = collapse (no anim)
+            }
+
+            // Auto-advance to next hole (or show round complete)
+            setTimeout(() => {
+              const next = currentHoleIdx + 1;
+              if (next < HOLES.length) loadHole(next);
+              else {
+                toast('ROUND COMPLETE', 'NICE ROUND', 5000);
+                aimBtn.disabled = false;
+              }
+            }, 4600);
+            return;
+          }
+
+          // Normal end-of-shot: stand over ball, return to 3rd-person view
+          stanceCharacter(ball.position.x, ball.position.z, HOLE.cup.x, HOLE.cup.z);
+          play('idle', 0.22);
+          state = 'aim';
+          setAimMode(false);
+        };
+
+        // ── Load / swap hole ─────────────────
+        function loadHole(idx) {
+          currentHoleIdx = idx;
+          HOLE = HOLES[idx];
+
+          // Rebuild hole-specific scene
+          if (holeGroup) disposeGroup(holeGroup);
+          const built = buildHoleScene(HOLE);
+          holeGroup = built.group;
+          flagMesh = built.flag;
+          poleLift = built.poleLift;
+          if (poleLift) poleLift.visible = true; // pin in for new hole
+          leavesMesh = built.leaves;
+          leavesData = built.leafData;
+          leavesBounds = built.bounds;
+          treesRef = built.treeMeshes;
+          scene.add(holeGroup);
+
+          // Reset game state
+          strokes = 0;
+          ball.position.set(HOLE.ballStart.x, BALL_RADIUS, HOLE.ballStart.z);
+          vel.set(0, 0, 0);
+          lie = lieAt(ball.position.x, ball.position.z, HOLE);
+          state = 'aim';
+          aimBtn.disabled = false;
+          swingBtn.disabled = false;
+
+          // Re-stance character, reset pose
+          character.rotation.set(0, 0, 0);
+          stanceCharacter(ball.position.x, ball.position.z, HOLE.cup.x, HOLE.cup.z);
+          play('idle', 0.2);
+
+          // Select default club for new lie
+          autoSelectClub();
+          updateHUD();
+
+          // Update HUD title with hole name
+          document.title = `Atlas 3D · ${HOLE.name}`;
+
+          // Snap camera — nice 3rd-person view of golfer + fairway
+          setAimMode(false);
+
+          // Announce
+          toast(HOLE.name.toUpperCase(), `PAR ${HOLE.par}`, 2200);
+        }
+
+        // ── HUD ──────────────────────────────
+        const updateHUD = () => {
+          holePar.textContent = HOLE.par;
+          holeStrokes.textContent = strokes;
+          holeDist.textContent = Math.max(0, Math.round(
+            dist2D(ball.position.x, ball.position.z, HOLE.cup.x, HOLE.cup.z) / M_PER_YARD,
+          ));
+          holeLie.textContent = lie.toUpperCase();
+          refreshClubButtons();
+        };
+
+        // ── Resize ───────────────────────────
+        const onResize = () => {
+          const w = window.innerWidth, h = window.innerHeight;
+          camera.aspect = w / h; camera.updateProjectionMatrix();
+          renderer.setSize(w, h);
+          renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        };
+        window.addEventListener('resize', onResize);
+        window.addEventListener('orientationchange', onResize);
+
+        // ── Init ─────────────────────────────
+        loadHole(0);
+
+        // ── Main loop ───────────────────────
+        const clock = new THREE.Clock();
+        const tick = () => {
+          const dt = Math.min(clock.getDelta(), 0.05);
+          mixer.update(dt);
+
+          if (state === 'aim' || state === 'charging') updateAim();
+
+          if (state === 'flying') {
+            vel.y -= GRAVITY * dt;
+            // Magnus-like curve: lateral acceleration perpendicular to launch
+            // direction, proportional to curveFactor (-1 hook .. +1 slice).
+            if (ball.userData.curveFactor && ball.userData.launchDir) {
+              const ld = ball.userData.launchDir;
+              const rx = -ld.z, rz = ld.x;
+              const CURVE_ACC = 8.0;
+              vel.x += rx * ball.userData.curveFactor * CURVE_ACC * dt;
+              vel.z += rz * ball.userData.curveFactor * CURVE_ACC * dt;
+            }
+            ball.position.x += vel.x * dt;
+            ball.position.y += vel.y * dt;
+            ball.position.z += vel.z * dt;
+            if (ball.position.y <= BALL_RADIUS) {
+              ball.position.y = BALL_RADIUS;
+              const landLie = lieAt(ball.position.x, ball.position.z, HOLE);
+              const horizSpeed = Math.hypot(vel.x, vel.z);
+
+              // Water landing: splash, immediate stop, finishTurn applies penalty.
+              if (landLie === 'water') {
+                spawnWaterSplash(ball.position.x, ball.position.z);
+                vel.set(0, 0, 0);
+                finishTurn();
+                return requestAnimationFrame(tick);
+              }
+
+              // Direct-into-cup: holed-out approach
+              const dCup = dist2D(ball.position.x, ball.position.z, HOLE.cup.x, HOLE.cup.z);
+              if (dCup < CUP_RADIUS_PHYS && horizSpeed < MAX_SINK_SPEED) {
+                startSink();
+                return requestAnimationFrame(tick);
+              }
+
+              const lp = LIE_PHYS[landLie] || LIE_PHYS.fairway;
+              const impactVY = -vel.y;              // downward speed at contact (positive)
+              const totalSpeed = Math.hypot(horizSpeed, impactVY);
+              const steepness = totalSpeed > 0 ? impactVY / totalSpeed : 0;
+              const spin = ball.userData.spin ?? 0;
+              const ld = ball.userData.launchDir || { x: 0, z: 0 };
+
+              // Spin-back: on green (or near-green) with high-spin shot, apply a
+              // reverse-of-launch impulse scaled by spin + steepness of descent.
+              // Bunker/rough kill spin → spinBackFactor is 0 there.
+              if (spin > 0.35 && lp.spinBackFactor > 0) {
+                const spinEffect = spin * lp.spinBackFactor * steepness;
+                // Kill forward velocity proportionally, then apply backward kick.
+                const forwardKill = clamp(spinEffect * 1.1, 0, 0.95);
+                vel.x *= (1 - forwardKill);
+                vel.z *= (1 - forwardKill);
+                const backKick = spinEffect * 4.5;
+                vel.x -= ld.x * backKick;
+                vel.z -= ld.z * backKick;
+                ball.userData.spin *= 0.5; // bleed spin on contact
+              }
+
+              // Bounce: invert vertical w/ COR, apply per-lie horizontal friction
+              vel.y = impactVY * lp.cor;
+              vel.x *= lp.horizFriction;
+              vel.z *= lp.horizFriction;
+              ball.userData.bounces = (ball.userData.bounces ?? 0) + 1;
+
+              // If bounce is too small, transition to rolling or stop
+              const postHoriz = Math.hypot(vel.x, vel.z);
+              if (vel.y < 0.75 || ball.userData.bounces > 6) {
+                vel.y = 0;
+                if (postHoriz > 0.35) {
+                  ball.userData.rollDecay = lp.rollDecel;
+                  state = 'rolling';
+                } else {
+                  vel.set(0, 0, 0);
+                  finishTurn();
+                }
+              }
+              // else: stay in 'flying' — gravity resumes, ball bounces again
+            }
+            updateHUD();
+          } else if (state === 'rolling') {
+            // (No cup attraction — sim physics. Ball only sinks if it actually
+            // rolls into the cup on its own line.)
+            ball.position.x += vel.x * dt;
+            ball.position.z += vel.z * dt;
+            const sp = Math.hypot(vel.x, vel.z);
+            if (sp > 0.001) {
+              const decel = ball.userData.rollDecay ?? 3.2;
+              const nvx = vel.x / sp, nvz = vel.z / sp;
+              const nsp = Math.max(0, sp - decel * dt);
+              vel.x = nvx * nsp; vel.z = nvz * nsp;
+            }
+            const dCup = dist2D(ball.position.x, ball.position.z, HOLE.cup.x, HOLE.cup.z);
+            const spNow = Math.hypot(vel.x, vel.z);
+            if (lieAt(ball.position.x, ball.position.z, HOLE) === 'water') {
+              spawnWaterSplash(ball.position.x, ball.position.z);
+              vel.set(0, 0, 0);
+              finishTurn();
+            } else if (dCup < CUP_RADIUS_PHYS && spNow < MAX_SINK_SPEED) {
+              startSink();
+            } else if (dCup < CUP_RADIUS_PHYS && spNow < MAX_SINK_SPEED * 2.0) {
+              // Lip out — ball catches the rim, pops up, slows, keeps going.
+              vel.y = 1.3 + (MAX_SINK_SPEED * 2 - spNow) * 0.15;
+              vel.x *= 0.55;
+              vel.z *= 0.55;
+              state = 'flying';
+              spawnRingsAt(HOLE.cup.x, HOLE.cup.z, CUP_RADIUS_PHYS, 1, 0xffe8a0);
+            } else if (spNow < 0.15) {
+              vel.set(0, 0, 0);
+              finishTurn();
+            }
+            updateHUD();
+          } else if (state === 'putting') {
+            // (No cup attraction — sim physics; putts must be aimed accurately.)
+            ball.position.x += vel.x * dt;
+            ball.position.z += vel.z * dt;
+            const sp = Math.hypot(vel.x, vel.z);
+            const curLie = lieAt(ball.position.x, ball.position.z, HOLE);
+            if (sp > 0.001) {
+              const decel = curLie === 'green' ? 3.2 : 6.0;
+              const nvx = vel.x / sp, nvz = vel.z / sp;
+              const nsp = Math.max(0, sp - decel * dt);
+              vel.x = nvx * nsp; vel.z = nvz * nsp;
+            }
+            const dCup = dist2D(ball.position.x, ball.position.z, HOLE.cup.x, HOLE.cup.z);
+            if (curLie === 'water') {
+              spawnWaterSplash(ball.position.x, ball.position.z);
+              vel.set(0, 0, 0);
+              finishTurn();
+            } else if (dCup < CUP_RADIUS_PHYS && sp < MAX_SINK_SPEED) {
+              startSink();
+            } else if (sp < 0.08) {
+              vel.set(0, 0, 0);
+              finishTurn();
+            }
+            updateHUD();
+          } else if (state === 'sinking') {
+            // Ball drops into the hole under gravity; x/z spring to center.
+            const toCenterX = HOLE.cup.x - ball.position.x;
+            const toCenterZ = HOLE.cup.z - ball.position.z;
+            // Horizontal spring + damping (pulls ball to cup center)
+            vel.x += toCenterX * 40 * dt;
+            vel.z += toCenterZ * 40 * dt;
+            vel.x *= Math.pow(0.02, dt);
+            vel.z *= Math.pow(0.02, dt);
+            // Gravity
+            vel.y -= GRAVITY * 1.2 * dt;
+            ball.position.x += vel.x * dt;
+            ball.position.y += vel.y * dt;
+            ball.position.z += vel.z * dt;
+            // Hit bottom?
+            if (ball.position.y <= -0.18) {
+              ball.position.set(HOLE.cup.x, -0.18, HOLE.cup.z);
+              vel.set(0, 0, 0);
+              finishTurn();
+            }
+            updateHUD();
+          }
+
+          // Camera follows the ball while it's in motion. For sinking, we
+          // target the cup mouth (y=0) so the camera doesn't dip underground.
+          if (state === 'flying' || state === 'rolling' || state === 'putting') {
+            controls.target.lerp(
+              new THREE.Vector3(ball.position.x, ball.position.y, ball.position.z),
+              0.18,
+            );
+          } else if (state === 'sinking') {
+            controls.target.lerp(
+              new THREE.Vector3(HOLE.cup.x, 0, HOLE.cup.z),
+              0.12,
+            );
+          }
+
+          // Dolly the camera in as the ball descends / slows — closer & more
+          // intimate framing as it comes to rest.
+          if (state === 'flying' || state === 'rolling' || state === 'putting' || state === 'sinking') {
+            const offset = camera.position.clone().sub(controls.target);
+            const curDist = offset.length();
+            const dir = curDist < 0.01 ? new THREE.Vector3(0, 0.3, 1).normalize()
+                                       : offset.clone().normalize();
+            let desiredDist;
+            if (state === 'flying') {
+              // Far when high, close when low
+              const heightFactor = clamp(ball.position.y / 22, 0, 1);
+              desiredDist = lerp(7, 16, heightFactor);
+            } else if (state === 'rolling') {
+              const sp = Math.hypot(vel.x, vel.z);
+              desiredDist = lerp(4.5, 9, clamp(sp / 10, 0, 1));
+            } else if (state === 'putting') {
+              const sp = Math.hypot(vel.x, vel.z);
+              desiredDist = lerp(3.5, 7, clamp(sp / 6, 0, 1));
+            } else { // sinking
+              desiredDist = 4;
+            }
+            const newDist = lerp(curDist, desiredDist, Math.min(1, dt * 2.4));
+            camera.position.copy(controls.target).add(dir.multiplyScalar(newDist));
+            // Keep the camera well above ground even when zoomed in close —
+            // otherwise the lens ends up in the grass.
+            const minY = state === 'sinking' ? 2.0 : 2.6;
+            if (camera.position.y < minY) camera.position.y = minY;
+          }
+
+          // Aim indicator: 3D arc tube + landing dot. Show whenever we're at
+          // rest (aim or charging).
+          const showAim = (state === 'aim' || state === 'charging');
+          aimDot.visible = showAim;
+          if (showAim) {
+            const club = clubById[selectedClubId];
+            const lieMul =
+              lie === 'bunker' ? 0.55 :
+              lie === 'rough'  ? 0.78 : 1.0;
+            const carryRatio = club.carryRatio ?? 0.9;
+            const pwrMul = currentPower();
+            const loftOffDeg = currentLoft().offsetDeg;
+            const curveFactor = currentCurve().factor;
+            const fullM = club.putt
+              ? PUTT_MAX_M
+              : club.maxYd * carryRatio * lieMul * pwrMul * M_PER_YARD;
+            const previewM = fullM * (charging ? clamp(power, 0.08, 1) : 1.0);
+
+            const pts = [];
+            const steps = 30;
+            // Perpendicular-right of aim (for curve lateral)
+            const rx = -aim.z, rz = aim.x;
+            const CURVE_ACC = 8.0;
+            if (club.putt) {
+              for (let i = 0; i <= steps; i++) {
+                const t = i / steps;
+                pts.push(new THREE.Vector3(
+                  ball.position.x + aim.x * previewM * t,
+                  BALL_RADIUS + 0.005,
+                  ball.position.z + aim.z * previewM * t,
+                ));
+              }
+            } else {
+              const angle = THREE.MathUtils.degToRad(clamp(club.angleDeg + loftOffDeg, 3, 65));
+              const v0 = Math.sqrt((GRAVITY * previewM) / Math.max(Math.sin(2 * angle), 0.0001));
+              const vH = v0 * Math.cos(angle);
+              const vU = v0 * Math.sin(angle);
+              const tTotal = (2 * vU) / GRAVITY;
+              for (let i = 0; i <= steps; i++) {
+                const t = (i / steps) * tTotal;
+                // Lateral curve offset grows with t² (constant accel)
+                const lateral = 0.5 * CURVE_ACC * curveFactor * t * t;
+                pts.push(new THREE.Vector3(
+                  ball.position.x + aim.x * vH * t + rx * lateral,
+                  Math.max(BALL_RADIUS, (vU * t) - 0.5 * GRAVITY * t * t + BALL_RADIUS),
+                  ball.position.z + aim.z * vH * t + rz * lateral,
+                ));
+              }
+            }
+            // 15% of previous radius
+            const r = 0.042 + (charging ? power * 0.022 : 0);
+            rebuildAimTube(pts, r);
+            aimTubeMat.opacity = charging ? 0.82 : 0.6;
+
+            const end = pts[pts.length - 1];
+            aimDot.position.set(end.x, 0.04, end.z);
+            aimDot.scale.setScalar(charging ? (1.0 + power * 0.6) : 1.0);
+          } else if (aimTube) {
+            aimTube.visible = false;
+          }
+
+          // Grow the shot trail while ball is in the air / rolling / putting.
+          if (state === 'flying' || state === 'rolling' || state === 'putting') {
+            const last = trailPoints[trailPoints.length - 1];
+            const minStep = state === 'flying' ? 0.6 : 0.35;
+            if (!last || last.distanceToSquared(ball.position) > minStep * minStep) {
+              trailPoints.push(ball.position.clone());
+              // Trim: only keep points within 20 yd behind the ball
+              while (trailPoints.length > 2 && trailPoints[0].distanceTo(ball.position) > TRAIL_MAX_DIST_M) {
+                trailPoints.shift();
+              }
+              rebuildTrailTube();
+            }
+          } else if (trailTube && trailMat.opacity > 0) {
+            // Fade out after the shot ends
+            trailMat.opacity = Math.max(0, trailMat.opacity - dt * 1.6);
+            if (trailMat.opacity <= 0.02) clearTrail();
+          }
+
+          // Ball shadow scales + fades quickly as ball rises; realistic size
+          // when grounded.
+          ballShadow.position.x = ball.position.x;
+          ballShadow.position.z = ball.position.z;
+          const h = Math.max(0, ball.position.y - BALL_RADIUS);
+          // Opacity: 0.32 on ground, fades to ~0.05 by 4m height
+          ballShadow.material.opacity = clamp(0.32 - h * 0.07, 0.04, 0.32);
+          // Scale: 1.0 at ground, shrinks to 0.5 by 6m
+          ballShadow.scale.setScalar(clamp(1.0 - h * 0.08, 0.45, 1.0));
+
+          // Animate water: scroll the normal map UV + subtle Y bob.
+          if (holeGroup && holeGroup.userData.waterMeshes) {
+            const tw = performance.now() * 0.0001;
+            for (const wm of holeGroup.userData.waterMeshes) {
+              const n = wm.userData.normalTex;
+              if (n) {
+                n.offset.x = (tw * 3.2) % 1;
+                n.offset.y = (tw * 2.1) % 1;
+              }
+              wm.position.y = wm.userData.baseY + Math.sin(performance.now() * 0.001) * 0.01;
+            }
+          }
+
+          // Sink ripples — expand + fade, then dispose
+          if (sinkRipples.length) {
+            const now = performance.now();
+            for (let i = sinkRipples.length - 1; i >= 0; i--) {
+              const r = sinkRipples[i];
+              const age = now - r.userData.start;
+              if (age < 0) continue;
+              const t = age / r.userData.duration;
+              if (t >= 1) {
+                r.geometry.dispose();
+                r.material.dispose();
+                scene.remove(r);
+                sinkRipples.splice(i, 1);
+                continue;
+              }
+              r.scale.setScalar(1 + t * 7);
+              r.material.opacity = 0.85 * (1 - t);
+            }
+          }
+
+          // Tree sway — gentle rotation around Z with per-instance phase.
+          if (treesRef) {
+            const tm = performance.now() * 0.001;
+            const m4 = new THREE.Matrix4();
+            const q = new THREE.Quaternion();
+            const eul = new THREE.Euler();
+            const p = new THREE.Vector3();
+            const s = new THREE.Vector3();
+            for (let i = 0; i < treesRef.data.length; i++) {
+              const d = treesRef.data[i];
+              const sway = Math.sin(tm * d.swaySpeed + d.swayPhase) * d.swayAmp;
+              eul.set(0, 0, sway);
+              q.setFromEuler(eul);
+              p.set(d.x, 0, d.z);
+              s.set(d.scale, d.scale, d.scale);
+              m4.compose(p, q, s);
+              treesRef.trunks.setMatrixAt(i, m4);
+              treesRef.leaves.setMatrixAt(i, m4);
+            }
+            treesRef.trunks.instanceMatrix.needsUpdate = true;
+            treesRef.leaves.instanceMatrix.needsUpdate = true;
+          }
+
+          // Birds — orbit + wing flap
+          {
+            const tm = performance.now() * 0.001;
+            for (const bird of birds) {
+              const u = bird.userData;
+              const theta = tm * u.angVel + u.phase;
+              bird.position.set(
+                u.cx + Math.cos(theta) * u.r,
+                u.y,
+                u.cz + Math.sin(theta) * u.r,
+              );
+              // Face tangent
+              const tanX = -Math.sin(theta) * Math.sign(u.angVel);
+              const tanZ =  Math.cos(theta) * Math.sign(u.angVel);
+              bird.rotation.y = Math.atan2(tanX, tanZ);
+              // Wing flap
+              const pos = bird.geometry.attributes.position;
+              const flap = Math.sin(tm * u.flapSpeed + u.flapPhase) * 0.4;
+              pos.setY(0, u.origPos[1] + flap);
+              pos.setY(2, u.origPos[7] + flap);
+              pos.needsUpdate = true;
+            }
+          }
+
+          // Flag flutter — sine wave along the flag's x (distance from pole).
+          if (flagMesh) {
+            const t = performance.now() * 0.004;
+            const pos = flagMesh.geometry.attributes.position;
+            const orig = flagMesh.userData.origPos;
+            for (let i = 0; i < pos.count; i++) {
+              const ox = orig[i * 3];
+              const oy = orig[i * 3 + 1];
+              // ox ranges -0.4..0.4. Pole side = -0.4. Free edge = +0.4.
+              const attach = (ox + 0.4) / 0.8; // 0 pole → 1 free
+              const wave = Math.sin(t * 1.4 + ox * 10) * 0.08 * attach
+                         + Math.sin(t * 2.1 + oy * 6) * 0.03 * attach;
+              pos.setZ(i, wave);
+              pos.setY(i, oy + Math.cos(t * 1.8 + ox * 8) * 0.015 * attach);
+            }
+            pos.needsUpdate = true;
+            flagMesh.geometry.computeVertexNormals();
+          }
+
+          // Blowing leaves — drift with wind, respawn when out of bounds.
+          if (leavesMesh && leavesData) {
+            const b = leavesBounds;
+            const q = new THREE.Quaternion();
+            const e = new THREE.Euler();
+            const m4 = new THREE.Matrix4();
+            const scl = new THREE.Vector3(1, 1, 1);
+            const vec = new THREE.Vector3();
+            for (let i = 0; i < leavesData.length; i++) {
+              const l = leavesData[i];
+              l.x += l.vx * dt;
+              l.y += l.vy * dt;
+              l.z += l.vz * dt;
+              l.rx += l.vrx * dt;
+              l.ry += l.vry * dt;
+              l.rz += l.vrz * dt;
+              // Gentle chaos on velocities
+              l.vz += (Math.random() - 0.5) * 0.2 * dt;
+              if (l.y < 0.1 || l.x > b.maxX + 10 || l.x < b.minX - 10
+                  || l.z < b.minZ - 10 || l.z > b.maxZ + 10) {
+                l.x = b.minX + Math.random() * 10 - 8;
+                l.y = 1.2 + Math.random() * 4.5;
+                l.z = b.minZ + Math.random() * (b.maxZ - b.minZ);
+                l.vx = 2.5 + Math.random() * 2;
+                l.vy = -0.6 + Math.random() * 0.3;
+                l.vz = (Math.random() - 0.5) * 0.8;
+              }
+              e.set(l.rx, l.ry, l.rz);
+              q.setFromEuler(e);
+              vec.set(l.x, l.y, l.z);
+              m4.compose(vec, q, scl);
+              leavesMesh.setMatrixAt(i, m4);
+            }
+            leavesMesh.instanceMatrix.needsUpdate = true;
+          }
+
+          controls.update();
+          renderer.render(scene, camera);
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+
+        loadingEl.classList.add('hidden');
+        setTimeout(() => loadingEl.remove(), 500);
+      }
+
+      main().catch((err) => {
+        loadingEl.classList.add('hidden');
+        showError(`Failed to load hole:\n${err?.message || err}`);
+      });
+    </script>
+  </body>
+</html>

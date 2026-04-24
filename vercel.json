@@ -1,4 +1,18 @@
 {
   "buildCommand": "npx expo export --platform web --output-dir dist",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "cleanUrls": false,
+  "rewrites": [
+    { "source": "/atlas-3d-viewer", "destination": "/atlas-3d-viewer/index.html" },
+    { "source": "/atlas-3d-viewer/", "destination": "/atlas-3d-viewer/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/models/(.*).glb",
+      "headers": [
+        { "key": "Content-Type", "value": "model/gltf-binary" },
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    }
+  ]
 }

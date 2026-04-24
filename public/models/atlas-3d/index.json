@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "name": "atlas-3d",
+  "description": "Atlas Golf 3D character — base mesh + animation library. Both GLBs share the same Armature + char1 skinned mesh; load the base for geometry/textures, load the animations file purely for AnimationClip data and retarget the clips onto the base SkinnedMesh.",
+  "version": "1.0.0",
+  "units": "meters",
+  "upAxis": "Y",
+  "forwardAxis": "-Z",
+  "coordinateSystem": "right-handed (glTF default)",
+  "assets": {
+    "base": {
+      "file": "atlas-3d.glb",
+      "path": "atlas-3d.glb",
+      "role": "model",
+      "purpose": "Source of truth for skinned mesh, skeleton, materials and textures.",
+      "generator": "Khronos glTF Blender I/O v4.0.43",
+      "extensionsUsed": ["KHR_materials_specular", "KHR_materials_ior"],
+      "scene": {
+        "name": "Scene",
+        "rootNode": "Armature",
+        "boundingBox": {
+          "min": [-0.0031, 0.0, -0.0022],
+          "max": [0.0031, 0.016, 0.0022]
+        }
+      },
+      "mesh": {
+        "name": "char1",
+        "type": "SkinnedMesh",
+        "primitiveMode": "TRIANGLES",
+        "vertices": 10168,
+        "triangles": 10000,
+        "indexType": "u16",
+        "attributes": ["POSITION", "NORMAL", "TEXCOORD_0", "JOINTS_0", "WEIGHTS_0"]
+      },
+      "materials": [
+        {
+          "name": "Material_1",
+          "type": "MeshStandardMaterial",
+          "alphaMode": "OPAQUE",
+          "doubleSided": true,
+          "textures": ["baseColorTexture", "emissiveTexture"]
+        }
+      ],
+      "textures": [
+        {
+          "name": "texture_0",
+          "mimeType": "image/png",
+          "resolution": [2048, 2048],
+          "slots": ["baseColorTexture", "emissiveTexture"],
+          "gpuSize": "22.37 MB"
+        }
+      ],
+      "fileSize": "14.46 MB"
+    },
+    "animations": {
+      "file": "atlas-3d-animations.glb",
+      "path": "atlas-3d-animations.glb",
+      "role": "animation-library",
+      "purpose": "Retarget AnimationClips onto the base SkinnedMesh. Skeleton matches base 1:1. Discard mesh/materials after extracting animations[].",
+      "generator": "Khronos glTF Blender I/O v4.2.57",
+      "extensionsUsed": ["KHR_materials_specular"],
+      "fileSize": "7.10 MB"
+    }
+  },
+  "skeleton": {
+    "rootBone": "Armature",
+    "channelCount": 72,
+    "note": "Both GLBs share an identical 72-channel armature; clips can be applied to base SkinnedMesh via THREE.AnimationMixer."
+  },
+  "animations": [
+    {
+      "id": "idle",
+      "label": "Idle",
+      "sourceClipName": null,
+      "duration": 0,
+      "loop": "LoopRepeat",
+      "category": "locomotion",
+      "description": "Default rest pose from base GLB.",
+      "defaultWeight": 1.0,
+      "isDefault": true
+    },
+    {
+      "id": "walking",
+      "label": "Walk",
+      "sourceClipName": "Walking",
+      "duration": 1.0,
+      "keyframes": 864,
+      "loop": "LoopRepeat",
+      "category": "locomotion",
+      "description": "Full-cycle walk loop.",
+      "defaultWeight": 1.0
+    },
+    {
+      "id": "running",
+      "label": "Run",
+      "sourceClipName": "Running",
+      "duration": 1.0,
+      "keyframes": 576,
+      "loop": "LoopRepeat",
+      "category": "locomotion",
+      "description": "Full-cycle run loop.",
+      "defaultWeight": 1.0
+    },
+    {
+      "id": "golf_drive",
+      "label": "Drive",
+      "sourceClipName": "golf_drive",
+      "duration": 3.0,
+      "keyframes": 2444,
+      "loop": "LoopOnce",
+      "clampWhenFinished": true,
+      "category": "action",
+      "description": "Full golf swing — address, backswing, downswing, impact, follow-through.",
+      "defaultWeight": 1.0
+    },
+    {
+      "id": "show_both_arm_muscles",
+      "label": "Flex",
+      "sourceClipName": "Show_Both_Arm_Muscles",
+      "duration": 2.0,
+      "keyframes": 1488,
+      "loop": "LoopOnce",
+      "clampWhenFinished": false,
+      "category": "emote",
+      "description": "Celebratory flex (both arms).",
+      "defaultWeight": 1.0
+    },
+    {
+      "id": "shrug",
+      "label": "Shrug",
+      "sourceClipName": "Shrug",
+      "duration": 2.0,
+      "keyframes": 1501,
+      "loop": "LoopOnce",
+      "clampWhenFinished": false,
+      "category": "emote",
+      "description": "Reaction shrug.",
+      "defaultWeight": 1.0
+    }
+  ],
+  "states": {
+    "initial": "idle",
+    "graph": {
+      "idle": {
+        "clip": null,
+        "description": "Default rest pose from base GLB (clip0|baselayer, duration 0).",
+        "transitions": ["walking", "running", "golf_drive", "shrug", "show_both_arm_muscles"]
+      },
+      "walking": {
+        "clip": "Walking",
+        "fadeIn": 0.25,
+        "transitions": ["idle", "running", "golf_drive"]
+      },
+      "running": {
+        "clip": "Running",
+        "fadeIn": 0.2,
+        "transitions": ["idle", "walking"]
+      },
+      "golf_drive": {
+        "clip": "golf_drive",
+        "fadeIn": 0.15,
+        "fadeOut": 0.3,
+        "oneShot": true,
+        "onFinish": "celebrate_or_idle",
+        "transitions": ["idle", "show_both_arm_muscles", "shrug"]
+      },
+      "show_both_arm_muscles": {
+        "clip": "Show_Both_Arm_Muscles",
+        "fadeIn": 0.25,
+        "oneShot": true,
+        "onFinish": "idle",
+        "transitions": ["idle"]
+      },
+      "shrug": {
+        "clip": "Shrug",
+        "fadeIn": 0.25,
+        "oneShot": true,
+        "onFinish": "idle",
+        "transitions": ["idle"]
+      }
+    }
+  },
+  "import": {
+    "loader": "GLTFLoader",
+    "exampleUsage": "// THREE.js r150+\nimport * as THREE from 'three';\nimport { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';\n\nconst loader = new GLTFLoader();\nconst manifest = await fetch('assets/glb/index.json').then(r => r.json());\n\nconst base = await loader.loadAsync(manifest.assets.base.path);\nconst anims = await loader.loadAsync(manifest.assets.animations.path);\n\nscene.add(base.scene);\nconst skinned = base.scene.getObjectByName('char1');\nconst mixer = new THREE.AnimationMixer(base.scene);\n\nconst clipMap = Object.fromEntries(anims.animations.map(c => [c.name, c]));\nconst actions = Object.fromEntries(\n  manifest.animations.map(a => {\n    const action = mixer.clipAction(clipMap[a.name]);\n    action.loop = THREE[a.loop];\n    if (a.clampWhenFinished) action.clampWhenFinished = true;\n    return [a.id, action];\n  })\n);\n\nactions.walking.play();\n// in render loop: mixer.update(deltaSeconds);"
+  }
+}

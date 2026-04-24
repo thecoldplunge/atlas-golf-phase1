@@ -4729,6 +4729,30 @@ export default function App() {
               </Pressable>
 
               <Pressable
+                style={styles.spaceMenuBtnActive}
+                onPress={() => setGameScreen('play-3d-course')}
+              >
+                <Text style={styles.spaceMenuBtnLeft}>PLAY 3D HOLE</Text>
+                <Text style={styles.spaceMenuBtnRight}>PINE HOLLOW · PAR 4 &gt;</Text>
+                <View style={[styles.lCorner, styles.lCornerTopLeft]} />
+                <View style={[styles.lCorner, styles.lCornerTopRight]} />
+                <View style={[styles.lCorner, styles.lCornerBottomLeft]} />
+                <View style={[styles.lCorner, styles.lCornerBottomRight]} />
+              </Pressable>
+
+              <Pressable
+                style={styles.spaceMenuBtnActive}
+                onPress={() => setGameScreen('play-3d')}
+              >
+                <Text style={styles.spaceMenuBtnLeft}>3D CHAR VIEWER</Text>
+                <Text style={styles.spaceMenuBtnRight}>ATLAS MODEL &gt;</Text>
+                <View style={[styles.lCorner, styles.lCornerTopLeft]} />
+                <View style={[styles.lCorner, styles.lCornerTopRight]} />
+                <View style={[styles.lCorner, styles.lCornerBottomLeft]} />
+                <View style={[styles.lCorner, styles.lCornerBottomRight]} />
+              </Pressable>
+
+              <Pressable
                 style={styles.spaceMenuBtn}
                 onPress={() => setGameScreen('settings')}
               >
@@ -4744,6 +4768,56 @@ export default function App() {
               <Text style={styles.menuBottomRight}>{BUILD_VERSION} ■</Text>
             </View>
           </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ═══════════════ PLAY 3D (ATLAS VIEWER / COURSE) SCREENS ═══════════════
+  if (gameScreen === 'play-3d' || gameScreen === 'play-3d-course') {
+    const src = gameScreen === 'play-3d-course'
+      ? '/atlas-3d-viewer/course.html'
+      : '/atlas-3d-viewer/';
+    return (
+      <SafeAreaView style={styles.root}>
+        <StatusBar style="light" />
+        <View style={{ flex: 1, backgroundColor: '#0b1220' }}>
+          {Platform.OS === 'web' ? (
+            React.createElement('iframe', {
+              src,
+              style: {
+                border: 0,
+                width: '100%',
+                height: '100%',
+                display: 'block',
+              },
+              allow: 'accelerometer; gyroscope; xr-spatial-tracking',
+              title: 'Atlas 3D'
+            })
+          ) : (
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+              <Text style={{ color: '#dce7ff', fontSize: 14, letterSpacing: 2, textAlign: 'center' }}>
+                3D MODE IS WEB-ONLY FOR NOW.{'\n'}OPEN THE DEPLOYED SITE IN A MOBILE BROWSER
+                {'\n'}OR WRAP WITH CAPACITOR IOS.
+              </Text>
+            </View>
+          )}
+          <Pressable
+            onPress={() => setGameScreen('menu')}
+            style={{
+              position: 'absolute',
+              top: 12,
+              left: 12,
+              backgroundColor: 'rgba(20, 32, 56, 0.85)',
+              borderWidth: 1,
+              borderColor: 'rgba(120, 160, 220, 0.35)',
+              paddingVertical: 8,
+              paddingHorizontal: 12,
+              borderRadius: 10,
+            }}
+          >
+            <Text style={{ color: '#dce7ff', fontSize: 11, letterSpacing: 1.5 }}>‹ CLOSE</Text>
+          </Pressable>
         </View>
       </SafeAreaView>
     );
